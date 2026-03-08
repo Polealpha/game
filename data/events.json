@@ -1,0 +1,138 @@
+[
+  {
+    "id": "port_strike",
+    "name": "港口罢工",
+    "district": "港口",
+    "description": "码头工人停工，货流开始迟滞。",
+    "trigger_conditions": ["worker_unrest > 55"],
+    "macro_effect": {"economy_heat": -6, "housing_heat": 1, "media_sentiment": -3, "worker_unrest": 8},
+    "goods_effect": {"面包": 0.12, "煤": 0.08, "罐头": 0.14},
+    "stock_effect": {"蓝潮航运": -0.1, "黑石矿业": -0.02, "晨报传媒": 0.05},
+    "district_effect": {"港口": "unrest", "贫民街": "tense"},
+    "family_effect": {
+      "白鹭家族": ["稳住航运", "压低预期"],
+      "灰狼家族": ["观望原料缺口"],
+      "猫头鹰家族": ["放大恐慌标题"]
+    },
+    "news_template": {"title": "港口绳索歪了，整座城都开始咳嗽", "body": "{district} 的工人停下手，仓单上的数字先开始发抖。", "tags": ["港口", "罢工", "物流"]}
+  },
+  {
+    "id": "mine_rumor",
+    "name": "矿难传闻",
+    "district": "工厂区",
+    "description": "矿井里流出伤亡消息，但没人愿意承认。",
+    "trigger_conditions": ["economy_heat > 40"],
+    "macro_effect": {"economy_heat": -3, "housing_heat": 0, "media_sentiment": -1, "worker_unrest": 7},
+    "goods_effect": {"面包": 0.04, "煤": 0.16, "罐头": 0.03},
+    "stock_effect": {"蓝潮航运": 0.01, "黑石矿业": -0.12, "晨报传媒": 0.03},
+    "district_effect": {"工厂区": "tense", "港口": "normal"},
+    "family_effect": {
+      "白鹭家族": ["切断杠杆"],
+      "灰狼家族": ["压消息", "甩锅给天气"],
+      "猫头鹰家族": ["先卖报后求证"]
+    },
+    "news_template": {"title": "矿井口的煤灰，像是故意遮住了什么", "body": "{district} 的人说只是误会，但煤价已经先替他们承认了。", "tags": ["矿业", "传闻", "工人"]}
+  },
+  {
+    "id": "media_expose",
+    "name": "媒体爆料",
+    "district": "交易所",
+    "description": "一份匿名账本被塞进报馆。",
+    "trigger_conditions": ["media_sentiment > 45"],
+    "macro_effect": {"economy_heat": -2, "housing_heat": -1, "media_sentiment": 10, "worker_unrest": 2},
+    "goods_effect": {"面包": 0.0, "煤": 0.02, "罐头": 0.04},
+    "stock_effect": {"蓝潮航运": -0.04, "黑石矿业": -0.05, "晨报传媒": 0.11},
+    "district_effect": {"交易所": "tense", "港口": "tense"},
+    "family_effect": {
+      "白鹭家族": ["澄清融资传言"],
+      "灰狼家族": ["威胁发信人"],
+      "猫头鹰家族": ["连夜加印"]
+    },
+    "news_template": {"title": "晨报连夜加印，纸比铜币跑得还快", "body": "{district} 今天先开的不是盘，是嘴。", "tags": ["媒体", "爆料", "交易所"]}
+  },
+  {
+    "id": "rate_hike",
+    "name": "银行加息",
+    "district": "交易所",
+    "description": "放贷更贵，空气更冷。",
+    "trigger_conditions": ["interest_rate < 3.0"],
+    "macro_effect": {"economy_heat": -8, "housing_heat": -6, "media_sentiment": -2, "worker_unrest": 3},
+    "goods_effect": {"面包": -0.03, "煤": -0.05, "罐头": 0.02},
+    "stock_effect": {"蓝潮航运": -0.08, "黑石矿业": -0.09, "晨报传媒": -0.04},
+    "district_effect": {"交易所": "declining", "贫民街": "tense"},
+    "family_effect": {
+      "白鹭家族": ["收紧信用"],
+      "灰狼家族": ["寻找短债口子"],
+      "猫头鹰家族": ["把坏消息包成机会"]
+    },
+    "news_template": {"title": "银行把利息拧紧，街上连笑声都薄了", "body": "{district} 的算盘珠子打得更响，借钱的人先缩了壳。", "tags": ["银行", "利率", "金融"]}
+  },
+  {
+    "id": "weather_disruption",
+    "name": "天气影响运输",
+    "district": "港口",
+    "description": "海风反咬码头，船期开始扭曲。",
+    "trigger_conditions": ["seasonal"],
+    "macro_effect": {"economy_heat": -2, "housing_heat": 0, "media_sentiment": -1, "worker_unrest": 1},
+    "goods_effect": {"面包": 0.05, "煤": 0.09, "罐头": 0.1},
+    "stock_effect": {"蓝潮航运": -0.06, "黑石矿业": 0.02, "晨报传媒": 0.02},
+    "district_effect": {"港口": "tense", "交易所": "normal"},
+    "family_effect": {
+      "白鹭家族": ["修补航线故事"],
+      "灰狼家族": ["趁机抬煤价"],
+      "猫头鹰家族": ["写风暴标题"]
+    },
+    "news_template": {"title": "风在港口收税，货船只是替它挨骂", "body": "{district} 的绳索和传言一起绷紧了。", "tags": ["天气", "运输", "港口"]}
+  },
+  {
+    "id": "factory_layoff",
+    "name": "工厂裁员",
+    "district": "工厂区",
+    "description": "厂门贴出新名单，旧工牌不再作数。",
+    "trigger_conditions": ["economy_heat < 60"],
+    "macro_effect": {"economy_heat": -5, "housing_heat": -1, "media_sentiment": -4, "worker_unrest": 9},
+    "goods_effect": {"面包": -0.02, "煤": -0.01, "罐头": 0.06},
+    "stock_effect": {"蓝潮航运": -0.01, "黑石矿业": 0.05, "晨报传媒": 0.04},
+    "district_effect": {"工厂区": "unrest", "贫民街": "declining"},
+    "family_effect": {
+      "白鹭家族": ["等便宜资产落地"],
+      "灰狼家族": ["压低工资线"],
+      "猫头鹰家族": ["渲染求职焦虑"]
+    },
+    "news_template": {"title": "厂门口的名单，比冬天还薄情", "body": "{district} 今天少了岗位，多了怒气。", "tags": ["工厂", "裁员", "失业"]}
+  },
+  {
+    "id": "street_unrest",
+    "name": "街区骚动",
+    "district": "贫民街",
+    "description": "底层居民因物价与房租爆发冲突。",
+    "trigger_conditions": ["worker_unrest > 65"],
+    "macro_effect": {"economy_heat": -4, "housing_heat": -3, "media_sentiment": -5, "worker_unrest": 10},
+    "goods_effect": {"面包": 0.1, "煤": 0.03, "罐头": 0.07},
+    "stock_effect": {"蓝潮航运": -0.03, "黑石矿业": -0.02, "晨报传媒": 0.06},
+    "district_effect": {"贫民街": "unrest", "交易所": "tense"},
+    "family_effect": {
+      "白鹭家族": ["躲在账本后面"],
+      "灰狼家族": ["提高戒备"],
+      "猫头鹰家族": ["把冲突做成头条"]
+    },
+    "news_template": {"title": "贫民街先起的是火气，不是篝火", "body": "{district} 的锅里太空，街上就很容易满。", "tags": ["街区", "骚动", "底层"]}
+  },
+  {
+    "id": "housing_boom",
+    "name": "楼市升温",
+    "district": "交易所",
+    "description": "开发区和传闻一起发热。",
+    "trigger_conditions": ["housing_heat > 55"],
+    "macro_effect": {"economy_heat": 3, "housing_heat": 9, "media_sentiment": 6, "worker_unrest": 2},
+    "goods_effect": {"面包": 0.02, "煤": 0.07, "罐头": 0.01},
+    "stock_effect": {"蓝潮航运": 0.03, "黑石矿业": 0.06, "晨报传媒": 0.09},
+    "district_effect": {"交易所": "prosperous", "贫民街": "tense"},
+    "family_effect": {
+      "白鹭家族": ["包装稳定回报"],
+      "灰狼家族": ["押注建材"],
+      "猫头鹰家族": ["炒热样板间"]
+    },
+    "news_template": {"title": "城里的砖还没垒高，故事已经先涨价了", "body": "{district} 的地产传单比面包还厚。", "tags": ["楼市", "地产", "投机"]}
+  }
+]

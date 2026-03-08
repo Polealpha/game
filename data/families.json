@@ -1,0 +1,57 @@
+[
+  {
+    "id": "egret",
+    "name": "白鹭家族",
+    "type": "金融家族",
+    "cash": 240,
+    "stock_holdings": {"蓝潮航运": 14},
+    "real_estate_holdings": 9,
+    "debt": 40,
+    "reputation": 72,
+    "political_power": 66,
+    "media_power": 38,
+    "style": "保守、重声望、偏稳定",
+    "allies": ["猫头鹰家族"],
+    "enemies": ["灰狼家族"],
+    "strategy": "控融资、护盘、压波动",
+    "public_action": "稳住港口票面",
+    "player_attitude": "审慎观察"
+  },
+  {
+    "id": "wolf",
+    "name": "灰狼家族",
+    "type": "工业家族",
+    "cash": 220,
+    "stock_holdings": {"黑石矿业": 16},
+    "real_estate_holdings": 5,
+    "debt": 74,
+    "reputation": 58,
+    "political_power": 54,
+    "media_power": 21,
+    "style": "激进、高杠杆、押周期",
+    "allies": [],
+    "enemies": ["白鹭家族", "猫头鹰家族"],
+    "strategy": "压工资、抢产能、赌景气",
+    "public_action": "盯住矿价",
+    "player_attitude": "把你当工具"
+  },
+  {
+    "id": "owl",
+    "name": "猫头鹰家族",
+    "type": "媒体 / 地产家族",
+    "cash": 205,
+    "stock_holdings": {"晨报传媒": 19},
+    "real_estate_holdings": 11,
+    "debt": 55,
+    "reputation": 63,
+    "political_power": 48,
+    "media_power": 79,
+    "style": "投机、懂做局、擅长包装",
+    "allies": ["白鹭家族"],
+    "enemies": ["灰狼家族"],
+    "strategy": "炒楼市、做情绪、借舆论抬价",
+    "public_action": "放消息试温度",
+    "player_attitude": "先逗你入局"
+  }
+]
+

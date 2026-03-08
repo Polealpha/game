@@ -1,0 +1,33 @@
+[
+  {
+    "id": "bread",
+    "name": "面包",
+    "base_price": 4,
+    "volatility": 0.08,
+    "category": "生活必需",
+    "affected_by_events": ["港口罢工", "街区骚动"],
+    "affected_by_macro": ["worker_unrest", "economy_heat"],
+    "affected_by_family": ["猫头鹰家族"]
+  },
+  {
+    "id": "coal",
+    "name": "煤",
+    "base_price": 6,
+    "volatility": 0.12,
+    "category": "工业原料",
+    "affected_by_events": ["矿难传闻", "天气影响运输"],
+    "affected_by_macro": ["economy_heat", "interest_rate"],
+    "affected_by_family": ["灰狼家族"]
+  },
+  {
+    "id": "canned_food",
+    "name": "罐头",
+    "base_price": 8,
+    "volatility": 0.1,
+    "category": "耐储物资",
+    "affected_by_events": ["银行加息", "港口罢工"],
+    "affected_by_macro": ["media_sentiment", "worker_unrest"],
+    "affected_by_family": ["白鹭家族"]
+  }
+]
+

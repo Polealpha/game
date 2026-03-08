@@ -1,0 +1,38 @@
+[
+  {
+    "id": "task_egret_credit",
+    "title": "白鹭账房缺腿",
+    "family": "白鹭家族",
+    "district": "交易所",
+    "description": "白鹭家族想看街头有没有人开始慌。去打听 2 次消息，再把风向带回账房。",
+    "requirement": {"type": "gather_info", "target": "any", "quantity": 2},
+    "reward": {"cash": 12, "reputation": 2, "family_relation": 10, "family_name": "白鹭家族"}
+  },
+  {
+    "id": "task_wolf_coal",
+    "title": "灰狼要煤不要废话",
+    "family": "灰狼家族",
+    "district": "工厂区",
+    "description": "灰狼家族在压货。完成 2 次煤的买卖，让他们知道你会做事。",
+    "requirement": {"type": "trade_goods", "target": "煤", "quantity": 2},
+    "reward": {"cash": 15, "reputation": 1, "family_relation": 12, "family_name": "灰狼家族"}
+  },
+  {
+    "id": "task_owl_headline",
+    "title": "猫头鹰要一个能卖的故事",
+    "family": "猫头鹰家族",
+    "district": "交易所",
+    "description": "买入一次晨报传媒，再结束一天。猫头鹰要看你会不会顺着情绪下注。",
+    "requirement": {"type": "swing_trade_media", "target": "晨报传媒", "quantity": 1},
+    "reward": {"cash": 18, "reputation": 2, "family_relation": 11, "family_name": "猫头鹰家族"}
+  },
+  {
+    "id": "task_slum_bread",
+    "title": "贫民街今天先吃饭",
+    "family": "街头互助会",
+    "district": "贫民街",
+    "description": "买入或卖出 2 次面包，证明你还记得底层最先在乎的是什么。",
+    "requirement": {"type": "trade_goods", "target": "面包", "quantity": 2},
+    "reward": {"cash": 10, "reputation": 3, "family_relation": 6, "family_name": "街头互助会"}
+  }
+]

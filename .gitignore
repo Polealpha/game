@@ -1,0 +1,12 @@
+.godot/
+__pycache__/
+*.pyc
+.env
+logs/
+*.exe
+*.import
+tmp_*.png
+tietu/
+tietu1/
+external/*
+!external/.gdignore

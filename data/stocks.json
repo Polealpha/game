@@ -1,0 +1,36 @@
+[
+  {
+    "id": "blue_tide_shipping",
+    "name": "蓝潮航运",
+    "industry": "航运",
+    "base_price": 18,
+    "volatility": 0.11,
+    "family_owner": "白鹭家族",
+    "event_sensitivity": "港口与天气",
+    "macro_sensitivity": "利率与经济景气",
+    "media_sensitivity": "中"
+  },
+  {
+    "id": "blackstone_mining",
+    "name": "黑石矿业",
+    "industry": "矿业",
+    "base_price": 16,
+    "volatility": 0.13,
+    "family_owner": "灰狼家族",
+    "event_sensitivity": "矿难与裁员",
+    "macro_sensitivity": "工业景气",
+    "media_sensitivity": "低"
+  },
+  {
+    "id": "morning_post_media",
+    "name": "晨报传媒",
+    "industry": "媒体",
+    "base_price": 14,
+    "volatility": 0.15,
+    "family_owner": "猫头鹰家族",
+    "event_sensitivity": "爆料与楼市情绪",
+    "macro_sensitivity": "媒体情绪",
+    "media_sensitivity": "高"
+  }
+]
+

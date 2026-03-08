@@ -129,7 +129,7 @@ func _ready() -> void:
 	backdrop.scale = Vector2.ONE * WORLD_VISUAL_SCALE
 	ambient.scale = Vector2.ONE * WORLD_VISUAL_SCALE
 	foreground.scale = Vector2.ONE * WORLD_VISUAL_SCALE
-	player.position = _to_world_position(WorldLayout.PLAYER_START)
+	player.position = _to_world_position(WorldLayout.snap_to_walkable(WorldLayout.PLAYER_START))
 	world_camera.enabled = true
 	world_camera.position_smoothing_enabled = true
 	world_camera.position_smoothing_speed = 7.5
@@ -249,7 +249,7 @@ func _build_interactables() -> void:
 	for item in items:
 		var node := InteractableView.new()
 		node.configure(item)
-		node.position = _to_world_position(node.position)
+		node.position = _to_world_position(WorldLayout.snap_to_walkable(node.position))
 		node.scale = Vector2.ONE * 1.08
 		interactable_layer.add_child(node)
 		interactables.append(node)
@@ -749,10 +749,23 @@ func _move_player(delta: float) -> void:
 	var input_vector := Input.get_vector("move_left", "move_right", "move_up", "move_down")
 	last_move_input = input_vector
 	player.set_movement_direction(input_vector)
-	player.position += input_vector * PLAYER_SPEED * delta
 	var world_size := WORLD_RECT.size * WORLD_VISUAL_SCALE
-	player.position.x = clamp(player.position.x, 24.0 * WORLD_VISUAL_SCALE, world_size.x - 24.0 * WORLD_VISUAL_SCALE)
-	player.position.y = clamp(player.position.y, 96.0 * WORLD_VISUAL_SCALE, world_size.y - 134.0 * WORLD_VISUAL_SCALE)
+	var proposed_x := Vector2(
+		clampf(player.position.x + input_vector.x * PLAYER_SPEED * delta, 0.0, world_size.x),
+		player.position.y
+	)
+	if WorldLayout.is_walkable_point(proposed_x / WORLD_VISUAL_SCALE):
+		player.position.x = proposed_x.x
+	else:
+		player.position.x = _to_world_position(WorldLayout.snap_to_walkable(proposed_x / WORLD_VISUAL_SCALE)).x
+	var proposed_y := Vector2(
+		player.position.x,
+		clampf(player.position.y + input_vector.y * PLAYER_SPEED * delta, 0.0, world_size.y)
+	)
+	if WorldLayout.is_walkable_point(proposed_y / WORLD_VISUAL_SCALE):
+		player.position.y = proposed_y.y
+	else:
+		player.position.y = _to_world_position(WorldLayout.snap_to_walkable(proposed_y / WORLD_VISUAL_SCALE)).y
 
 
 func _update_world_camera(delta: float) -> void:
@@ -1903,8 +1916,9 @@ func _refresh_npcs() -> void:
 		else:
 			view = npc_views[npc_id]
 		var view_data: Dictionary = data.duplicate(true)
-		view_data["x"] = float(data.get("x", 0.0)) * WORLD_VISUAL_SCALE
-		view_data["y"] = float(data.get("y", 0.0)) * WORLD_VISUAL_SCALE
+		var snapped_backend := WorldLayout.snap_to_walkable(Vector2(float(data.get("x", 0.0)), float(data.get("y", 0.0))))
+		view_data["x"] = snapped_backend.x * WORLD_VISUAL_SCALE
+		view_data["y"] = snapped_backend.y * WORLD_VISUAL_SCALE
 		view_data["social_radius"] = float(data.get("social_radius", 180.0)) * WORLD_VISUAL_SCALE
 		view.apply_data(view_data, show_hearing_debug)
 	for npc_id in npc_views.keys():
@@ -2923,18 +2937,41 @@ func _close_modal() -> void:
 
 
 func _submit_modal_player_talk() -> void:
-	if active_dialogue_context.is_empty():
-		return
 	var player_input := modal_input.text.strip_edges()
 	if player_input.is_empty():
 		return
+	var dialogue_context := active_dialogue_context.duplicate(true)
+	if str(dialogue_context.get("npc_id", "")).is_empty():
+		var last_dialogue: Dictionary = GameState.snapshot.get("last_dialogue", {})
+		if not last_dialogue.is_empty():
+			dialogue_context = {
+				"npc_id": str(last_dialogue.get("npc_id", "")),
+				"district": str(last_dialogue.get("district", _current_district_for_position(player.position))),
+				"topic_id": str(last_dialogue.get("topic_id", "")),
+				"approach": str(last_dialogue.get("approach", "cautious")),
+				"intent": "继续追问"
+			}
+	if str(dialogue_context.get("npc_id", "")).is_empty():
+		var nearby_npcs := _get_nearby_npcs(1)
+		if not nearby_npcs.is_empty():
+			dialogue_context = {
+				"npc_id": str(nearby_npcs[0].get("id", "")),
+				"district": _current_district_for_position(player.position),
+				"topic_id": "",
+				"approach": "cautious",
+				"intent": "继续追问"
+			}
+	if str(dialogue_context.get("npc_id", "")).is_empty():
+		GameState.add_toast("附近没有可继续追问的角色。")
+		return
+	active_dialogue_context = dialogue_context
 	modal_send_button.disabled = true
 	var live_scene := _build_scene_observation_payload(true)
 	ApiClient.post_json("/npc/player_talk", {
-		"npc_id": str(active_dialogue_context.get("npc_id", "")),
-		"district": str(active_dialogue_context.get("district", _current_district_for_position(player.position))),
-		"topic_id": str(active_dialogue_context.get("topic_id", "")),
-		"approach": str(active_dialogue_context.get("approach", "cautious")),
+		"npc_id": str(dialogue_context.get("npc_id", "")),
+		"district": str(dialogue_context.get("district", _current_district_for_position(player.position))),
+		"topic_id": str(dialogue_context.get("topic_id", "")),
+		"approach": str(dialogue_context.get("approach", "cautious")),
 		"intent": str(active_dialogue_context.get("intent", "继续追问")),
 		"player_input": player_input,
 		"player_position": live_scene.get("player_position", {}),

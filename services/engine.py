@@ -16,43 +16,43 @@ DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 HOUSE_DEFS: dict[str, dict[str, str]] = {
     "贫民街": {
         "id": "slum_house",
-        "title": "壳背小屋",
+        "title": "山坡租屋",
         "class": "low",
         "district": "贫民街",
         "scene_id": "forest_farm",
         "entry_spawn_id": "farm_gate",
-        "anchor_x": "390.0",
-        "anchor_y": "1010.0",
+        "anchor_x": "610.0",
+        "anchor_y": "560.0",
     },
     "港口": {
         "id": "dock_house",
-        "title": "潮木宿屋",
+        "title": "石桥住屋",
         "class": "dock",
         "district": "港口",
         "scene_id": "stonebridge_quarter",
         "entry_spawn_id": "bridge_square",
-        "anchor_x": "1180.0",
-        "anchor_y": "760.0",
+        "anchor_x": "860.0",
+        "anchor_y": "720.0",
     },
     "工厂区": {
         "id": "factory_house",
-        "title": "磨坊宿舍",
+        "title": "厂房宿舍",
         "class": "industrial",
         "district": "工厂区",
         "scene_id": "watermill_yard",
         "entry_spawn_id": "mill_gate",
-        "anchor_x": "2340.0",
-        "anchor_y": "1040.0",
+        "anchor_x": "2240.0",
+        "anchor_y": "1120.0",
     },
     "交易所": {
         "id": "exchange_house",
         "title": "账房公寓",
         "class": "merchant",
         "district": "交易所",
-        "scene_id": "church_graveyard",
-        "entry_spawn_id": "grave_path",
-        "anchor_x": "2740.0",
-        "anchor_y": "470.0",
+        "scene_id": "rune_tower",
+        "entry_spawn_id": "tower_steps",
+        "anchor_x": "1370.0",
+        "anchor_y": "610.0",
     },
 }
 
@@ -458,6 +458,7 @@ class WorldEngine:
             self.state["last_dialogue"]["player_input"] = player_input
             self.state["last_dialogue"]["world_effects"] = world_effects
             self.state["last_dialogue"]["npc_id"] = npc_id
+            self.state["last_dialogue"]["district"] = npc["district"]
             self.state["last_dialogue"]["heard_by"] = heard_by
             self._refresh_ambient_speeches()
             self._apply_intraday_market_move(reason="player_talk", decay=0.78)
@@ -2941,16 +2942,16 @@ class WorldEngine:
 
     def _derive_home_anchor(self, npc: dict[str, Any], index: int) -> tuple[float, float]:
         offsets = {
-            "slum_house": [(-26.0, -12.0), (18.0, -18.0), (-42.0, 26.0), (22.0, 34.0), (54.0, -6.0)],
-            "dock_house": [(-22.0, 18.0), (26.0, 14.0), (-34.0, 42.0), (42.0, 40.0), (8.0, -16.0)],
-            "factory_house": [(-18.0, 10.0), (22.0, 8.0), (-32.0, 34.0), (36.0, 32.0), (4.0, 52.0)],
-            "exchange_house": [(-24.0, -10.0), (18.0, -6.0), (-38.0, 24.0), (34.0, 26.0), (2.0, 42.0)],
+            "slum_house": [(-16.0, 28.0), (16.0, 30.0), (-34.0, 60.0), (28.0, 58.0), (48.0, 10.0)],
+            "dock_house": [(-18.0, 20.0), (18.0, 22.0), (-32.0, 48.0), (34.0, 50.0), (8.0, -12.0)],
+            "factory_house": [(-22.0, 16.0), (18.0, 18.0), (-36.0, 44.0), (34.0, 46.0), (6.0, -10.0)],
+            "exchange_house": [(-18.0, 22.0), (18.0, 22.0), (-34.0, 48.0), (34.0, 46.0), (4.0, -12.0)],
         }
         anchors = {
-            "slum_house": (390.0, 1010.0),
-            "dock_house": (1180.0, 760.0),
-            "factory_house": (2340.0, 1040.0),
-            "exchange_house": (2740.0, 470.0),
+            "slum_house": (610.0, 560.0),
+            "dock_house": (860.0, 720.0),
+            "factory_house": (2240.0, 1120.0),
+            "exchange_house": (1370.0, 610.0),
         }
         home_id = str(npc.get("home_id", "slum_house"))
         base_x, base_y = anchors.get(home_id, anchors["slum_house"])

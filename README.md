@@ -1,31 +1,32 @@
 # 壳与市场
 
-Godot 4.5.1 前端 + Python 本地服务的黑客松纵切片。
+Godot 4.5.1 前端 + Python FastAPI 本地服务的 2D 开放世界社会经济模拟 Demo。
 
 ## 运行
 
-1. 安装依赖：
+1. 安装依赖
 
 ```powershell
 pip install -r requirements.txt
 ```
 
-2. 可选：配置 `.env` 或系统环境变量。
+2. 可选：配置 `.env` 或系统环境变量
 
 关键变量：
 
 - `ARK_API_KEY`
-- `ARK_ENDPOINT_ID`，默认是 `521e4c18-b3f9-4b54-af94-1f404328f300`
-- `ARK_MODEL_LABEL`，默认是 `doubao2.0 mini`
-- `ARK_BASE_URL`，默认是 `https://ark.cn-beijing.volces.com/api/v3`
-- `SHELL_MARKET_PULSE_SECONDS`，默认 `300`
+- `ARK_ENDPOINT_ID`
+- `ARK_MODEL_ID`
+- `ARK_MODEL_LABEL`
+- `ARK_BASE_URL`
+- `SHELL_MARKET_PULSE_SECONDS`，当前默认 `60`
 
 说明：
 
-- 按火山方舟官方文档，真正用于鉴权的是 `ARK_API_KEY`，endpoint id 作为推理接入点标识使用，不应直接当 Bearer Token 硬编码。
-- 当前服务默认没有 `ARK_API_KEY` 时会自动使用本地 mock 规则，游戏仍可完整运行。
+- 没有 `ARK_API_KEY` 时，服务会自动回退到本地规则系统。
+- AI 脉冲默认 60 秒一轮；总览带图，附近/高热角色优先带图，其余实体走纯文本分层刷新。
 
-3. 启动：
+3. 启动
 
 ```powershell
 .\run_demo.ps1
@@ -41,15 +42,13 @@ python -m uvicorn services.app:app --host 127.0.0.1 --port 8765 --reload
 ## 控制
 
 - `WASD` 移动
-- `E` 打开附近交互点
-- `F3` 显示或隐藏 NPC 听觉半径
+- `E` 交互
+- `H` 展开账本
+- `Tab` 查看模式
 
 ## 当前内容
 
-- 4 个区域：贫民街、港口、工厂区、交易所
-- 3 个商品：面包、煤、罐头
-- 3 支股票：蓝潮航运、黑石矿业、晨报传媒
-- 20 个 NPC、3 个家族
-- 实时轮播的 NPC 话语、局部传播和街区级新闻
-- 结束一天触发完整结算
-
+- 4 个街区：贫民街、港口、工厂区、交易所
+- 商品、股票、家族、公司、新闻、传言、回合结算
+- 20 个 NPC 的街头行为、社交演出、关系记忆和 AI 口风
+- 玩家实时搭话、场景截图、金融与舆论联动

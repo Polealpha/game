@@ -13,12 +13,15 @@ var walkthrough_steps: Array = [
 ]
 
 
-func push_modal(title: String, body: String, tone: String = "news") -> void:
-	modal_requested.emit({
+func push_modal(title: String, body: String, tone: String = "news", extras: Dictionary = {}) -> void:
+	var payload := {
 		"title": title,
 		"body": body,
 		"tone": tone
-	})
+	}
+	for key in extras.keys():
+		payload[key] = extras[key]
+	modal_requested.emit(payload)
 
 
 func update_guide(world_state: Dictionary) -> void:

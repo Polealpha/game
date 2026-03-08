@@ -6,9 +6,9 @@
     "rent_pressure": 70,
     "traffic": 58,
     "subregions": [
-      {"id": "forest_farm", "name": "森林农庄", "scene_id": "forest_farm", "entry_spawn_id": "farm_gate"},
-      {"id": "courtyard_garden", "name": "菜圃庭院", "scene_id": "courtyard_garden", "entry_spawn_id": "garden_path"},
-      {"id": "wild_path", "name": "林间秘径", "scene_id": "wild_path", "entry_spawn_id": "trail_bend"}
+      {"id": "forest_farm", "name": "左岸台地", "scene_id": "forest_farm", "entry_spawn_id": "farm_gate"},
+      {"id": "courtyard_garden", "name": "鱼市前街", "scene_id": "courtyard_garden", "entry_spawn_id": "garden_path"},
+      {"id": "wild_path", "name": "坡巷旧屋", "scene_id": "wild_path", "entry_spawn_id": "trail_bend"}
     ]
   },
   {

@@ -3,7 +3,7 @@ class_name PlayerView
 
 const TURN_DURATION := 0.18
 const INTERACT_DURATION := 0.34
-const CHARACTER_SCALE := Vector2(0.58, 0.58)
+const CHARACTER_SCALE := Vector2(0.72, 0.72)
 const CHARACTER_BASE_PATH := "res://assets/generated/character_sheets"
 const SHEET_PATHS := {
 	"idle": {
@@ -31,9 +31,9 @@ const FRAME_COUNTS := {
 	"interact": 8,
 }
 const FRAME_RATES := {
-	"idle": 3.8,
-	"walk": 9.0,
-	"interact": 11.5,
+	"idle": 4.6,
+	"walk": 10.6,
+	"interact": 12.8,
 }
 const INTERACTION_ICON_PATHS := {
 	"use": "res://assets/vendor/opengameart/496_RPG_icons/I_Key01.png",
@@ -133,13 +133,21 @@ func _update_sprite() -> void:
 	)
 	var bob := 0.0
 	if movement.length() > 0.08:
-		bob = -abs(sin(anim_time * 9.2)) * 3.6
+		bob = -abs(sin(anim_time * 10.6)) * 4.4
 	elif interact_timer > 0.01:
-		bob = -sin((1.0 - interact_timer / INTERACT_DURATION) * PI) * 5.0
+		bob = -sin((1.0 - interact_timer / INTERACT_DURATION) * PI) * 5.6
 	else:
-		bob = -sin(idle_time * 1.7) * 1.4
+		bob = -sin(idle_time * 2.1) * 1.9
 	sprite.position = Vector2(0, -34 + bob)
 	sprite.rotation = sin((1.0 - turn_timer / TURN_DURATION) * PI) * 0.02 if turn_timer > 0.0 else 0.0
+	var stride := 0.0
+	if movement.length() > 0.08:
+		stride = sin(anim_time * 10.6) * 0.035
+	elif interact_timer > 0.01:
+		stride = sin((1.0 - interact_timer / INTERACT_DURATION) * PI) * 0.025
+	else:
+		stride = sin(idle_time * 1.7) * 0.012
+	sprite.scale = Vector2(CHARACTER_SCALE.x * (1.0 + stride * 0.28), CHARACTER_SCALE.y * (1.0 - abs(stride) * 0.08))
 
 
 func _draw() -> void:

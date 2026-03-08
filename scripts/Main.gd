@@ -9,16 +9,15 @@ const WorldForeground = preload("res://scripts/world/WorldForeground.gd")
 const HouseInteriorView = preload("res://scripts/world/HouseInterior.gd")
 const MiniMapView = preload("res://scripts/world/MiniMap.gd")
 const WorldLayout = preload("res://scripts/world/WorldLayout.gd")
-const MORNING_THEME_PATH := "res://assets/vendor/superpowers/medieval-fantasy/music/theme-4.ogg"
-const TRADE_THEME_PATH := "res://assets/vendor/superpowers/medieval-fantasy/music/theme-2.ogg"
-const INDUSTRY_THEME_PATH := "res://assets/vendor/superpowers/medieval-fantasy/music/theme-5.ogg"
-const NIGHT_THEME_PATH := "res://assets/vendor/superpowers/medieval-fantasy/music/theme-3.ogg"
 
 const WORLD_RECT := WorldLayout.WORLD_RECT
 const WORLD_VISUAL_SCALE := 2.0
-const PLAYER_SPEED := 390.0
-const AI_PULSE_SECONDS := 20.0
-const CAMERA_WORLD_ZOOM := Vector2(2.0, 2.0)
+const PLAYER_SPEED := 300.0
+const AI_PULSE_SECONDS := 60.0
+const VISUAL_DAY_CYCLE_SECONDS := 600.0
+const VISUAL_START_CLOCK_MINUTES := 8 * 60
+const MUSIC_LIBRARY_PATH := "res://yinyue"
+const CAMERA_WORLD_ZOOM := Vector2(1.08, 1.08)
 const CAMERA_LOOKAHEAD_DISTANCE := 76.0
 const CAMERA_LOOKAHEAD_LERP := 7.5
 const DISTRICT_RECTS := WorldLayout.DISTRICT_RECTS
@@ -61,6 +60,17 @@ var last_move_input := Vector2.ZERO
 var camera_focus_offset := Vector2.ZERO
 var backend_autostart_attempted := false
 var backend_process_id := -1
+var music_rng := RandomNumberGenerator.new()
+var music_library: Array[String] = []
+var current_music_path := ""
+var last_snapshot: Dictionary = {}
+var visual_cycle_seconds := 0.0
+var visual_clock_minutes := VISUAL_START_CLOCK_MINUTES
+var visual_day_offset := 0
+var visual_time_synced := false
+var last_visual_clock_label := ""
+var last_visual_period := ""
+var active_dialogue_context: Dictionary = {}
 
 var minimap := MiniMapView.new()
 var overview_label := Label.new()
@@ -83,6 +93,9 @@ var modal_overlay := ColorRect.new()
 var modal_title := Label.new()
 var modal_body := RichTextLabel.new()
 var modal_card := PanelContainer.new()
+var modal_input := LineEdit.new()
+var modal_send_button := Button.new()
+var modal_hint_label := Label.new()
 var compact_hud_label := RichTextLabel.new()
 var market_flash_label := RichTextLabel.new()
 var interaction_badge_label := Label.new()
@@ -129,6 +142,9 @@ func _ready() -> void:
 	world_camera.limit_bottom = int(scaled_world_size.y)
 	music_player.bus = &"Master"
 	music_player.volume_db = -12.0
+	music_player.finished.connect(_on_music_finished)
+	music_rng.randomize()
+	_scan_music_library()
 	_build_interactables()
 	_build_ui()
 	_build_world_labels()
@@ -166,6 +182,7 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
+	_advance_visual_clock(delta)
 	if interior_mode:
 		house_interior.tick(delta)
 		current_interactable = house_interior.get_current_interactable()
@@ -439,6 +456,29 @@ func _build_ui() -> void:
 	modal_body.add_theme_color_override("default_color", Color("2d2014"))
 	modal_box.add_child(modal_body)
 
+	modal_hint_label.text = "直接输入一句话发给对面的角色，由大模型实时生成回应。"
+	modal_hint_label.add_theme_font_size_override("font_size", 16)
+	modal_hint_label.add_theme_color_override("font_color", Color("6a5137"))
+	modal_box.add_child(modal_hint_label)
+
+	var input_row := HBoxContainer.new()
+	input_row.add_theme_constant_override("separation", 10)
+	modal_box.add_child(input_row)
+
+	modal_input.placeholder_text = "输入你想对 TA 说的话…"
+	modal_input.custom_minimum_size = Vector2(650, 42)
+	modal_input.visible = false
+	modal_input.text_submitted.connect(func(_text: String) -> void:
+		_submit_modal_player_talk()
+	)
+	input_row.add_child(modal_input)
+
+	modal_send_button.text = "发送追问"
+	modal_send_button.visible = false
+	_style_button(modal_send_button, Color("2f6f4f"), Color("3f8a60"), Color("244f3a"))
+	modal_send_button.pressed.connect(_submit_modal_player_talk)
+	input_row.add_child(modal_send_button)
+
 	var dismiss := Button.new()
 	dismiss.text = "收起告示"
 	_style_button(dismiss, Color("6c4a2a"), Color("8a6037"), Color("4f3520"))
@@ -548,6 +588,7 @@ func _update_compact_hud(snapshot: Dictionary, district_name: String) -> void:
 	var player_data: Dictionary = snapshot.get("player", {})
 	var quick: Dictionary = snapshot.get("quick_hud", {})
 	var metrics: Dictionary = snapshot.get("demo_metrics", {})
+	var visual_summary := _compose_visual_macro_summary(snapshot.get("macro_summary", {}))
 	var subregion_name := _current_subregion_for_position(player.position if not interior_mode else house_interior.get_player_position())
 	var area_label := district_name
 	if not subregion_name.is_empty():
@@ -564,8 +605,8 @@ func _update_compact_hud(snapshot: Dictionary, district_name: String) -> void:
 	if not ai_focus.is_empty():
 		objective_line += "\nAI 脉冲：%s" % ai_focus
 	compact_hud_label.text = "[b]第 %s 天 %s[/b]  %s 铜币  ·  %s\n%s\n[color=#d4b98b]劳动:%s  情报:%s  股票:%s[/color]" % [
-		snapshot.get("day", 1),
-		snapshot.get("macro_summary", {}).get("clock_label", "08:00"),
+		int(snapshot.get("day", 1)) + visual_day_offset,
+		visual_summary.get("clock_label", "08:00"),
 		player_data.get("cash", 0),
 		area_label,
 		objective_line,
@@ -1550,8 +1591,10 @@ func _on_api_response(tag: String, data: Dictionary) -> void:
 		GameState.apply_snapshot(data["world_state"])
 	if tag == "player_talk" and data.has("dialogue"):
 		var dialogue: Dictionary = data.get("dialogue", {})
+		modal_send_button.disabled = false
 		if not dialogue.is_empty():
 			_play_player_talk_feedback(dialogue)
+			modal_send_button.disabled = false
 			UiRouter.push_modal(str(dialogue.get("title", "街头交谈")), str(dialogue.get("body", "")), str(dialogue.get("tone", "conversation")))
 	elif tag == "probe_ai":
 		UiRouter.push_modal("AI 连接测试", "[b]状态[/b]\n%s" % str(data.get("message", "")), "probe")
@@ -1610,23 +1653,147 @@ func _play_player_talk_feedback(dialogue: Dictionary) -> void:
 func _on_api_error(tag: String, status_code: int, message: String) -> void:
 	if not pending_player_reaction.is_empty() and str(pending_player_reaction.get("tag", "")) == tag:
 		pending_player_reaction = {}
+	if tag == "player_talk":
+		modal_send_button.disabled = false
 	status_label.text = "请求 %s 失败 (%s)" % [tag, status_code]
 	GameState.add_toast("服务离线或未启动。先运行本地 Python 服务。")
 	if not message.is_empty():
 		news_label.text = "[color=#6f1d1b]%s[/color]" % message
 
 
-func _on_snapshot_updated(snapshot: Dictionary) -> void:
+func _scan_music_library() -> void:
+	music_library.clear()
+	var folder_path := ProjectSettings.globalize_path(MUSIC_LIBRARY_PATH)
+	var dir := DirAccess.open(folder_path)
+	if dir == null:
+		return
+	dir.list_dir_begin()
+	while true:
+		var file_name := dir.get_next()
+		if file_name.is_empty():
+			break
+		if dir.current_is_dir():
+			continue
+		if file_name.get_extension().to_lower() != "mp3":
+			continue
+		music_library.append(folder_path.path_join(file_name))
+	dir.list_dir_end()
+	music_library.sort()
+
+
+func _advance_visual_clock(delta: float) -> void:
+	if not visual_time_synced:
+		return
+	var previous_minutes := visual_clock_minutes
+	visual_cycle_seconds = fposmod(visual_cycle_seconds + delta, VISUAL_DAY_CYCLE_SECONDS)
+	var cycle_ratio := visual_cycle_seconds / VISUAL_DAY_CYCLE_SECONDS
+	visual_clock_minutes = int(floor(cycle_ratio * 1440.0))
+	if visual_clock_minutes < previous_minutes:
+		visual_day_offset += 1
+	var visual_summary := _compose_visual_macro_summary(GameState.snapshot.get("macro_summary", {}))
+	var clock_label := str(visual_summary.get("clock_label", "08:00"))
+	var period := str(visual_summary.get("time_period", "day"))
+	if clock_label != last_visual_clock_label or period != last_visual_period:
+		last_visual_clock_label = clock_label
+		last_visual_period = period
+		_refresh_visual_macro_state()
+
+
+func _sync_visual_clock_from_snapshot(snapshot: Dictionary) -> void:
+	var base_minutes := posmod(int(snapshot.get("clock_minutes", VISUAL_START_CLOCK_MINUTES)), 1440)
+	visual_clock_minutes = base_minutes
+	visual_cycle_seconds = float(base_minutes) / 1440.0 * VISUAL_DAY_CYCLE_SECONDS
+	visual_day_offset = 0
+	visual_time_synced = true
+	last_visual_clock_label = ""
+	last_visual_period = ""
+
+
+func _compose_visual_macro_summary(base_summary: Dictionary) -> Dictionary:
+	var summary := base_summary.duplicate(true)
+	var minutes := visual_clock_minutes
+	var clock_label := "%02d:%02d" % [int(minutes / 60), minutes % 60]
+	var period := "day"
+	var level := 1.0
+	if minutes < 300:
+		period = "night"
+		level = 0.24 + float(minutes) / 300.0 * 0.08
+	elif minutes < 420:
+		period = "dawn"
+		level = lerpf(0.34, 0.78, float(minutes - 300) / 120.0)
+	elif minutes < 1020:
+		period = "day"
+		level = 0.84 + sin(float(minutes - 420) / 600.0 * PI) * 0.14
+	elif minutes < 1140:
+		period = "evening"
+		level = lerpf(0.76, 0.36, float(minutes - 1020) / 120.0)
+	else:
+		period = "night"
+		level = lerpf(0.3, 0.22, float(minutes - 1140) / 300.0)
+	summary["clock_label"] = clock_label
+	summary["time_period"] = period
+	summary["light_level"] = clampf(level, 0.2, 1.0)
+	return summary
+
+
+func _refresh_visual_macro_state() -> void:
+	if last_snapshot.is_empty():
+		return
+	var snapshot := last_snapshot
 	var player_data: Dictionary = snapshot.get("player", {})
 	var district_name := _current_district_for_position(player.position if not interior_mode else house_interior.get_player_position())
 	var subregion_name := _current_subregion_for_position(player.position if not interior_mode else house_interior.get_player_position())
 	var area_label := district_name
 	if not subregion_name.is_empty():
 		area_label = "%s · %s" % [district_name, subregion_name]
+	var visual_summary := _compose_visual_macro_summary(snapshot.get("macro_summary", {}))
+	overview_label.text = "第 %s 天  时刻: %s  现金: %s 铜币\n信用: %s  声望: %s  当前区域: %s\n阶层: %s  货物库存: %s  持股种类: %s" % [
+		int(snapshot.get("day", 1)) + visual_day_offset,
+		visual_summary.get("clock_label", "08:00"),
+		player_data.get("cash", 0),
+		player_data.get("credit", 0),
+		player_data.get("reputation", 0),
+		area_label,
+		player_data.get("class_position", "底层"),
+		player_data.get("goods_inventory", {}),
+		player_data.get("stock_holdings", {}).keys().size()
+	]
+	status_label.text = "天色: %s  ·  区域: %s  ·  上次 AI 脉冲: %s  ·  新闻数: %s  ·  听觉场: %s" % [
+		visual_summary.get("time_period", "day"),
+		area_label,
+		snapshot.get("last_pulse_at", "未触发"),
+		snapshot.get("global_news", []).size(),
+		"开" if show_hearing_debug else "关"
+	]
+	_update_compact_hud(snapshot, district_name)
+	_update_macro(visual_summary)
+	_apply_time_of_day(visual_summary)
+	_update_music(visual_summary, district_name)
+	house_interior.set_time_of_day(
+		str(visual_summary.get("time_period", "day")),
+		float(visual_summary.get("light_level", 1.0))
+	)
+	house_interior.set_clock_context(
+		visual_clock_minutes,
+		str(visual_summary.get("clock_label", "08:00"))
+	)
+
+
+func _on_snapshot_updated(snapshot: Dictionary) -> void:
+	last_snapshot = snapshot.duplicate(true)
+	if not visual_time_synced:
+		_sync_visual_clock_from_snapshot(snapshot)
+	var player_data: Dictionary = snapshot.get("player", {})
+	var district_name := _current_district_for_position(player.position if not interior_mode else house_interior.get_player_position())
+	var subregion_name := _current_subregion_for_position(player.position if not interior_mode else house_interior.get_player_position())
+	var area_label := district_name
+	if not subregion_name.is_empty():
+		area_label = "%s · %s" % [district_name, subregion_name]
+	var visual_summary := _compose_visual_macro_summary(snapshot.get("macro_summary", {}))
 	var news_items: Array = snapshot.get("global_news", [])
 	overview_label.text = "第 %s 天  时刻: %s  现金: %s 铜币\n信用: %s  声望: %s  当前区域: %s\n阶层: %s  货物库存: %s  持股种类: %s" % [
-		snapshot.get("day", 1),
-		snapshot.get("macro_summary", {}).get("clock_label", "08:00"),
+		int(snapshot.get("day", 1)) + visual_day_offset,
+		visual_summary.get("clock_label", "08:00"),
 		player_data.get("cash", 0),
 		player_data.get("credit", 0),
 		player_data.get("reputation", 0),
@@ -1636,7 +1803,7 @@ func _on_snapshot_updated(snapshot: Dictionary) -> void:
 		player_data.get("stock_holdings", {}).keys().size()
 	]
 	status_label.text = "天色: %s  ·  区域: %s  ·  上次 AI 脉冲: %s  ·  新闻数: %s  ·  听觉圈: %s" % [
-		snapshot.get("macro_summary", {}).get("time_period", "day"),
+		visual_summary.get("time_period", "day"),
 		area_label,
 		snapshot.get("last_pulse_at", "未触发"),
 		news_items.size(),
@@ -1647,22 +1814,22 @@ func _on_snapshot_updated(snapshot: Dictionary) -> void:
 	_update_stocks(snapshot.get("stocks", []), player_data.get("stock_holdings", {}))
 	_update_news(news_items)
 	_update_families(snapshot.get("families", []))
-	_update_macro(snapshot.get("macro_summary", {}))
-	_apply_time_of_day(snapshot.get("macro_summary", {}))
+	_update_macro(visual_summary)
+	_apply_time_of_day(visual_summary)
 	_update_highlights(snapshot.get("npc_highlights", []))
 	_update_tasks(snapshot.get("task_summary", {}), snapshot.get("task_board", []))
 	_update_district_labels(snapshot.get("districts", []))
 	backdrop.set_district_states(snapshot.get("districts", []))
 	foreground.set_house_states(snapshot.get("house_states", {}))
 	ambient.set_house_states(snapshot.get("house_states", {}))
-	_update_music(snapshot.get("macro_summary", {}), district_name)
+	_update_music(visual_summary, district_name)
 	house_interior.set_time_of_day(
-		str(snapshot.get("macro_summary", {}).get("time_period", "day")),
-		float(snapshot.get("macro_summary", {}).get("light_level", 1.0))
+		str(visual_summary.get("time_period", "day")),
+		float(visual_summary.get("light_level", 1.0))
 	)
 	house_interior.set_clock_context(
-		int(snapshot.get("clock_minutes", 8 * 60)),
-		str(snapshot.get("macro_summary", {}).get("clock_label", "08:00"))
+		visual_clock_minutes,
+		str(visual_summary.get("clock_label", "08:00"))
 	)
 	house_interior.update_house_state(_house_state_for_id(str(current_house_data.get("id", ""))))
 	_refresh_npcs()
@@ -1677,25 +1844,47 @@ func _update_music(summary: Dictionary, district_name: String) -> void:
 			music_player.stop()
 			music_player.stream = null
 		return
-	var desired: AudioStream
+	if music_player.stream == null or not music_player.playing:
+		_play_next_random_track()
 	var period := str(summary.get("time_period", "day"))
+	var target_volume := -10.8
 	if period == "night":
-		desired = load(NIGHT_THEME_PATH) as AudioStream
-	elif district_name == "交易所":
-		desired = load(TRADE_THEME_PATH) as AudioStream
-	elif district_name == "工厂区":
-		desired = load(INDUSTRY_THEME_PATH) as AudioStream
-	else:
-		desired = load(MORNING_THEME_PATH) as AudioStream
-	if music_player.stream != desired:
-		music_player.stream = desired
-		music_player.play()
-	var target_volume := -11.0
-	if period == "night":
-		target_volume = -16.0
-	elif district_name == "港口":
-		target_volume = -13.0
+		target_volume = -15.5
+	elif period == "evening":
+		target_volume = -12.8
+	elif period == "dawn":
+		target_volume = -12.1
 	music_player.volume_db = lerpf(music_player.volume_db, target_volume, 0.18)
+
+
+func _on_music_finished() -> void:
+	_play_next_random_track()
+
+
+func _play_next_random_track() -> void:
+	if music_library.is_empty():
+		return
+	var choices := music_library.duplicate()
+	if choices.size() > 1 and not current_music_path.is_empty():
+		choices.erase(current_music_path)
+	var next_path := str(choices[music_rng.randi_range(0, choices.size() - 1)])
+	var next_stream := _load_music_stream(next_path)
+	if next_stream == null:
+		return
+	current_music_path = next_path
+	music_player.stream = next_stream
+	music_player.play()
+
+
+func _load_music_stream(path: String) -> AudioStream:
+	if path.is_empty():
+		return null
+	var bytes := FileAccess.get_file_as_bytes(path)
+	if bytes.is_empty():
+		return null
+	var stream := AudioStreamMP3.new()
+	stream.data = bytes
+	return stream
 
 
 func _refresh_npcs() -> void:
@@ -2675,11 +2864,31 @@ func _on_modal_requested(payload: Dictionary) -> void:
 	var tone := str(payload.get("tone", "news"))
 	modal_title.text = str(payload.get("title", "告示"))
 	modal_body.text = str(payload.get("body", ""))
+	active_dialogue_context = {}
+	modal_input.visible = false
+	modal_send_button.visible = false
+	modal_send_button.disabled = false
+	modal_hint_label.visible = false
 	var tone_color := Color("3a2819")
 	if tone == "event":
 		tone_color = Color("6b2f23")
 	elif tone == "conversation":
 		tone_color = Color("315748")
+		var dialogue_context: Dictionary = payload.get("dialogue", {})
+		if dialogue_context.is_empty():
+			dialogue_context = GameState.snapshot.get("last_dialogue", {})
+		if not dialogue_context.is_empty():
+			active_dialogue_context = {
+				"npc_id": str(dialogue_context.get("npc_id", "")),
+				"district": _current_district_for_position(player.position if not interior_mode else house_interior.get_player_position()),
+				"topic_id": str(dialogue_context.get("topic_id", "")),
+				"approach": str(dialogue_context.get("approach", "cautious")),
+				"intent": "继续追问"
+			}
+			modal_input.visible = true
+			modal_send_button.visible = true
+			modal_hint_label.visible = true
+			modal_input.grab_focus()
 	elif tone == "probe":
 		tone_color = Color("5b4630")
 	modal_title.add_theme_color_override("font_color", tone_color)
@@ -2706,6 +2915,33 @@ func _close_modal() -> void:
 	modal_tween.finished.connect(func() -> void:
 		modal_overlay.visible = false
 	)
+	active_dialogue_context = {}
+	modal_input.text = ""
+	modal_input.visible = false
+	modal_send_button.visible = false
+	modal_hint_label.visible = false
+
+
+func _submit_modal_player_talk() -> void:
+	if active_dialogue_context.is_empty():
+		return
+	var player_input := modal_input.text.strip_edges()
+	if player_input.is_empty():
+		return
+	modal_send_button.disabled = true
+	var live_scene := _build_scene_observation_payload(true)
+	ApiClient.post_json("/npc/player_talk", {
+		"npc_id": str(active_dialogue_context.get("npc_id", "")),
+		"district": str(active_dialogue_context.get("district", _current_district_for_position(player.position))),
+		"topic_id": str(active_dialogue_context.get("topic_id", "")),
+		"approach": str(active_dialogue_context.get("approach", "cautious")),
+		"intent": str(active_dialogue_context.get("intent", "继续追问")),
+		"player_input": player_input,
+		"player_position": live_scene.get("player_position", {}),
+		"screenshot_b64": str(live_scene.get("screenshot_b64", "")),
+		"scene_context": live_scene.get("scene_context", {})
+	}, "player_talk")
+	modal_input.text = ""
 
 
 func _on_guide_updated(steps: Array, current_index: int) -> void:

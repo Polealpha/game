@@ -56,6 +56,7 @@ class PlayerTalkRequest(BaseModel):
     topic_id: str = ""
     approach: str = "cautious"
     intent: str = ""
+    player_input: str = ""
     player_position: dict[str, float] = Field(default_factory=dict)
     screenshot_b64: str = ""
     scene_context: dict[str, Any] = Field(default_factory=dict)
@@ -177,6 +178,7 @@ def npc_player_talk(payload: PlayerTalkRequest) -> dict[str, Any]:
         payload.topic_id,
         payload.approach,
         payload.intent,
+        payload.player_input,
         scene_observation={
             "current_district": payload.district,
             "player_position": payload.player_position,

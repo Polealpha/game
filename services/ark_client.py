@@ -39,13 +39,14 @@ class ArkClient:
             ),
             task_prompt=(
                 "Generate one dialogue turn based on the two characters, the topic, the speaking approach, "
-                "and the current scene. Return JSON only."
+                "and the current scene. If player_input is present, use it as the exact player line and make the NPC answer it directly. Return JSON only."
             ),
             state_prompt={
                 "speaker": payload.get("speaker", {}),
                 "listener": payload.get("listener", {}),
                 "district": payload.get("district", ""),
                 "trigger": payload.get("trigger", ""),
+                "player_input": payload.get("player_input", ""),
                 "topic": payload.get("topic", {}),
                 "approach": payload.get("approach", "cautious"),
                 "intent": payload.get("intent", ""),

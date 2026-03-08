@@ -21,8 +21,8 @@ HOUSE_DEFS: dict[str, dict[str, str]] = {
         "district": "贫民街",
         "scene_id": "forest_farm",
         "entry_spawn_id": "farm_gate",
-        "anchor_x": "268.0",
-        "anchor_y": "262.0",
+        "anchor_x": "390.0",
+        "anchor_y": "1010.0",
     },
     "港口": {
         "id": "dock_house",
@@ -31,8 +31,8 @@ HOUSE_DEFS: dict[str, dict[str, str]] = {
         "district": "港口",
         "scene_id": "stonebridge_quarter",
         "entry_spawn_id": "bridge_square",
-        "anchor_x": "1774.0",
-        "anchor_y": "500.0",
+        "anchor_x": "1180.0",
+        "anchor_y": "760.0",
     },
     "工厂区": {
         "id": "factory_house",
@@ -41,8 +41,8 @@ HOUSE_DEFS: dict[str, dict[str, str]] = {
         "district": "工厂区",
         "scene_id": "watermill_yard",
         "entry_spawn_id": "mill_gate",
-        "anchor_x": "254.0",
-        "anchor_y": "988.0",
+        "anchor_x": "2340.0",
+        "anchor_y": "1040.0",
     },
     "交易所": {
         "id": "exchange_house",
@@ -51,8 +51,8 @@ HOUSE_DEFS: dict[str, dict[str, str]] = {
         "district": "交易所",
         "scene_id": "church_graveyard",
         "entry_spawn_id": "grave_path",
-        "anchor_x": "2042.0",
-        "anchor_y": "1180.0",
+        "anchor_x": "2740.0",
+        "anchor_y": "470.0",
     },
 }
 
@@ -339,6 +339,7 @@ class WorldEngine:
         topic_id: str = "",
         approach: str = "cautious",
         intent: str = "",
+        player_input: str = "",
         scene_observation: dict[str, Any] | None = None,
     ) -> ActionResult:
         with self.lock:
@@ -372,6 +373,7 @@ class WorldEngine:
                     "topic": topic,
                     "approach": approach,
                     "intent": intent,
+                    "player_input": player_input,
                     "scene_observation": live_observation,
                     "truth_profile": truth_profile,
                     "relationship_memory": {
@@ -380,6 +382,7 @@ class WorldEngine:
                     },
                 }
             )
+            player_input = player_input.strip()
             lines = [str(line) for line in dialogue.get("lines", [])[:2]] if dialogue else []
             stance = str(dialogue.get("stance", truth_profile.get("bias", npc.get("stance", "观望")))) if dialogue else str(
                 truth_profile.get("bias", npc.get("stance", "观望"))
@@ -387,6 +390,14 @@ class WorldEngine:
             revealed_topic_ids = [str(value) for value in dialogue.get("revealed_topic_ids", []) if str(value).strip()] if dialogue else []
             if len(lines) < 2:
                 lines = self._rule_player_talk_lines(npc, topic, approach, npc_openness, intent)
+            if player_input:
+                if not lines:
+                    lines = [player_input, ""]
+                else:
+                    lines[0] = player_input
+            if len(lines) < 2:
+                fallback_lines = self._rule_player_talk_lines(npc, topic, approach, npc_openness, intent)
+                lines = [player_input, fallback_lines[1]] if player_input else fallback_lines
 
             npc["speech_lines"] = [lines[1], *npc["speech_lines"][:2]]
             npc["stance"] = stance
@@ -444,6 +455,7 @@ class WorldEngine:
             self.state["last_dialogue"]["topic_id"] = str(topic.get("id", ""))
             self.state["last_dialogue"]["approach"] = approach
             self.state["last_dialogue"]["intent"] = intent
+            self.state["last_dialogue"]["player_input"] = player_input
             self.state["last_dialogue"]["world_effects"] = world_effects
             self.state["last_dialogue"]["npc_id"] = npc_id
             self.state["last_dialogue"]["heard_by"] = heard_by
@@ -2935,10 +2947,10 @@ class WorldEngine:
             "exchange_house": [(-24.0, -10.0), (18.0, -6.0), (-38.0, 24.0), (34.0, 26.0), (2.0, 42.0)],
         }
         anchors = {
-            "slum_house": (268.0, 262.0),
-            "dock_house": (1774.0, 500.0),
-            "factory_house": (254.0, 988.0),
-            "exchange_house": (2042.0, 1180.0),
+            "slum_house": (390.0, 1010.0),
+            "dock_house": (1180.0, 760.0),
+            "factory_house": (2340.0, 1040.0),
+            "exchange_house": (2740.0, 470.0),
         }
         home_id = str(npc.get("home_id", "slum_house"))
         base_x, base_y = anchors.get(home_id, anchors["slum_house"])

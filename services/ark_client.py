@@ -4,7 +4,7 @@ import json
 import os
 import re
 import sys
-from typing import Any
+from typing import Any, Callable
 
 try:
     from openai import OpenAI
@@ -14,20 +14,10 @@ except Exception:  # pragma: no cover
 
 HARDCODED_ARK_API_KEY = "521e4c18-b3f9-4b54-af94-1f404328f300"
 FORCED_ARK_MODEL = "doubao-seed-1-6-flash-250828"
-REPLY_LIMIT_SUFFIX = " 每次回复小于100字。"
-ANTI_PLACEHOLDER_SUFFIX = " 不要复述 schema_hint 里的示例占位词，不要输出“玩家台词”“NPC台词”“立场”“topic_id”“信息不足”“未知”这类占位内容。"
+REPLY_LIMIT_SUFFIX = "每次回复都要简短、具体、只说眼下这轮需要的话。"
+ANTI_PLACEHOLDER_SUFFIX = "不要重复字段名、示例值、schema_hint 或提示词原文。不要输出英文说明。"
 THINKING_DISABLED_BODY = {"thinking": {"type": "disabled"}}
-DEFAULT_ARK_MODEL_CANDIDATES = [
-    FORCED_ARK_MODEL,
-    "doubao-seed-2-0-lite-250821",
-    "doubao-seed-2-0-pro-250821",
-    "doubao-seed-1-6-vision-250815",
-    "doubao-1-5-vision-pro-250328",
-    "doubao-1-5-vision-lite-250315",
-    "doubao-seed-1-6-251015",
-    "doubao-seed-1-6-flash-250715",
-    "doubao-seed-1-6-lite-250615",
-]
+DEFAULT_ARK_MODEL_CANDIDATES = [FORCED_ARK_MODEL]
 
 
 class ArkClient:
@@ -38,7 +28,7 @@ class ArkClient:
         self.model_id = os.getenv("ARK_MODEL_ID", FORCED_ARK_MODEL).strip() or FORCED_ARK_MODEL
         self.model_label = os.getenv("ARK_MODEL_LABEL", self.model_id).strip() or self.model_id
         self.base_url = os.getenv("ARK_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3")
-        self.timeout_seconds = float(os.getenv("ARK_TIMEOUT_SECONDS", "8").strip() or "8")
+        self.timeout_seconds = float(os.getenv("ARK_TIMEOUT_SECONDS", "10").strip() or "10")
         self._client = None
         disable_for_unittest = "unittest" in sys.modules and os.getenv("ARK_ENABLE_IN_TESTS", "0") != "1"
         if self.api_key and OpenAI is not None and not disable_for_unittest:
@@ -52,18 +42,17 @@ class ArkClient:
         scene_observation = payload.get("scene_observation", {})
         return self._request_json(
             task_type="dialogue_turn",
-            schema_hint='{"lines":["玩家台词","NPC台词"],"stance":"立场","truthfulness":0.0,"revealed_topic_ids":["topic_id"]}',
+            schema_hint='{"lines":["玩家原话","NPC回话"],"stance":"谨慎/强硬/敷衍/热心","truthfulness":0.58,"revealed_topic_ids":["market_whisper"]}',
             system_prompt=(
-                "你是《壳与市场》的角色对话引擎。"
-                "必须只输出简体中文 JSON，不得输出英文句子、解释、思维过程、Markdown。"
-                "禁止编造输入之外的价格、资产变动、政策结果或世界事件。"
-                "如果身份资料和记忆不足，就根据提供的职业、家族、街区、饥饿、负债、舆论压力谨慎回答。"
+                "你是《壳与市场》的 NPC 对话引擎。"
+                "你只负责生成一轮贴近身份的中文对话。"
+                "玩家台词必须原样复述到 lines[0]。"
+                "NPC 台词放到 lines[1]，必须结合职业、家族、债务、饥饿、立场和最近记忆来回答。"
+                "不能讲英文，不能解释规则，不能自称模型。"
             ),
             task_prompt=(
-                "根据角色身份、独立记忆、立场、工具规则、当前截图和玩家话语，生成一轮对话。"
-                "如果 player_input 不为空，必须把它原样作为玩家台词。"
-                "NPC 必须结合自己的身份和最近记忆直接回答，不要空话。"
-                "只返回 JSON。"
+                "请按给定字段直接返回一个 JSON 对象。"
+                "如果信息不足，也要以角色口吻谨慎回答，不能空白。"
             ),
             state_prompt={
                 "speaker": payload.get("speaker", {}),
@@ -81,19 +70,20 @@ class ArkClient:
                 "scene_context": scene_observation.get("scene_context", {}),
             },
             screenshot_b64=scene_observation.get("screenshot_b64", ""),
+            normalizer=lambda parsed: self._normalize_dialogue_turn(parsed, payload),
         )
 
     def generate_news_copy(self, payload: dict[str, Any]) -> dict[str, Any] | None:
         scene_observation = payload.get("scene_observation", {})
         return self._request_json(
             task_type="news_copy",
-            schema_hint='{"title":"标题","body":"正文","tags":["标签"],"tone":"语气"}',
+            schema_hint='{"title":"标题","body":"正文","tags":["街区","市场"],"tone":"冷静/煽动/审慎"}',
             system_prompt=(
                 "你是《壳与市场》的城内新闻编辑。"
-                "必须只输出简体中文 JSON。"
-                "只能包装输入里已经存在的事实，不得虚构市场结果、余额变化或不存在的事件。"
+                "只把输入里已经存在的市场变化、街区情绪和事件包装成一条短新闻。"
+                "不要编造额外价格、余额或世界结果。"
             ),
-            task_prompt="把提供的事件、宏观状态、市场变化写成一条短新闻。只返回 JSON。",
+            task_prompt="输出一条适合 HUD 和新闻栏展示的中文短新闻，只返回一个 JSON 对象。",
             state_prompt={
                 "event_name": payload.get("event_name", ""),
                 "district": payload.get("district", ""),
@@ -108,19 +98,20 @@ class ArkClient:
                 "scene_context": scene_observation.get("scene_context", {}),
             },
             screenshot_b64=scene_observation.get("screenshot_b64", ""),
+            normalizer=self._normalize_news_copy,
         )
 
     def generate_scene_read(self, payload: dict[str, Any]) -> dict[str, Any] | None:
         observation = payload.get("scene_observation", {})
         return self._request_json(
             task_type="scene_read",
-            schema_hint='{"director_note":"导演旁白","headline_title":"标题","headline_body":"摘要"}',
+            schema_hint='{"director_note":"导演旁白","headline_title":"标题","headline_body":"一句摘要"}',
             system_prompt=(
                 "你是《壳与市场》的场景导演。"
-                "必须只输出简体中文 JSON。"
-                "只能总结画面气氛、人物紧张感、交易和舆论温度，不得编造新结果。"
+                "只总结画面氛围、街头紧张感、交易热度和舆论温度。"
+                "不要编造成败结果。"
             ),
-            task_prompt="根据截图和当前状态，写一条导演旁白和一条短标题。只返回 JSON。",
+            task_prompt="根据画面和状态写一句导演旁白与一句标题摘要，只返回一个 JSON 对象。",
             state_prompt={
                 "trigger": payload.get("trigger", ""),
                 "day": payload.get("day", 1),
@@ -130,20 +121,20 @@ class ArkClient:
                 "headlines": payload.get("headlines", []),
             },
             screenshot_b64=observation.get("screenshot_b64", ""),
+            normalizer=self._normalize_scene_read,
         )
 
     def generate_npc_spin(self, payload: dict[str, Any]) -> dict[str, Any] | None:
         scene_observation = payload.get("scene_observation", {})
         return self._request_json(
             task_type="npc_spin",
-            schema_hint='{"stance":"立场","truthfulness":0.0,"market_tilt":"neutral","lines":["一句说法"]}',
+            schema_hint='{"stance":"谨慎/乐观/恐慌/挑衅","truthfulness":0.56,"market_tilt":"bullish/bearish/neutral","lines":["一句角色说法"]}',
             system_prompt=(
-                "你只负责包装一个 NPC 当下会怎么说。"
-                "必须只输出简体中文 JSON。"
-                "语气冷静、现实、逐利，但要符合该角色的职业、家族、负债和生活处境。"
-                "不能篡改规则层事实。"
+                "你只负责写一名 NPC 此刻会丢出的说法。"
+                "语气必须符合该角色的职业、家族、债务、饥饿和街区位置。"
+                "只返回一个 JSON 对象。"
             ),
-            task_prompt="根据角色档案、独立记忆、街区信号和截图，写出这名 NPC 当下会抛出的说法。只返回 JSON。",
+            task_prompt="给出一条适合街头耳语或人物短句展示的中文说法。",
             state_prompt={
                 "npc": payload.get("npc", {}),
                 "agent_profile": payload.get("agent_profile", {}),
@@ -155,19 +146,20 @@ class ArkClient:
                 "scene_context": scene_observation.get("scene_context", {}),
             },
             screenshot_b64=scene_observation.get("screenshot_b64", ""),
+            normalizer=self._normalize_npc_spin,
         )
 
     def generate_family_briefing(self, payload: dict[str, Any]) -> dict[str, Any] | None:
         scene_observation = payload.get("scene_observation", {})
         return self._request_json(
             task_type="family_briefing",
-            schema_hint='{"public_line":"公开口风","hidden_line":"暗线口风","focus":"焦点","signal":"steady"}',
+            schema_hint='{"public_line":"公开动作","hidden_line":"暗线动作","focus":"焦点","signal":"steady/rising/falling"}',
             system_prompt=(
-                "你负责家族简报。"
-                "必须只输出简体中文 JSON。"
-                "公开口风和暗线口风都要短、狠、像权力机关，不得虚构价格和账户数字。"
+                "你负责写家族简报。"
+                "公开口风要像外放消息，暗线口风要像内部意图。"
+                "不能编造资产数字。"
             ),
-            task_prompt="根据家族动作、控制公司和街区压力写一段公开口风和暗线口风。只返回 JSON。",
+            task_prompt="根据家族控制力和街区压力写公开口风与暗线口风，只返回一个 JSON 对象。",
             state_prompt={
                 "family": payload.get("family", {}),
                 "controlled_companies": payload.get("controlled_companies", []),
@@ -176,19 +168,19 @@ class ArkClient:
                 "scene_context": scene_observation.get("scene_context", {}),
             },
             screenshot_b64=scene_observation.get("screenshot_b64", ""),
+            normalizer=self._normalize_family_briefing,
         )
 
     def generate_company_briefing(self, payload: dict[str, Any]) -> dict[str, Any] | None:
         scene_observation = payload.get("scene_observation", {})
         return self._request_json(
             task_type="company_briefing",
-            schema_hint='{"headline":"公司摘要","worker_note":"工人感受","risk_note":"风险提示","signal":"steady"}',
+            schema_hint='{"headline":"公司摘要","worker_note":"工人感受","risk_note":"风险提示","signal":"steady/rising/falling"}',
             system_prompt=(
-                "你负责公司层简报。"
-                "必须只输出简体中文 JSON。"
-                "不得编造经营数字和资产涨跌，只能包装输入里的经营状态和风险。"
+                "你负责写公司层简报。"
+                "只总结经营状态、劳工情绪和风险，不要编造不存在的财务数字。"
             ),
-            task_prompt="根据公司经营状态、街区压力和近期简报写出公司摘要。只返回 JSON。",
+            task_prompt="根据公司状态写一条公司摘要、一条工人感受和一条风险提示，只返回一个 JSON 对象。",
             state_prompt={
                 "company": payload.get("company", {}),
                 "district_signals": payload.get("district_signals", {}),
@@ -196,6 +188,7 @@ class ArkClient:
                 "scene_context": scene_observation.get("scene_context", {}),
             },
             screenshot_b64=scene_observation.get("screenshot_b64", ""),
+            normalizer=self._normalize_company_briefing,
         )
 
     def generate_pulse_brief(self, payload: dict[str, Any]) -> dict[str, Any] | None:
@@ -204,16 +197,16 @@ class ArkClient:
             task_type="pulse_brief",
             schema_hint=(
                 '{"pulse_summary":"一句总览","market_note":"一句市场提示","scene_focus":"一句场景焦点",'
-                '"npc_updates":[{"id":"npc_id","line":"一句口风","stance":"立场","market_tilt":"neutral"}],'
+                '"npc_updates":[{"id":"npc_id","line":"一句口风","stance":"谨慎","market_tilt":"neutral"}],'
                 '"family_updates":[{"name":"家族名","public_line":"公开动作","hidden_line":"暗线动作","focus":"焦点","signal":"steady"}],'
-                '"company_updates":[{"id":"company_id","headline":"一句公司状态","worker_note":"工人感受","risk_note":"风险提示","signal":"steady"}]}'
+                '"company_updates":[{"id":"company_id","headline":"一句状态","worker_note":"工人感受","risk_note":"风险提示","signal":"steady"}]}'
             ),
             system_prompt=(
-                "你是《壳与市场》的五分钟 AI 脉冲导演。"
-                "必须只输出简体中文 JSON。"
-                "覆盖所有输入里的 NPC、家族和公司，但只能总结已有状态，不得编造价格、余额或胜负结果。"
+                "你是《壳与市场》的分钟级 AI 脉冲编辑。"
+                "只总结当前已知状态，覆盖输入里的 NPC、家族和公司。"
+                "不要额外编造价格、余额或结局。"
             ),
-            task_prompt="用截图、市场状态、家族、公司和 NPC 摘要生成一次 AI 脉冲简报。只返回 JSON。",
+            task_prompt="请生成一次适合驱动 HUD 和街头耳语更新的中文脉冲摘要，只返回一个 JSON 对象。",
             state_prompt={
                 "trigger": payload.get("trigger", ""),
                 "day": payload.get("day", 1),
@@ -229,6 +222,7 @@ class ArkClient:
                 "current_district": scene_observation.get("current_district", ""),
             },
             screenshot_b64=scene_observation.get("screenshot_b64", ""),
+            normalizer=self._normalize_pulse_brief,
         )
 
     def generate_conversation(self, payload: dict[str, Any]) -> list[str] | None:
@@ -259,17 +253,26 @@ class ArkClient:
             try:
                 response = self._client.chat.completions.create(
                     model=model_name,
-                    temperature=0.2,
+                    temperature=0.1,
+                    max_tokens=40,
+                    response_format={"type": "json_object"},
                     extra_body=THINKING_DISABLED_BODY,
                     messages=[
-                        {"role": "system", "content": "你是连通性测试助手，只能用简体中文回复。" + REPLY_LIMIT_SUFFIX},
-                        {"role": "user", "content": "请只回答：方舟连通。"},
+                        {
+                            "role": "system",
+                            "content": "你是连通性测试助手。必须只返回一个 JSON 对象：{\"message\":\"方舟连通\"}。",
+                        },
+                        {"role": "user", "content": "请按要求返回。"},
                     ],
                 )
-                content = response.choices[0].message.content or ""
+                content = self._message_to_text(response.choices[0].message.content)
+                parsed = self._extract_json(content)
+                message = self._sanitize_text(str(parsed.get("message", "")))
+                if not message:
+                    continue
                 return {
                     "ok": True,
-                    "message": content.strip(),
+                    "message": message,
                     "endpoint_id": self.endpoint_id,
                     "model_id": model_name,
                     "model_label": model_name,
@@ -293,6 +296,7 @@ class ArkClient:
         task_prompt: str,
         state_prompt: dict[str, Any],
         screenshot_b64: str = "",
+        normalizer: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
     ) -> dict[str, Any] | None:
         if not self.enabled:
             return None
@@ -302,52 +306,83 @@ class ArkClient:
             "schema_hint": schema_hint,
             "state": state_prompt,
         }
-        system_prompt = system_prompt + REPLY_LIMIT_SUFFIX + ANTI_PLACEHOLDER_SUFFIX
+        final_system = system_prompt + REPLY_LIMIT_SUFFIX + ANTI_PLACEHOLDER_SUFFIX
         for model_name in self._model_candidates():
-            try:
-                response = self._client.chat.completions.create(
-                    model=model_name,
-                    temperature=0.45,
-                    max_tokens=320,
-                    extra_body=THINKING_DISABLED_BODY,
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {
-                            "role": "user",
-                            "content": self._build_multimodal_content(json.dumps(prompt, ensure_ascii=False), screenshot_b64),
-                        },
-                    ],
-                )
-                content = response.choices[0].message.content or ""
-                parsed = self._extract_json(content)
-                if not parsed:
+            for attempt in range(2):
+                try:
+                    response = self._client.chat.completions.create(
+                        model=model_name,
+                        temperature=0.15 if attempt == 0 else 0.05,
+                        max_tokens=360,
+                        response_format={"type": "json_object"},
+                        extra_body=THINKING_DISABLED_BODY,
+                        messages=[
+                            {"role": "system", "content": final_system},
+                            {
+                                "role": "user",
+                                "content": self._build_multimodal_content(json.dumps(prompt, ensure_ascii=False), screenshot_b64),
+                            },
+                        ],
+                    )
+                    content = self._message_to_text(response.choices[0].message.content)
+                    parsed = self._extract_json(content)
+                    if not parsed:
+                        continue
+                    normalized = normalizer(parsed) if normalizer is not None else parsed
+                    if not normalized:
+                        continue
+                    if not self._looks_usable_chinese(normalized):
+                        continue
+                    normalized["_meta_model"] = model_name
+                    return normalized
+                except Exception:
                     continue
-                if not self._looks_usable_chinese(parsed):
-                    continue
-                if isinstance(parsed, dict):
-                    parsed["_meta_model"] = model_name
-                return parsed
-            except Exception:
-                continue
         return None
 
     @staticmethod
+    def _message_to_text(content: Any) -> str:
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            parts: list[str] = []
+            for item in content:
+                if isinstance(item, dict):
+                    text = item.get("text")
+                    if isinstance(text, str):
+                        parts.append(text)
+            return "\n".join(parts)
+        return str(content or "")
+
+    @staticmethod
     def _extract_json(content: str) -> dict[str, Any]:
-        match = re.search(r"\{.*\}", content, re.S)
+        stripped = content.strip()
+        if not stripped:
+            return {}
+        fenced = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", stripped, re.S)
+        if fenced:
+            stripped = fenced.group(1)
+        try:
+            parsed = json.loads(stripped)
+            if isinstance(parsed, dict):
+                return parsed
+            if isinstance(parsed, list) and parsed and isinstance(parsed[0], dict):
+                return parsed[0]
+        except json.JSONDecodeError:
+            pass
+        match = re.search(r"\{.*\}", stripped, re.S)
         if not match:
             return {}
         try:
-            return json.loads(match.group(0))
+            parsed = json.loads(match.group(0))
+            if isinstance(parsed, dict):
+                return parsed
         except json.JSONDecodeError:
             return {}
+        return {}
 
     def _model_candidates(self) -> list[str]:
-        candidates: list[str] = []
-        for value in [self.endpoint_id, self.model_id, self.model_label, *DEFAULT_ARK_MODEL_CANDIDATES]:
-            cleaned = str(value).strip()
-            if cleaned and cleaned not in candidates:
-                candidates.append(cleaned)
-        return candidates
+        forced_model = str(self.model_id).strip() or FORCED_ARK_MODEL
+        return [forced_model]
 
     @staticmethod
     def _build_multimodal_content(text_prompt: str, screenshot_b64: str) -> Any:
@@ -361,6 +396,180 @@ class ArkClient:
             },
         ]
 
+    def _normalize_dialogue_turn(self, parsed: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
+        lines = parsed.get("lines", [])
+        if not isinstance(lines, list):
+            lines = []
+        player_input = self._sanitize_text(str(payload.get("player_input", "")).strip())
+        player_line = player_input or (self._sanitize_text(str(lines[0])) if len(lines) > 0 else "")
+        if not player_line:
+            player_line = "……"
+        npc_line = self._sanitize_text(str(lines[1])) if len(lines) > 1 else ""
+        if not npc_line:
+            npc_line = self._sanitize_text(str(parsed.get("reply", "") or parsed.get("npc_reply", "") or parsed.get("line", "")))
+        if not npc_line:
+            return {}
+        stance = self._sanitize_text(str(parsed.get("stance", "谨慎")))
+        if not stance:
+            stance = "谨慎"
+        revealed = parsed.get("revealed_topic_ids", [])
+        if not isinstance(revealed, list):
+            revealed = [revealed]
+        return {
+            "lines": [player_line, npc_line],
+            "stance": stance,
+            "truthfulness": self._clamp_float(parsed.get("truthfulness", 0.55), 0.0, 1.0),
+            "revealed_topic_ids": [str(item).strip() for item in revealed if str(item).strip()],
+        }
+
+    def _normalize_news_copy(self, parsed: dict[str, Any]) -> dict[str, Any]:
+        tags = parsed.get("tags", [])
+        if not isinstance(tags, list):
+            tags = [tags]
+        body = self._sanitize_text(str(parsed.get("body", "")))
+        title = self._sanitize_text(str(parsed.get("title", "")))
+        if not title or not body:
+            return {}
+        return {
+            "title": title,
+            "body": body,
+            "tags": [self._sanitize_text(str(tag)) for tag in tags if self._sanitize_text(str(tag))],
+            "tone": self._sanitize_text(str(parsed.get("tone", "冷静"))) or "冷静",
+        }
+
+    def _normalize_scene_read(self, parsed: dict[str, Any]) -> dict[str, Any]:
+        note = self._sanitize_text(str(parsed.get("director_note", "")))
+        headline_title = self._sanitize_text(str(parsed.get("headline_title", "")))
+        headline_body = self._sanitize_text(str(parsed.get("headline_body", "")))
+        if not note:
+            return {}
+        return {
+            "director_note": note,
+            "headline_title": headline_title or "街头风向",
+            "headline_body": headline_body or note,
+        }
+
+    def _normalize_npc_spin(self, parsed: dict[str, Any]) -> dict[str, Any]:
+        lines = parsed.get("lines", [])
+        if not isinstance(lines, list):
+            lines = []
+        primary = self._sanitize_text(str(lines[0])) if lines else self._sanitize_text(str(parsed.get("line", "")))
+        if not primary:
+            return {}
+        return {
+            "stance": self._sanitize_text(str(parsed.get("stance", "谨慎"))) or "谨慎",
+            "truthfulness": self._clamp_float(parsed.get("truthfulness", 0.52), 0.0, 1.0),
+            "market_tilt": self._sanitize_market_tilt(str(parsed.get("market_tilt", "neutral"))),
+            "lines": [primary],
+        }
+
+    def _normalize_family_briefing(self, parsed: dict[str, Any]) -> dict[str, Any]:
+        public_line = self._sanitize_text(str(parsed.get("public_line", "")))
+        hidden_line = self._sanitize_text(str(parsed.get("hidden_line", "")))
+        focus = self._sanitize_text(str(parsed.get("focus", "")))
+        if not public_line and not hidden_line:
+            return {}
+        return {
+            "public_line": public_line or "先稳住口风。",
+            "hidden_line": hidden_line or "暗线暂不外露。",
+            "focus": focus or "保住街区影响力",
+            "signal": self._sanitize_signal(str(parsed.get("signal", "steady"))),
+        }
+
+    def _normalize_company_briefing(self, parsed: dict[str, Any]) -> dict[str, Any]:
+        headline = self._sanitize_text(str(parsed.get("headline", "")))
+        worker_note = self._sanitize_text(str(parsed.get("worker_note", "")))
+        risk_note = self._sanitize_text(str(parsed.get("risk_note", "")))
+        if not headline and not worker_note and not risk_note:
+            return {}
+        return {
+            "headline": headline or "公司口风偏紧。",
+            "worker_note": worker_note or "工人还在观望。",
+            "risk_note": risk_note or "风险暂时可控。",
+            "signal": self._sanitize_signal(str(parsed.get("signal", "steady"))),
+        }
+
+    def _normalize_pulse_brief(self, parsed: dict[str, Any]) -> dict[str, Any]:
+        summary = self._sanitize_text(str(parsed.get("pulse_summary", "")))
+        market_note = self._sanitize_text(str(parsed.get("market_note", "")))
+        scene_focus = self._sanitize_text(str(parsed.get("scene_focus", "")))
+        if not summary:
+            return {}
+        return {
+            "pulse_summary": summary,
+            "market_note": market_note or summary,
+            "scene_focus": scene_focus or summary,
+            "npc_updates": self._normalize_npc_updates(parsed.get("npc_updates", [])),
+            "family_updates": self._normalize_family_updates(parsed.get("family_updates", [])),
+            "company_updates": self._normalize_company_updates(parsed.get("company_updates", [])),
+        }
+
+    def _normalize_npc_updates(self, rows: Any) -> list[dict[str, Any]]:
+        if not isinstance(rows, list):
+            return []
+        normalized: list[dict[str, Any]] = []
+        for row in rows[:20]:
+            if not isinstance(row, dict):
+                continue
+            npc_id = str(row.get("id", "")).strip()
+            line = self._sanitize_text(str(row.get("line", "")))
+            if not npc_id or not line:
+                continue
+            normalized.append(
+                {
+                    "id": npc_id,
+                    "line": line,
+                    "stance": self._sanitize_text(str(row.get("stance", "谨慎"))) or "谨慎",
+                    "market_tilt": self._sanitize_market_tilt(str(row.get("market_tilt", "neutral"))),
+                }
+            )
+        return normalized
+
+    def _normalize_family_updates(self, rows: Any) -> list[dict[str, Any]]:
+        if not isinstance(rows, list):
+            return []
+        normalized: list[dict[str, Any]] = []
+        for row in rows[:12]:
+            if not isinstance(row, dict):
+                continue
+            name = self._sanitize_text(str(row.get("name", "")))
+            public_line = self._sanitize_text(str(row.get("public_line", "")))
+            hidden_line = self._sanitize_text(str(row.get("hidden_line", "")))
+            if not name:
+                continue
+            normalized.append(
+                {
+                    "name": name,
+                    "public_line": public_line or "先稳住门面。",
+                    "hidden_line": hidden_line or "暗线继续压着。",
+                    "focus": self._sanitize_text(str(row.get("focus", ""))) or "街区影响力",
+                    "signal": self._sanitize_signal(str(row.get("signal", "steady"))),
+                }
+            )
+        return normalized
+
+    def _normalize_company_updates(self, rows: Any) -> list[dict[str, Any]]:
+        if not isinstance(rows, list):
+            return []
+        normalized: list[dict[str, Any]] = []
+        for row in rows[:12]:
+            if not isinstance(row, dict):
+                continue
+            company_id = str(row.get("id", "")).strip()
+            headline = self._sanitize_text(str(row.get("headline", "")))
+            if not company_id:
+                continue
+            normalized.append(
+                {
+                    "id": company_id,
+                    "headline": headline or "公司口风偏紧。",
+                    "worker_note": self._sanitize_text(str(row.get("worker_note", ""))) or "工人还在观望。",
+                    "risk_note": self._sanitize_text(str(row.get("risk_note", ""))) or "风险仍在累积。",
+                    "signal": self._sanitize_signal(str(row.get("signal", "steady"))),
+                }
+            )
+        return normalized
+
     def _looks_usable_chinese(self, payload: Any) -> bool:
         critical = self._collect_leaf_strings(payload)
         if not critical:
@@ -368,43 +577,37 @@ class ArkClient:
         if self._contains_placeholder_schema_value(critical):
             return False
         chinese_hits = 0
-        latin_hits = 0
+        text_hits = 0
         for text in critical:
             stripped = text.strip()
             if not stripped:
                 continue
+            text_hits += 1
             if re.search(r"[\u4e00-\u9fff]", stripped):
                 chinese_hits += 1
-            if re.search(r"[A-Za-z]{4,}", stripped):
-                latin_hits += 1
-        return chinese_hits > 0 and latin_hits <= max(2, chinese_hits * 2)
+        return chinese_hits > 0 and chinese_hits >= max(1, text_hits // 3)
 
     @staticmethod
     def _contains_placeholder_schema_value(rows: list[str]) -> bool:
         exact_placeholders = {
-            "玩家台词",
-            "NPC台词",
+            "玩家原话",
+            "NPC回话",
             "立场",
             "topic_id",
             "信息不足",
             "未知",
         }
         suspicious_phrases = (
-            "任务执行中，信息待补充",
-            "当前城区信息缺失",
-            "待观察商品、股票动态",
-            "待补充",
-            "口风待补充",
-            "立场待补充",
-            "无有效信息",
-            "无市场动态",
-            "无场景焦点",
-            "话术补全",
-            "字段定义",
-            "json 格式",
-            "只输出这个对象",
-            "只返回 json",
             "schema_hint",
+            "只返回json",
+            "只输出json",
+            "字段说明",
+            "json对象",
+            "markdown",
+            "example",
+            "format",
+            "玩家台词",
+            "NPC台词",
         )
         seen_exact = 0
         for value in rows:
@@ -414,7 +617,8 @@ class ArkClient:
             if stripped in exact_placeholders:
                 seen_exact += 1
                 continue
-            if any(phrase in stripped.lower() for phrase in suspicious_phrases):
+            lowered = stripped.lower()
+            if any(phrase in lowered for phrase in suspicious_phrases):
                 return True
         return seen_exact >= 2
 
@@ -429,3 +633,35 @@ class ArkClient:
         elif isinstance(payload, str):
             rows.append(payload)
         return rows
+
+    @staticmethod
+    def _sanitize_text(text: str) -> str:
+        cleaned = text.replace("\r", " ").replace("\n", " ").strip()
+        cleaned = re.sub(r"^```(?:json)?|```$", "", cleaned).strip()
+        cleaned = re.sub(r"\s+", " ", cleaned)
+        cleaned = cleaned.replace("：：", "：")
+        cleaned = re.sub(r"^(玩家原话|NPC回话|玩家台词|NPC台词|白页|壳仔)\s*[:：]\s*", "", cleaned)
+        cleaned = re.sub(r"^(JSON|json)\s*[:：]\s*", "", cleaned)
+        return cleaned[:220].strip()
+
+    @staticmethod
+    def _sanitize_market_tilt(value: str) -> str:
+        lowered = value.strip().lower()
+        if lowered in {"bullish", "bearish", "neutral"}:
+            return lowered
+        return "neutral"
+
+    @staticmethod
+    def _sanitize_signal(value: str) -> str:
+        lowered = value.strip().lower()
+        if lowered in {"steady", "rising", "falling"}:
+            return lowered
+        return "steady"
+
+    @staticmethod
+    def _clamp_float(value: Any, minimum: float, maximum: float) -> float:
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return minimum
+        return max(minimum, min(maximum, number))

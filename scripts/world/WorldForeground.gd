@@ -5,12 +5,30 @@ const WorldLayout = preload("res://scripts/world/WorldLayout.gd")
 const REDRAW_INTERVAL := 0.25
 const WORLD_RECT := WorldLayout.WORLD_RECT
 const HOUSE_IDS := ["slum_house", "dock_house", "factory_house", "exchange_house"]
+const STRUCTURE_OVERLAY_TEXTURE_PATH := "res://world_overlay_layer_3.png"
 
 var pulse_time := 0.0
 var time_period := "day"
 var light_level := 1.0
 var house_states: Dictionary = {}
 var redraw_accumulator := 0.0
+var structure_overlay_sprite := Sprite2D.new()
+
+
+func _ready() -> void:
+	var overlay_texture := _load_runtime_texture(STRUCTURE_OVERLAY_TEXTURE_PATH)
+	if overlay_texture == null:
+		return
+	structure_overlay_sprite.centered = false
+	structure_overlay_sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	structure_overlay_sprite.texture = overlay_texture
+	structure_overlay_sprite.position = Vector2.ZERO
+	structure_overlay_sprite.z_index = 12
+	structure_overlay_sprite.scale = Vector2(
+		WORLD_RECT.size.x / maxf(float(overlay_texture.get_width()), 1.0),
+		WORLD_RECT.size.y / maxf(float(overlay_texture.get_height()), 1.0)
+	)
+	add_child(structure_overlay_sprite)
 
 
 func _process(delta: float) -> void:
@@ -38,6 +56,17 @@ func _draw() -> void:
 	_draw_house_thresholds()
 	_draw_interaction_beacons()
 	_draw_vignette()
+
+
+func _load_runtime_texture(path: String) -> Texture2D:
+	var image := Image.new()
+	var global_path := ProjectSettings.globalize_path(path)
+	if image.load(global_path) == OK:
+		return ImageTexture.create_from_image(image)
+	var imported := load(path)
+	if imported is Texture2D:
+		return imported
+	return null
 
 
 func _draw_house_thresholds() -> void:

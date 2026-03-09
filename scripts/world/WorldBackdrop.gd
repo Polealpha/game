@@ -2,7 +2,7 @@ extends Node2D
 class_name WorldBackdrop
 
 const WorldLayout = preload("res://scripts/world/WorldLayout.gd")
-const BACKGROUND_TEXTURE_PATH := "res://ditu_8k_realesrgan.png"
+const BACKGROUND_TEXTURE_PATH := "res://ditu_x4_realesrgan.png"
 const ROAD_OVERLAY_TEXTURE_PATH := WorldLayout.ROAD_MASK_TEXTURE_PATH
 const WORLD_RECT := WorldLayout.WORLD_RECT
 const ROAD_OVERLAY_RECT := WorldLayout.ROAD_MASK_WORLD_RECT
@@ -53,6 +53,10 @@ func set_time_of_day(period: String, level: float) -> void:
 
 func _load_runtime_texture(path: String) -> Texture2D:
 	var image := Image.new()
-	if image.load(ProjectSettings.globalize_path(path)) != OK:
-		return null
-	return ImageTexture.create_from_image(image)
+	var global_path := ProjectSettings.globalize_path(path)
+	if image.load(global_path) == OK:
+		return ImageTexture.create_from_image(image)
+	var imported := load(path)
+	if imported is Texture2D:
+		return imported
+	return null

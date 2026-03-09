@@ -268,9 +268,9 @@ class WorldEngine:
                 case "review_ledger":
                     return self._review_ledger(district, payload)
                 case "buy_goods":
-                    return self._trade_good(payload["good_name"], int(payload.get("quantity", 1)), 1)
+                    return self._trade_good(payload["good_name"], int(payload.get("quantity", 1)), 1, payload)
                 case "sell_goods":
-                    return self._trade_good(payload["good_name"], int(payload.get("quantity", 1)), -1)
+                    return self._trade_good(payload["good_name"], int(payload.get("quantity", 1)), -1, payload)
                 case "buy_stock":
                     return self._trade_stock(payload["stock_name"], int(payload.get("quantity", 1)), 1)
                 case "sell_stock":
@@ -448,6 +448,7 @@ class WorldEngine:
             if not revealed_topic_ids:
                 revealed_topic_ids = [str(topic.get("id", ""))]
             world_effects = self._describe_world_effects(intel, effective_strength)
+            trade_quotes = self._default_trade_quotes_for_npc(npc)
             intel_note = intel["line"] if effective_strength > 0.12 else "这次没问出实货，只摸到一点态度。"
             self.state["last_dialogue"] = {
                 "title": f"你与 {npc['name']} 交谈",
@@ -478,6 +479,7 @@ class WorldEngine:
             self.state["last_dialogue"]["heard_by"] = heard_by
             self.state["last_dialogue"]["source"] = "llm" if dialogue else "rule"
             self.state["last_dialogue"]["model"] = "doubao-seed-2-0-mini-260215" if dialogue else "rule"
+            self.state["last_dialogue"]["trade_quotes"] = trade_quotes
             self._refresh_ambient_speeches()
             self._apply_intraday_market_move(reason="player_talk", decay=0.78)
             self._refresh_derived_views()
@@ -767,34 +769,106 @@ class WorldEngine:
         }
         return ActionResult("你在账桌前把价格、风声和人情重新理顺了一遍。", self.snapshot())
 
-    def _trade_good(self, good_name: str, quantity: int, direction: int) -> ActionResult:
+    def _trade_good(self, good_name: str, quantity: int, direction: int, payload: dict[str, Any] | None = None) -> ActionResult:
         player = self.state["player"]
         good = self._find_by_name(self.state["goods"], good_name)
         if not good:
             return ActionResult("没有这个货物。", self.snapshot())
+        payload = payload or {}
+        npc: dict[str, Any] | None = None
+        npc_id = str(payload.get("npc_id", ""))
+        if npc_id:
+            npc = self._find_npc(npc_id)
         quantity = max(quantity, 1)
-        cost = good["current_price"] * quantity
+        unit_price = int(good["current_price"])
+        trade_tone = "按市场价"
+        if npc:
+            unit_price, trade_tone = self._npc_good_quote(npc, good_name, direction)
+        cost = unit_price * quantity
         if direction > 0:
+            if npc and int(npc.get("inventory", {}).get(good_name, 0)) < quantity:
+                return ActionResult(f"{npc['name']} 手里现在没有这么多 {good_name}。", self.snapshot())
             if player["cash"] < cost:
                 return ActionResult("铜币不够。", self.snapshot())
             player["cash"] -= cost
             player["goods_inventory"][good_name] = player["goods_inventory"].get(good_name, 0) + quantity
+            if npc:
+                npc["cash"] = int(npc.get("cash", 0)) + cost
+                npc["inventory"][good_name] = max(0, int(npc.get("inventory", {}).get(good_name, 0)) - quantity)
+                npc["speech_lines"] = [f"{trade_tone}，{good_name} 我先给你 {quantity} 份。", *npc.get("speech_lines", [])[:2]]
             self._increment_task_progress("trade_goods", good_name, quantity)
             self.state["demo_metrics"]["goods_trades"] = int(self.state["demo_metrics"].get("goods_trades", 0)) + quantity
             self.state["market_pressure"]["goods"][good_name] = float(self.state["market_pressure"]["goods"].get(good_name, 0.0)) + 0.05 * quantity
             self._bump_district_signal("贫民街" if good_name == "面包" else "工厂区" if good_name == "煤" else "港口", "trade_heat", 0.08 * quantity)
             self._update_player_class()
+            self._refresh_derived_views()
+            if npc:
+                return ActionResult(f"你从 {npc['name']} 手里买下 {good_name} x{quantity}，成交价 {cost} 铜币。", self.snapshot())
             return ActionResult(f"买入 {good_name} x{quantity}。", self.snapshot())
         if player["goods_inventory"].get(good_name, 0) < quantity:
             return ActionResult("库存不足。", self.snapshot())
+        if npc and int(npc.get("cash", 0)) < cost:
+            return ActionResult(f"{npc['name']} 手头铜币不够，不肯接这单。", self.snapshot())
         player["goods_inventory"][good_name] -= quantity
         player["cash"] += cost
+        if npc:
+            npc["cash"] = max(0, int(npc.get("cash", 0)) - cost)
+            npc["inventory"][good_name] = int(npc.get("inventory", {}).get(good_name, 0)) + quantity
+            npc["speech_lines"] = [f"{trade_tone}，{good_name} 我收下了。", *npc.get("speech_lines", [])[:2]]
         self._increment_task_progress("trade_goods", good_name, quantity)
         self.state["demo_metrics"]["goods_trades"] = int(self.state["demo_metrics"].get("goods_trades", 0)) + quantity
         self.state["market_pressure"]["goods"][good_name] = float(self.state["market_pressure"]["goods"].get(good_name, 0.0)) - 0.04 * quantity
         self._bump_district_signal("贫民街" if good_name == "面包" else "工厂区" if good_name == "煤" else "港口", "trade_heat", 0.06 * quantity)
         self._update_player_class()
+        self._refresh_derived_views()
+        if npc:
+            return ActionResult(f"你把 {good_name} x{quantity} 卖给了 {npc['name']}，收回 {cost} 铜币。", self.snapshot())
         return ActionResult(f"卖出 {good_name} x{quantity}。", self.snapshot())
+
+    def _npc_good_quote(self, npc: dict[str, Any], good_name: str, direction: int) -> tuple[int, str]:
+        good = self._find_by_name(self.state["goods"], good_name)
+        base_price = int(good.get("current_price", 1)) if good else 1
+        pressure = float(npc.get("anxiety", npc.get("fear", 0))) * 0.02
+        greed = float(npc.get("greed_drive", npc.get("greed", 0))) * 0.015
+        trust_discount = max(-0.12, min(0.08, (50.0 - float(npc.get("player_trust", 50.0))) / 250.0))
+        if direction > 0:
+            factor = 1.0 + greed + pressure + trust_discount
+            tone = "要按我这口价"
+        else:
+            factor = 0.84 - greed * 0.12 - pressure * 0.06 - trust_discount * 0.4
+            factor = max(0.55, factor)
+            tone = "只能按这个价回收"
+        return max(1, int(round(base_price * factor))), tone
+
+    def _default_trade_quotes_for_npc(self, npc: dict[str, Any]) -> list[dict[str, Any]]:
+        quotes: list[dict[str, Any]] = []
+        inventory = copy.deepcopy(npc.get("inventory", {}))
+        for action_type, good_name, quantity, prefix in [
+            ("buy_goods", "面包", 1, "买"),
+            ("buy_goods", "煤", 1, "买"),
+            ("sell_goods", "罐头", 1, "卖"),
+        ]:
+            if action_type == "buy_goods" and int(inventory.get(good_name, 0)) <= 0:
+                continue
+            if action_type == "sell_goods" and int(self.state["player"]["goods_inventory"].get(good_name, 0)) <= 0:
+                continue
+            unit_price, tone = self._npc_good_quote(npc, good_name, 1 if action_type == "buy_goods" else -1)
+            quotes.append(
+                {
+                    "action_type": action_type,
+                    "good_name": good_name,
+                    "quantity": quantity,
+                    "unit_price": unit_price,
+                    "description": f"{prefix}{good_name} x{quantity}，{tone}，单价 {unit_price} 铜币。",
+                    "button": f"{prefix}{good_name}",
+                }
+            )
+        return quotes
+
+    def _npc_inventory_summary(self, npc: dict[str, Any]) -> str:
+        inventory = copy.deepcopy(npc.get("inventory", {}))
+        rows = [f"{name}:{int(inventory.get(name, 0))}" for name in ["面包", "煤", "罐头"]]
+        return " / ".join(rows)
 
     def _trade_stock(self, stock_name: str, quantity: int, direction: int) -> ActionResult:
         player = self.state["player"]
@@ -4441,6 +4515,8 @@ class WorldEngine:
                     "cash": int(npc.get("cash", 0)),
                     "debt": int(npc.get("debt", 0)),
                     "hunger": int(npc.get("hunger", 0)),
+                    "inventory": copy.deepcopy(npc.get("inventory", {})),
+                    "inventory_summary": self._npc_inventory_summary(npc),
                     "job_security": round(float(npc.get("job_security", 0.0)), 2),
                     "player_trust": round(float(npc.get("player_trust", 0.0)), 2),
                     "economic_pressure": economic_pressure,

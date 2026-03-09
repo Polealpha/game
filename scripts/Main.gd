@@ -498,6 +498,24 @@ func _build_ui() -> void:
 	modal_hint_label.add_theme_color_override("font_color", Color("6a5137"))
 	modal_box.add_child(modal_hint_label)
 
+	modal_trade_title.text = "当面交易"
+	modal_trade_title.add_theme_font_size_override("font_size", 22)
+	modal_trade_title.add_theme_color_override("font_color", Color("5c3920"))
+	modal_trade_title.visible = false
+	modal_box.add_child(modal_trade_title)
+
+	modal_trade_label.bbcode_enabled = true
+	modal_trade_label.fit_content = true
+	modal_trade_label.scroll_active = false
+	modal_trade_label.custom_minimum_size = Vector2(790, 66)
+	modal_trade_label.add_theme_color_override("default_color", Color("4b3520"))
+	modal_trade_label.visible = false
+	modal_box.add_child(modal_trade_label)
+
+	modal_trade_buttons.add_theme_constant_override("separation", 8)
+	modal_trade_buttons.visible = false
+	modal_box.add_child(modal_trade_buttons)
+
 	var input_row := HBoxContainer.new()
 	input_row.add_theme_constant_override("separation", 10)
 	modal_box.add_child(input_row)
@@ -1802,6 +1820,14 @@ func _find_emotion_echo_candidates(excluded_ids: Array, midpoint: Vector2, distr
 func _on_api_response(tag: String, data: Dictionary) -> void:
 	_confirm_player_action_reaction(tag, data)
 	var dialogue_payload: Dictionary = {}
+	if tag == "health":
+		backend_health_pending = false
+		backend_service_ready = str(data.get("status", "")) == "ok"
+		backend_error_streak = 0
+		if backend_service_ready:
+			status_label.text = "服务在线，正在同步世界状态。"
+			ApiClient.get_json("/world/state", "world_state")
+		return
 	if tag == "player_talk":
 		dialogue_payload = data.get("dialogue", {})
 		if dialogue_payload.is_empty() and data.has("world_state"):
@@ -1815,7 +1841,6 @@ func _on_api_response(tag: String, data: Dictionary) -> void:
 			dialogue["title"] = _sanitize_visible_text(str(dialogue.get("title", "")), "街头交谈")
 			dialogue["body"] = _sanitize_visible_text(str(dialogue.get("body", "")), "对方沉默了一会，又看了你一眼。")
 			_play_player_talk_feedback(dialogue)
-			modal_send_button.disabled = false
 			UiRouter.push_modal(
 				str(dialogue.get("title", "街头交谈")),
 				str(dialogue.get("body", "")),
@@ -1823,11 +1848,19 @@ func _on_api_response(tag: String, data: Dictionary) -> void:
 				{"dialogue": dialogue}
 			)
 	elif tag == "probe_ai":
-		UiRouter.push_modal("AI 连接测试", "[b]状态[/b]\n%s" % _sanitize_visible_text(str(data.get("message", "")), "连接已建立，正在等待下一轮脉冲。"), "probe")
+		UiRouter.push_modal(
+			"AI 连接测试",
+			"[b]状态[/b]\n%s" % _sanitize_visible_text(str(data.get("message", "")), "连接已建立，正在等待下一轮脉冲。"),
+			"probe"
+		)
 	if data.has("message") and not str(data["message"]).is_empty():
 		GameState.add_toast(_sanitize_visible_text(str(data["message"]), "城里刚有一阵新风声。"))
 	elif tag == "world_state":
+		backend_service_ready = true
+		backend_error_streak = 0
 		status_label.text = "服务在线，正在等待下一轮耳语。"
+	elif tag == "trade_action" and modal_overlay.visible and not active_dialogue_context.is_empty():
+		_refresh_modal_trade_panel(active_dialogue_context)
 	if data.has("world_state"):
 		UiRouter.update_guide(data["world_state"])
 		UiRouter.maybe_present_event(data["world_state"])
@@ -1877,12 +1910,17 @@ func _play_player_talk_feedback(dialogue: Dictionary) -> void:
 
 
 func _on_api_error(tag: String, status_code: int, message: String) -> void:
+	if tag == "health":
+		backend_health_pending = false
 	if not pending_player_reaction.is_empty() and str(pending_player_reaction.get("tag", "")) == tag:
 		pending_player_reaction = {}
 	if tag == "player_talk":
 		modal_send_button.disabled = false
+	backend_service_ready = false
+	backend_error_streak += 1
 	status_label.text = "请求 %s 失败 (%s)" % [tag, status_code]
-	GameState.add_toast("服务离线或未启动。先运行本地 Python 服务。")
+	_attempt_service_autostart(true)
+	GameState.add_toast("服务离线或未启动。正在重试拉起本地 Python 服务。")
 	if not message.is_empty():
 		news_label.text = "[color=#6f1d1b]%s[/color]" % message
 
@@ -2361,13 +2399,14 @@ func _update_minimap() -> void:
 	minimap.update_snapshot(GameState.snapshot, player.position, interactables, _current_district_for_position(player.position))
 
 
-func _get_nearby_npcs(limit: int) -> Array:
+func _get_nearby_npcs(limit: int, max_distance: float = -1.0) -> Array:
 	if interior_mode:
 		return []
+	var effective_distance := max_distance if max_distance > 0.0 else 126.0 * WORLD_VISUAL_SCALE
 	var ranked: Array = []
 	for view in npc_views.values():
 		var distance := player.position.distance_to(view.position)
-		if distance <= 126.0 * WORLD_VISUAL_SCALE:
+		if distance <= effective_distance:
 			ranked.append({
 				"id": view.get_npc_id(),
 				"name": view.name_label.text,
@@ -2971,16 +3010,10 @@ func _to_world_position(pos: Vector2) -> Vector2:
 
 
 func _coerce_npc_backend_position(pos: Vector2) -> Vector2:
-	var clamped := Vector2(
+	return Vector2(
 		clampf(pos.x, WORLD_RECT.position.x + 6.0, WORLD_RECT.end.x - 6.0),
 		clampf(pos.y, WORLD_RECT.position.y + 6.0, WORLD_RECT.end.y - 6.0)
 	)
-	if WorldLayout.is_walkable_point(clamped):
-		return clamped
-	var snapped := WorldLayout.snap_to_walkable(clamped)
-	if clamped.distance_to(snapped) <= 24.0:
-		return snapped
-	return clamped
 
 
 func _scaled_district_rects() -> Dictionary:
@@ -3126,6 +3159,11 @@ func _on_modal_requested(payload: Dictionary) -> void:
 	modal_send_button.visible = false
 	modal_send_button.disabled = false
 	modal_hint_label.visible = false
+	modal_trade_title.visible = false
+	modal_trade_label.visible = false
+	modal_trade_buttons.visible = false
+	for child in modal_trade_buttons.get_children():
+		child.queue_free()
 	var tone_color := Color("3a2819")
 	if tone == "event":
 		tone_color = Color("6b2f23")
@@ -3145,6 +3183,7 @@ func _on_modal_requested(payload: Dictionary) -> void:
 			modal_input.visible = true
 			modal_send_button.visible = true
 			modal_hint_label.visible = true
+			_refresh_modal_trade_panel(dialogue_context)
 			modal_input.grab_focus()
 	elif tone == "probe":
 		tone_color = Color("5b4630")
@@ -3177,6 +3216,11 @@ func _close_modal() -> void:
 	modal_input.visible = false
 	modal_send_button.visible = false
 	modal_hint_label.visible = false
+	modal_trade_title.visible = false
+	modal_trade_label.visible = false
+	modal_trade_buttons.visible = false
+	for child in modal_trade_buttons.get_children():
+		child.queue_free()
 
 
 func _submit_modal_player_talk() -> void:
@@ -3222,6 +3266,120 @@ func _submit_modal_player_talk() -> void:
 		"scene_context": live_scene.get("scene_context", {})
 	}, "player_talk")
 	modal_input.text = ""
+
+
+func _refresh_modal_trade_panel(dialogue_context: Dictionary) -> void:
+	var trade_payload := _modal_trade_payload(dialogue_context)
+	if trade_payload.is_empty():
+		modal_trade_title.visible = false
+		modal_trade_label.visible = false
+		modal_trade_buttons.visible = false
+		for child in modal_trade_buttons.get_children():
+			child.queue_free()
+		return
+	modal_trade_title.visible = true
+	modal_trade_label.visible = true
+	modal_trade_buttons.visible = true
+	modal_trade_title.text = "和 %s 当面交易" % str(trade_payload.get("npc_name", "对方"))
+	modal_trade_label.text = str(trade_payload.get("summary", ""))
+	for child in modal_trade_buttons.get_children():
+		child.queue_free()
+	for quote in trade_payload.get("quotes", []):
+		var action_button := Button.new()
+		action_button.text = str(quote.get("button", "交易"))
+		_style_button(action_button, Color("6c4a2a"), Color("8a6037"), Color("4f3520"))
+		var action_type := str(quote.get("action_type", ""))
+		var good_name := str(quote.get("good_name", ""))
+		var quantity := int(quote.get("quantity", 1))
+		action_button.disabled = action_type.is_empty() or good_name.is_empty()
+		action_button.pressed.connect(func() -> void:
+			_submit_modal_trade(action_type, good_name, quantity)
+		)
+		modal_trade_buttons.add_child(action_button)
+
+
+func _modal_trade_payload(dialogue_context: Dictionary) -> Dictionary:
+	var npc_id := str(dialogue_context.get("npc_id", ""))
+	if npc_id.is_empty():
+		return {}
+	var npc_card := _npc_card_for_id(npc_id)
+	if npc_card.is_empty():
+		return {}
+	var dialogue: Dictionary = GameState.snapshot.get("last_dialogue", {})
+	var quotes: Array = []
+	if str(dialogue.get("npc_id", "")) == npc_id:
+		quotes = dialogue.get("trade_quotes", [])
+	if quotes.is_empty():
+		quotes = _fallback_trade_quotes(npc_card)
+	if quotes.is_empty():
+		return {}
+	var quote_lines: Array[String] = []
+	for quote in quotes:
+		quote_lines.append("• %s" % str(quote.get("description", "")))
+	return {
+		"npc_name": str(npc_card.get("name", "对方")),
+		"summary": "[b]身份[/b] %s · [b]态度[/b] %s\n[b]库存[/b] %s\n%s" % [
+			str(npc_card.get("role", "街头角色")),
+			str(npc_card.get("relation_status", "观望")),
+			str(npc_card.get("inventory_summary", "没有报出库存")),
+			"\n".join(quote_lines),
+		],
+		"quotes": quotes,
+	}
+
+
+func _fallback_trade_quotes(npc_card: Dictionary) -> Array:
+	var quotes: Array = []
+	var goods_rows: Array = GameState.snapshot.get("goods", [])
+	var inventory: Dictionary = npc_card.get("inventory", {})
+	var player_inventory: Dictionary = GameState.get_player().get("goods_inventory", {})
+	for spec in [
+		{"action": "buy_goods", "good": "面包", "qty": 1, "prefix": "买"},
+		{"action": "buy_goods", "good": "煤", "qty": 1, "prefix": "买"},
+		{"action": "sell_goods", "good": "罐头", "qty": 1, "prefix": "卖"},
+	]:
+		var good_name := str(spec.get("good", ""))
+		var good_row := _snapshot_good_row(goods_rows, good_name)
+		if good_row.is_empty():
+			continue
+		if str(spec.get("action", "")) == "buy_goods" and int(inventory.get(good_name, 0)) <= 0:
+			continue
+		if str(spec.get("action", "")) == "sell_goods" and int(player_inventory.get(good_name, 0)) <= 0:
+			continue
+		var unit_price := int(good_row.get("current_price", 0))
+		var quoted_price: int = max(1, unit_price + int(round(float(npc_card.get("economic_pressure", 0.0)) * 4.0)))
+		quotes.append({
+			"action_type": str(spec.get("action", "")),
+			"good_name": good_name,
+			"quantity": int(spec.get("qty", 1)),
+			"button": "%s%s" % [str(spec.get("prefix", "")), good_name],
+			"description": "%s%s x%s，眼下开价 %s 铜币。" % [str(spec.get("prefix", "")), good_name, int(spec.get("qty", 1)), quoted_price],
+		})
+	return quotes
+
+
+func _snapshot_good_row(goods_rows: Array, good_name: String) -> Dictionary:
+	for row in goods_rows:
+		if str(row.get("name", "")) == good_name:
+			return row
+	return {}
+
+
+func _submit_modal_trade(action_type: String, good_name: String, quantity: int) -> void:
+	var npc_id := str(active_dialogue_context.get("npc_id", ""))
+	if npc_id.is_empty():
+		GameState.add_toast("当前没有可交易的对象。")
+		return
+	_submit_interaction({
+		"action_type": "trade_action",
+		"trade_mode": action_type,
+		"district": _current_district_for_position(player.position if not interior_mode else house_interior.get_player_position()),
+		"payload": {
+			"good_name": good_name,
+			"quantity": quantity,
+			"npc_id": npc_id,
+		}
+	})
 
 
 func _on_guide_updated(steps: Array, current_index: int) -> void:

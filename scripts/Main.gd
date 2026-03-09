@@ -24,6 +24,10 @@ const DISTRICT_RECTS := WorldLayout.DISTRICT_RECTS
 const NEWS_TICKER_SECONDS := 5.5
 const NPC_AUTO_TALK_SECONDS := 12.0
 const NPC_AUTO_TALK_RADIUS := 96.0
+const DIRECT_TALK_RADIUS := 54.0
+const HOUSE_ENTRY_RADIUS := 30.0
+const BACKEND_RETRY_MSEC := 5000
+const BACKEND_HEALTHCHECK_MSEC := 1600
 
 var player := PlayerView.new()
 var world_tint := CanvasModulate.new()
@@ -63,6 +67,11 @@ var last_move_input := Vector2.ZERO
 var camera_focus_offset := Vector2.ZERO
 var backend_autostart_attempted := false
 var backend_process_id := -1
+var backend_service_ready := false
+var backend_health_pending := false
+var backend_last_start_msec := -60000
+var backend_last_healthcheck_msec := -60000
+var backend_error_streak := 0
 var music_rng := RandomNumberGenerator.new()
 var music_library: Array[String] = []
 var current_music_path := ""
@@ -104,6 +113,9 @@ var modal_card := PanelContainer.new()
 var modal_input := LineEdit.new()
 var modal_send_button := Button.new()
 var modal_hint_label := Label.new()
+var modal_trade_title := Label.new()
+var modal_trade_label := RichTextLabel.new()
+var modal_trade_buttons := HBoxContainer.new()
 var compact_hud_label := RichTextLabel.new()
 var market_flash_label := RichTextLabel.new()
 var news_ticker_label := RichTextLabel.new()
@@ -260,7 +272,12 @@ func _build_interactables() -> void:
 	for item in items:
 		var node := InteractableView.new()
 		node.configure(item)
-		node.position = _to_world_position(WorldLayout.snap_to_walkable(node.position))
+		var layout_position := Vector2(float(item.get("x", 0.0)), float(item.get("y", 0.0)))
+		if str(item.get("kind", "")) != "house" and not WorldLayout.is_walkable_point(layout_position):
+			var snapped_position := WorldLayout.snap_to_walkable(layout_position)
+			if layout_position.distance_to(snapped_position) <= 36.0:
+				layout_position = snapped_position
+		node.position = _to_world_position(layout_position)
 		node.scale = Vector2.ONE * 1.08
 		interactable_layer.add_child(node)
 		interactables.append(node)
@@ -907,8 +924,10 @@ func _move_player(delta: float) -> void:
 	last_move_input = input_vector
 	player.set_movement_direction(input_vector)
 	var world_size := WORLD_RECT.size * WORLD_VISUAL_SCALE
-	player.position.x = clampf(player.position.x + input_vector.x * PLAYER_SPEED * delta, 0.0, world_size.x)
-	player.position.y = clampf(player.position.y + input_vector.y * PLAYER_SPEED * delta, 0.0, world_size.y)
+	player.position = Vector2(
+		clampf(player.position.x + input_vector.x * PLAYER_SPEED * delta, 0.0, world_size.x),
+		clampf(player.position.y + input_vector.y * PLAYER_SPEED * delta, 0.0, world_size.y)
+	)
 
 
 func _update_world_camera(delta: float) -> void:
@@ -954,7 +973,7 @@ func _update_current_interactable() -> void:
 		current_interactable = house_interior.get_current_interactable()
 		hint_label.text = house_interior.get_hint_text()
 		return
-	if not _get_nearby_npcs(1).is_empty():
+	if not _get_nearby_npcs(1, DIRECT_TALK_RADIUS * WORLD_VISUAL_SCALE).is_empty():
 		for node in interactables:
 			node.set_highlighted(false)
 		current_interactable = null
@@ -967,7 +986,7 @@ func _update_current_interactable() -> void:
 		var distance := player.position.distance_to(node.position)
 		var interaction_radius := 78.0 * WORLD_VISUAL_SCALE
 		if node.kind == "house":
-			interaction_radius = 44.0 * WORLD_VISUAL_SCALE
+			interaction_radius = HOUSE_ENTRY_RADIUS * WORLD_VISUAL_SCALE
 		node.set_focus_strength(clampf(1.0 - distance / (interaction_radius * 1.5), 0.0, 1.0))
 		var is_target := distance < interaction_radius and distance < best_distance
 		if is_target:
@@ -991,7 +1010,7 @@ func _update_current_interactable() -> void:
 func _open_interactable_actions() -> void:
 	_play_player_interaction(_context_focus_direction(), _context_interaction_mode())
 	if current_interactable == null:
-		var nearby_npcs := _get_nearby_npcs(1)
+		var nearby_npcs := _get_nearby_npcs(1, DIRECT_TALK_RADIUS * WORLD_VISUAL_SCALE)
 		if not nearby_npcs.is_empty():
 			var npc_id := str(nearby_npcs[0].get("id", ""))
 			if npc_views.has(npc_id):
@@ -1043,7 +1062,7 @@ func _trigger_primary_interaction() -> void:
 
 
 func _default_payload_for_current_context() -> Dictionary:
-	var nearby_npcs := _get_nearby_npcs(1)
+	var nearby_npcs := _get_nearby_npcs(1, DIRECT_TALK_RADIUS * WORLD_VISUAL_SCALE)
 	if nearby_npcs.is_empty():
 		if current_interactable != null:
 			return _default_payload_for_interactable(current_interactable)
@@ -1366,6 +1385,13 @@ func _submit_interaction(payload: Dictionary) -> void:
 			"screenshot_b64": str(live_scene.get("screenshot_b64", "")),
 			"scene_context": live_scene.get("scene_context", {})
 		}, "player_talk")
+	elif action_type == "trade_action":
+		_store_pending_player_reaction("trade_action", payload)
+		ApiClient.post_json("/world/action", {
+			"action_type": str(payload.get("trade_mode", "")),
+			"district": str(payload.get("district", "")),
+			"payload": payload.get("payload", {})
+		}, "trade_action")
 	elif action_type == "accept_task" or action_type == "claim_task":
 		_store_pending_player_reaction("task_action", payload)
 		ApiClient.post_json("/world/action", {
@@ -1387,7 +1413,7 @@ func _play_player_interaction(direction: Vector2 = Vector2.ZERO, mode: String = 
 func _context_focus_direction() -> Vector2:
 	if current_interactable != null:
 		return current_interactable.position - player.position
-	var nearby_npcs := _get_nearby_npcs(1)
+	var nearby_npcs := _get_nearby_npcs(1, DIRECT_TALK_RADIUS * WORLD_VISUAL_SCALE)
 	if nearby_npcs.is_empty():
 		return Vector2.ZERO
 	var npc_id := str(nearby_npcs[0].get("id", ""))
@@ -1397,7 +1423,7 @@ func _context_focus_direction() -> Vector2:
 func _context_interaction_mode() -> String:
 	if current_interactable != null:
 		return "use"
-	var nearby_npcs := _get_nearby_npcs(1)
+	var nearby_npcs := _get_nearby_npcs(1, DIRECT_TALK_RADIUS * WORLD_VISUAL_SCALE)
 	return "talk" if not nearby_npcs.is_empty() else "use"
 
 
@@ -1438,6 +1464,12 @@ func _npc_focus_direction(npc_id: String) -> Vector2:
 
 
 func _poll_world_state() -> void:
+	if backend_health_pending:
+		return
+	var now := Time.get_ticks_msec()
+	if not backend_service_ready or now - backend_last_healthcheck_msec >= BACKEND_HEALTHCHECK_MSEC:
+		_probe_backend_health()
+		return
 	ApiClient.get_json("/world/state", "world_state")
 
 
@@ -1455,24 +1487,39 @@ func _handle_cancel_input() -> void:
 		_set_interior_mode(false)
 
 
-func _attempt_service_autostart() -> bool:
-	if backend_autostart_attempted:
-		return false
-	backend_autostart_attempted = true
+func _attempt_service_autostart(force_retry: bool = false) -> bool:
 	if DisplayServer.get_name() == "headless":
 		return false
 	if OS.get_name() != "Windows":
 		return false
+	var now := Time.get_ticks_msec()
+	if not force_retry and now - backend_last_start_msec < BACKEND_RETRY_MSEC:
+		return false
+	backend_last_start_msec = now
+	backend_autostart_attempted = true
 	var project_root := ProjectSettings.globalize_path("res://").trim_suffix("/")
-	var command := "cd /d \"%s\" && python -m uvicorn services.app:app --host 127.0.0.1 --port 8765" % project_root
+	var command := "cd /d \"%s\" && \"%s\" -m uvicorn services.app:app --host 127.0.0.1 --port 8765" % [project_root, _backend_python_executable()]
 	backend_process_id = OS.create_process("cmd.exe", PackedStringArray(["/c", command]), false)
 	if backend_process_id <= 0:
 		backend_process_id = -1
 		return false
 	status_label.text = "检测到服务未启动，正在自动拉起本地世界引擎…"
 	GameState.add_toast("已尝试自动启动本地服务，稍等片刻世界会恢复运转。")
-	poll_timer.start(2.0)
+	poll_timer.start(1.4)
 	return true
+
+
+func _backend_python_executable() -> String:
+	for candidate in ["C:/Python314/python.exe", "C:/Python313/python.exe", "C:/Python312/python.exe"]:
+		if FileAccess.file_exists(candidate):
+			return candidate
+	return "python"
+
+
+func _probe_backend_health() -> void:
+	backend_health_pending = true
+	backend_last_healthcheck_msec = Time.get_ticks_msec()
+	ApiClient.get_json("/health", "health")
 
 
 func _on_ai_pulse_timer_timeout() -> void:

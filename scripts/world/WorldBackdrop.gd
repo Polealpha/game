@@ -3,12 +3,15 @@ class_name WorldBackdrop
 
 const WorldLayout = preload("res://scripts/world/WorldLayout.gd")
 const BACKGROUND_TEXTURE_PATH := "res://ditu_8k_realesrgan.png"
+const ROAD_OVERLAY_TEXTURE_PATH := WorldLayout.ROAD_MASK_TEXTURE_PATH
 const WORLD_RECT := WorldLayout.WORLD_RECT
+const ROAD_OVERLAY_RECT := WorldLayout.ROAD_MASK_WORLD_RECT
 
 var district_states: Dictionary = {}
 var time_period := "day"
 var light_level := 1.0
 var background_sprite := Sprite2D.new()
+var road_overlay_sprite := Sprite2D.new()
 
 
 func _ready() -> void:
@@ -23,6 +26,18 @@ func _ready() -> void:
 			WORLD_RECT.size.y / maxf(float(texture.get_height()), 1.0)
 		)
 	add_child(background_sprite)
+
+	var road_texture := _load_runtime_texture(ROAD_OVERLAY_TEXTURE_PATH)
+	road_overlay_sprite.centered = false
+	road_overlay_sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	road_overlay_sprite.texture = road_texture
+	road_overlay_sprite.position = ROAD_OVERLAY_RECT.position
+	if road_texture != null:
+		road_overlay_sprite.scale = Vector2(
+			ROAD_OVERLAY_RECT.size.x / maxf(float(road_texture.get_width()), 1.0),
+			ROAD_OVERLAY_RECT.size.y / maxf(float(road_texture.get_height()), 1.0)
+		)
+	add_child(road_overlay_sprite)
 
 
 func set_district_states(rows: Array) -> void:

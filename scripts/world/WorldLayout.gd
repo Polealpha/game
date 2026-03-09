@@ -3,6 +3,9 @@ class_name WorldLayout
 
 const WORLD_RECT := Rect2(Vector2.ZERO, Vector2(3072, 2048))
 const PLAYER_START := Vector2(2020, 620)
+const ROAD_MASK_TEXTURE_PATH := "res://road_layer_2.png"
+const ROAD_MASK_WORLD_RECT := Rect2(0.0, 261.89134045077105, 3064.3116672694396, 1559.6682997458058)
+const ROAD_MASK_ALPHA_THRESHOLD := 0.3
 
 const DISTRICT_RECTS := {
 	"贫民街": Rect2(40, 40, 980, 1120),
@@ -188,6 +191,9 @@ const INTERACTABLES := [
 	{"id": "chapel_notice", "kind": "info", "title": "广场耳语", "district": "交易所", "subtitle": "喷泉旁总有人低声交换风向", "subregion_id": "church_graveyard", "x": 2040, "y": 520},
 ]
 
+static var _road_mask_image: Image = null
+static var _road_mask_available := false
+
 
 static func district_names() -> Array[String]:
 	var names: Array[String] = []
@@ -235,6 +241,8 @@ static func label_position_for_district(district_name: String) -> Vector2:
 static func is_walkable_point(pos: Vector2) -> bool:
 	if not WORLD_RECT.has_point(pos):
 		return false
+	if _has_road_mask():
+		return _is_point_on_road_mask(pos)
 	for rect in WATER_RECTS:
 		if rect.has_point(pos):
 			return false
@@ -254,6 +262,8 @@ static func snap_to_walkable(pos: Vector2) -> Vector2:
 	)
 	if is_walkable_point(clamped):
 		return clamped
+	if _has_road_mask():
+		return _snap_to_road_mask(clamped)
 	var best_point := PLAYER_START
 	var best_distance := INF
 	for rect in WALKABLE_RECTS:
@@ -268,6 +278,75 @@ static func snap_to_walkable(pos: Vector2) -> Vector2:
 			best_distance = distance
 			best_point = candidate
 	return best_point
+
+
+static func _has_road_mask() -> bool:
+	if _road_mask_image != null:
+		return true
+	if _road_mask_available:
+		return false
+	_road_mask_available = true
+	var image := Image.new()
+	if image.load(ProjectSettings.globalize_path(ROAD_MASK_TEXTURE_PATH)) != OK:
+		return false
+	_road_mask_image = image
+	return true
+
+
+static func _is_point_on_road_mask(pos: Vector2) -> bool:
+	if _road_mask_image == null:
+		return false
+	if not ROAD_MASK_WORLD_RECT.has_point(pos):
+		return false
+	var uv := Vector2(
+		(pos.x - ROAD_MASK_WORLD_RECT.position.x) / ROAD_MASK_WORLD_RECT.size.x,
+		(pos.y - ROAD_MASK_WORLD_RECT.position.y) / ROAD_MASK_WORLD_RECT.size.y
+	)
+	var px := int(clampf(roundf(uv.x * float(_road_mask_image.get_width() - 1)), 0.0, float(_road_mask_image.get_width() - 1)))
+	var py := int(clampf(roundf(uv.y * float(_road_mask_image.get_height() - 1)), 0.0, float(_road_mask_image.get_height() - 1)))
+	var color := _road_mask_image.get_pixel(px, py)
+	return color.a >= ROAD_MASK_ALPHA_THRESHOLD
+
+
+static func _snap_to_road_mask(pos: Vector2) -> Vector2:
+	if _road_mask_image == null:
+		return pos
+	var search_center := Vector2(
+		clampf(pos.x, ROAD_MASK_WORLD_RECT.position.x, ROAD_MASK_WORLD_RECT.end.x),
+		clampf(pos.y, ROAD_MASK_WORLD_RECT.position.y, ROAD_MASK_WORLD_RECT.end.y)
+	)
+	var best_point := search_center
+	var best_distance := INF
+	var max_radius := int(maxf(ROAD_MASK_WORLD_RECT.size.x, ROAD_MASK_WORLD_RECT.size.y))
+	for radius in range(0, max_radius + 1, 12):
+		var sample_count := 16 if radius <= 96 else 28
+		for index in range(sample_count):
+			var angle := TAU * float(index) / float(sample_count)
+			var sample := search_center + Vector2(cos(angle), sin(angle)) * float(radius)
+			sample.x = clampf(sample.x, ROAD_MASK_WORLD_RECT.position.x, ROAD_MASK_WORLD_RECT.end.x)
+			sample.y = clampf(sample.y, ROAD_MASK_WORLD_RECT.position.y, ROAD_MASK_WORLD_RECT.end.y)
+			if not _is_point_on_road_mask(sample):
+				continue
+			var distance := pos.distance_squared_to(sample)
+			if distance < best_distance:
+				best_distance = distance
+				best_point = sample
+		if best_distance < INF:
+			return best_point
+	var fallback_best := ROAD_MASK_WORLD_RECT.get_center()
+	var fallback_distance := INF
+	for step_y in range(0, 160):
+		var y := ROAD_MASK_WORLD_RECT.position.y + ROAD_MASK_WORLD_RECT.size.y * float(step_y) / 159.0
+		for step_x in range(0, 240):
+			var x := ROAD_MASK_WORLD_RECT.position.x + ROAD_MASK_WORLD_RECT.size.x * float(step_x) / 239.0
+			var sample := Vector2(x, y)
+			if not _is_point_on_road_mask(sample):
+				continue
+			var distance := pos.distance_squared_to(sample)
+			if distance < fallback_distance:
+				fallback_distance = distance
+				fallback_best = sample
+	return fallback_best
 
 
 static func water_areas() -> Array:

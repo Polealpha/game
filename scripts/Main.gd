@@ -23,9 +23,9 @@ const CAMERA_LOOKAHEAD_LERP := 7.5
 const DISTRICT_RECTS := WorldLayout.DISTRICT_RECTS
 const NEWS_TICKER_SECONDS := 5.5
 const NPC_AUTO_TALK_SECONDS := 12.0
-const NPC_AUTO_TALK_RADIUS := 96.0
-const DIRECT_TALK_RADIUS := 54.0
-const HOUSE_ENTRY_RADIUS := 30.0
+const NPC_AUTO_TALK_RADIUS := 112.0
+const DIRECT_TALK_RADIUS := 72.0
+const HOUSE_ENTRY_RADIUS := 42.0
 const BACKEND_RETRY_MSEC := 5000
 const BACKEND_HEALTHCHECK_MSEC := 1600
 
@@ -804,7 +804,20 @@ func _maybe_trigger_proactive_npc_talk(delta: float) -> void:
 			"approach": "friendly",
 			"intent": "主动搭话"
 		}
-		var live_scene := _build_scene_observation_payload(true)
+		var live_scene := _build_scene_observation_payload(false)
+		UiRouter.push_modal(
+			"%s 主动搭话" % str(npc_card.get("name", "附近角色")),
+			"对方正在整理想法……",
+			"conversation",
+			{"dialogue": {
+				"npc_id": npc_id,
+				"district": _current_district_for_position(player.position),
+				"topic_id": "",
+				"approach": "cautious",
+				"source": "pending",
+				"body": "对方正在整理想法……"
+			}}
+		)
 		ApiClient.post_json("/npc/player_talk", {
 			"npc_id": npc_id,
 			"district": _current_district_for_position(player.position),
@@ -812,7 +825,7 @@ func _maybe_trigger_proactive_npc_talk(delta: float) -> void:
 			"approach": "friendly",
 			"intent": "主动搭话",
 			"player_position": live_scene.get("player_position", {}),
-			"screenshot_b64": str(live_scene.get("screenshot_b64", "")),
+			"screenshot_b64": "",
 			"scene_context": live_scene.get("scene_context", {})
 		}, "player_talk")
 		return
@@ -942,10 +955,21 @@ func _move_player(delta: float) -> void:
 	last_move_input = input_vector
 	player.set_movement_direction(input_vector)
 	var world_size := WORLD_RECT.size * WORLD_VISUAL_SCALE
-	player.position = Vector2(
+	var desired_position := Vector2(
 		clampf(player.position.x + input_vector.x * PLAYER_SPEED * delta, 0.0, world_size.x),
 		clampf(player.position.y + input_vector.y * PLAYER_SPEED * delta, 0.0, world_size.y)
 	)
+	var desired_layout_position := desired_position / WORLD_VISUAL_SCALE
+	if WorldLayout.is_walkable_point(desired_layout_position):
+		player.position = desired_position
+		return
+	var slide_x_position := Vector2(desired_position.x, player.position.y)
+	if WorldLayout.is_walkable_point(slide_x_position / WORLD_VISUAL_SCALE):
+		player.position = slide_x_position
+		return
+	var slide_y_position := Vector2(player.position.x, desired_position.y)
+	if WorldLayout.is_walkable_point(slide_y_position / WORLD_VISUAL_SCALE):
+		player.position = slide_y_position
 
 
 func _update_world_camera(delta: float) -> void:
@@ -1392,15 +1416,36 @@ func _submit_interaction(payload: Dictionary) -> void:
 		ApiClient.post_json("/world/reset", {}, "reset_world")
 	elif action_type == "player_talk":
 		pending_player_reaction = {}
-		var live_scene := _build_scene_observation_payload(true)
-		ApiClient.post_json("/npc/player_talk", {
+		var request_dialogue := {
 			"npc_id": str(payload.get("payload", {}).get("npc_id", "")),
 			"district": str(payload.get("district", "")),
 			"topic_id": str(payload.get("payload", {}).get("topic_id", "")),
 			"approach": str(payload.get("payload", {}).get("approach", "cautious")),
 			"intent": str(payload.get("payload", {}).get("intent", "")),
+			"source": "pending"
+		}
+		active_dialogue_context = {
+			"npc_id": str(request_dialogue.get("npc_id", "")),
+			"district": str(request_dialogue.get("district", _current_district_for_position(player.position))),
+			"topic_id": str(request_dialogue.get("topic_id", "")),
+			"approach": str(request_dialogue.get("approach", "cautious")),
+			"intent": "继续追问"
+		}
+		UiRouter.push_modal(
+			"街头交谈",
+			"对方正在整理说法……",
+			"conversation",
+			{"dialogue": request_dialogue}
+		)
+		var live_scene := _build_scene_observation_payload(false)
+		ApiClient.post_json("/npc/player_talk", {
+			"npc_id": str(request_dialogue.get("npc_id", "")),
+			"district": str(request_dialogue.get("district", "")),
+			"topic_id": str(request_dialogue.get("topic_id", "")),
+			"approach": str(request_dialogue.get("approach", "cautious")),
+			"intent": str(request_dialogue.get("intent", "")),
 			"player_position": live_scene.get("player_position", {}),
-			"screenshot_b64": str(live_scene.get("screenshot_b64", "")),
+			"screenshot_b64": "",
 			"scene_context": live_scene.get("scene_context", {})
 		}, "player_talk")
 	elif action_type == "trade_action":
@@ -1619,14 +1664,14 @@ func _trigger_proximity_conversation() -> void:
 				continue
 			if speaker.position.distance_to(listener.position) <= 110.0:
 				_play_npc_conversation_beat(speaker, listener)
-				var live_scene := _build_scene_observation_payload(true)
+				var live_scene := _build_scene_observation_payload(false)
 				ApiClient.post_json("/npc/conversation", {
 					"speaker_id": speaker_id,
 					"listener_id": listener_id,
 					"trigger": "街头搭话",
 					"current_district": str(live_scene.get("current_district", "")),
 					"player_position": live_scene.get("player_position", {}),
-					"screenshot_b64": str(live_scene.get("screenshot_b64", "")),
+					"screenshot_b64": "",
 					"scene_context": live_scene.get("scene_context", {})
 				}, "conversation")
 				return
@@ -1847,6 +1892,13 @@ func _on_api_response(tag: String, data: Dictionary) -> void:
 				str(dialogue.get("tone", "conversation")),
 				{"dialogue": dialogue}
 			)
+		else:
+			UiRouter.push_modal(
+				"街头交谈",
+				"对方一时没有答上来，只是谨慎地看着你。",
+				"conversation",
+				{"dialogue": GameState.snapshot.get("last_dialogue", {})}
+			)
 	elif tag == "probe_ai":
 		UiRouter.push_modal(
 			"AI 连接测试",
@@ -1923,6 +1975,13 @@ func _on_api_error(tag: String, status_code: int, message: String) -> void:
 	GameState.add_toast("服务离线或未启动。正在重试拉起本地 Python 服务。")
 	if not message.is_empty():
 		news_label.text = "[color=#6f1d1b]%s[/color]" % message
+	if tag == "player_talk":
+		UiRouter.push_modal(
+			"街头交谈",
+			"对方没有及时接话，你先记下了这次接触。",
+			"conversation",
+			{"dialogue": GameState.snapshot.get("last_dialogue", {})}
+		)
 
 
 func _scan_music_library() -> void:
@@ -3253,7 +3312,7 @@ func _submit_modal_player_talk() -> void:
 		return
 	active_dialogue_context = dialogue_context
 	modal_send_button.disabled = true
-	var live_scene := _build_scene_observation_payload(true)
+	var live_scene := _build_scene_observation_payload(false)
 	ApiClient.post_json("/npc/player_talk", {
 		"npc_id": str(dialogue_context.get("npc_id", "")),
 		"district": str(dialogue_context.get("district", _current_district_for_position(player.position))),
@@ -3262,7 +3321,7 @@ func _submit_modal_player_talk() -> void:
 		"intent": str(active_dialogue_context.get("intent", "继续追问")),
 		"player_input": player_input,
 		"player_position": live_scene.get("player_position", {}),
-		"screenshot_b64": str(live_scene.get("screenshot_b64", "")),
+		"screenshot_b64": "",
 		"scene_context": live_scene.get("scene_context", {})
 	}, "player_talk")
 	modal_input.text = ""

@@ -3,7 +3,9 @@ from __future__ import annotations
 import copy
 import json
 import math
+import os
 import random
+import sys
 import threading
 import time
 from dataclasses import dataclass
@@ -55,6 +57,27 @@ HOUSE_DEFS: dict[str, dict[str, str]] = {
         "anchor_x": "1370.0",
         "anchor_y": "610.0",
     },
+}
+
+SUBREGION_ROUTE_POINTS: dict[str, list[tuple[float, float]]] = {
+    "forest_farm": [(430.0, 320.0), (560.0, 300.0), (700.0, 360.0), (610.0, 540.0)],
+    "courtyard_garden": [(410.0, 700.0), (560.0, 760.0), (700.0, 860.0), (520.0, 930.0)],
+    "wild_path": [(250.0, 1470.0), (420.0, 1510.0), (600.0, 1430.0), (740.0, 1570.0)],
+    "shipyard_workshop": [(980.0, 1510.0), (1190.0, 1610.0), (1450.0, 1530.0), (1600.0, 1660.0)],
+    "canal_harbor": [(1080.0, 980.0), (1260.0, 1080.0), (1440.0, 980.0), (1490.0, 1180.0)],
+    "stonebridge_quarter": [(700.0, 720.0), (860.0, 720.0), (990.0, 820.0), (820.0, 920.0)],
+    "watermill_yard": [(1920.0, 980.0), (2140.0, 1110.0), (2310.0, 1220.0), (2050.0, 1320.0)],
+    "stoneyard_workcamp": [(2350.0, 1400.0), (2520.0, 1460.0), (2690.0, 1530.0), (2440.0, 1600.0)],
+    "clocktower_market": [(2050.0, 220.0), (2240.0, 300.0), (2440.0, 330.0), (2640.0, 260.0)],
+    "rune_tower": [(1220.0, 400.0), (1370.0, 610.0), (1530.0, 520.0), (1480.0, 310.0)],
+    "church_graveyard": [(1950.0, 540.0), (2100.0, 500.0), (2240.0, 610.0), (2380.0, 660.0)],
+}
+
+HOUSE_PATROL_POINTS: dict[str, list[tuple[float, float]]] = {
+    "slum_house": [(592.0, 582.0), (630.0, 584.0), (574.0, 620.0), (648.0, 618.0)],
+    "dock_house": [(840.0, 736.0), (884.0, 738.0), (824.0, 774.0), (902.0, 772.0)],
+    "factory_house": [(2214.0, 1140.0), (2258.0, 1142.0), (2202.0, 1178.0), (2270.0, 1176.0)],
+    "exchange_house": [(1348.0, 628.0), (1394.0, 628.0), (1338.0, 666.0), (1402.0, 664.0)],
 }
 
 
@@ -318,7 +341,8 @@ class WorldEngine:
                 self._record_scene_observation(scene_observation)
             self.state["demo_metrics"]["ai_pulses"] = int(self.state["demo_metrics"].get("ai_pulses", 0)) + 1
             self._generate_ai_pulse(trigger=trigger)
-            self._run_agent_social_turns(scene_observation or {})
+            var_allow_social_llm = not (trigger == "scheduled" and self._use_lightweight_scheduled_llm())
+            self._run_agent_social_turns(scene_observation or {}, allow_llm=var_allow_social_llm)
             self._apply_intraday_market_move(reason="ai_pulse", decay=0.72)
             self._decay_district_signals()
             self._refresh_derived_views()
@@ -478,7 +502,7 @@ class WorldEngine:
             self.state["last_dialogue"]["district"] = npc["district"]
             self.state["last_dialogue"]["heard_by"] = heard_by
             self.state["last_dialogue"]["source"] = "llm" if dialogue else "rule"
-            self.state["last_dialogue"]["model"] = "doubao-seed-2-0-mini-260215" if dialogue else "rule"
+            self.state["last_dialogue"]["model"] = str(dialogue.get("_meta_model", self.ark.model_id)) if dialogue else "rule"
             self.state["last_dialogue"]["trade_quotes"] = trade_quotes
             self._refresh_ambient_speeches()
             self._apply_intraday_market_move(reason="player_talk", decay=0.78)
@@ -491,6 +515,7 @@ class WorldEngine:
         listener_id: str,
         trigger: str,
         scene_observation: dict[str, Any] | None = None,
+        allow_llm: bool = True,
     ) -> ActionResult:
         with self.lock:
             speaker = self._find_npc(speaker_id)
@@ -509,7 +534,7 @@ class WorldEngine:
             self._queue_agent_task(speaker, "npc_conversation", str(listener.get("name", "")))
             self._queue_agent_task(listener, "npc_conversation", str(speaker.get("name", "")))
             dialogue = None
-            if self._consume_agent_budget(speaker, "npc_conversation", 1) and self._consume_agent_budget(listener, "npc_conversation", 1):
+            if allow_llm and self._consume_agent_budget(speaker, "npc_conversation", 1) and self._consume_agent_budget(listener, "npc_conversation", 1):
                 dialogue = self.ark.generate_dialogue_turn(
                     {
                         "speaker": speaker,
@@ -618,7 +643,7 @@ class WorldEngine:
             self._refresh_derived_views()
             return ActionResult("", self.snapshot())
 
-    def _run_agent_social_turns(self, scene_observation: dict[str, Any]) -> None:
+    def _run_agent_social_turns(self, scene_observation: dict[str, Any], allow_llm: bool = True) -> None:
         rows: list[tuple[float, float, str, str]] = []
         npcs = self.state.get("npcs", [])
         for index, speaker in enumerate(npcs):
@@ -656,7 +681,7 @@ class WorldEngine:
                 trigger = "码头换班闲聊"
             elif str(speaker.get("district", "")) == "贫民街":
                 trigger = "巷口传话"
-            self.conversation(speaker_id, listener_id, trigger, scene_observation=scene_observation)
+            self.conversation(speaker_id, listener_id, trigger, scene_observation=scene_observation, allow_llm=allow_llm)
             used.add(speaker_id)
             used.add(listener_id)
             turns += 1
@@ -1058,8 +1083,18 @@ class WorldEngine:
             self._generate_npc_speech(npc)
             self._apply_local_hearing(npc)
             self._check_local_escalation(npc)
-        self._apply_llm_pulse_brief(trigger)
-        self._apply_scene_director_note(trigger)
+        pulse_count = int(self.state.get("demo_metrics", {}).get("ai_pulses", 0))
+        use_live_llm = (
+            trigger != "scheduled"
+            or self._full_scheduled_llm_mode()
+            or pulse_count % 5 == 0
+        )
+        if use_live_llm:
+            self._apply_llm_pulse_brief(trigger)
+            self._apply_scene_director_note(trigger)
+        else:
+            self._apply_fallback_pulse_brief()
+            self.state["scene_director_note"] = self._fallback_scene_focus()
         self._refresh_ambient_speeches()
         self._refresh_derived_views()
         self.state["last_pulse_at"] = self._now_label()
@@ -1222,6 +1257,12 @@ class WorldEngine:
             llm_observation["screenshot_b64"] = ""
         return llm_observation
 
+    def _full_scheduled_llm_mode(self) -> bool:
+        return "unittest" in sys.modules or os.getenv("SHELL_MARKET_FULL_SCHEDULED_LLM", "0") == "1"
+
+    def _use_lightweight_scheduled_llm(self) -> bool:
+        return not self._full_scheduled_llm_mode()
+
     def _apply_llm_pulse_brief(self, trigger: str) -> None:
         observation = copy.deepcopy(self.state.get("scene_observation", {}))
         payload = self._build_llm_pulse_payload(trigger, observation)
@@ -1258,10 +1299,11 @@ class WorldEngine:
         npc_cards = self._build_npc_cards()
         family_moves = copy.deepcopy(self.state.get("family_moves", []))
         company_states = copy.deepcopy(self.state.get("company_states", []))
+        include_image = trigger != "scheduled" or self._full_scheduled_llm_mode()
         return {
             "trigger": trigger,
             "day": self.state.get("day", 1),
-            "scene_observation": self._llm_scene_observation(observation, include_image=True),
+            "scene_observation": self._llm_scene_observation(observation, include_image=include_image),
             "macro": copy.deepcopy(self.state.get("macro", {})),
             "district_signals": copy.deepcopy(self.state.get("district_signals", {})),
             "player": {
@@ -1542,12 +1584,14 @@ class WorldEngine:
     def _backfill_missing_npc_briefs(self, seen_ids: set[str], observation: dict[str, Any]) -> None:
         if not self.ark.enabled:
             return
+        nearby_ids = self._nearby_npc_ids(observation)
         for npc in self.state.get("npcs", []):
             npc_id = str(npc.get("id", ""))
             if not npc_id or npc_id in seen_ids:
                 continue
             topic = self._resolve_talk_topic(npc, "", str(npc.get("district", "")))
             truth_profile = self._truth_metrics_for_topic(npc, topic, "cautious", "街头风声")
+            cadence = self._npc_brief_cadence_pulses(npc, observation, nearby_ids)
             use_image = cadence == 1 or npc_id in nearby_ids
             generated = self.ark.generate_npc_spin(
                 {
@@ -1645,7 +1689,11 @@ class WorldEngine:
         seen_ids = set(seed_seen_ids or set())
         pulse_index = int(self.state.get("demo_metrics", {}).get("ai_pulses", 0))
         nearby_ids = self._nearby_npc_ids(observation)
+        refreshed = 0
+        refresh_cap = 4 if self._use_lightweight_scheduled_llm() else max(4, len(self.state.get("npcs", [])))
         for npc in self.state.get("npcs", []):
+            if refreshed >= refresh_cap:
+                break
             npc_id = str(npc.get("id", ""))
             if not npc_id:
                 continue
@@ -1693,6 +1741,7 @@ class WorldEngine:
                     }
                 ]
             )
+            refreshed += 1
 
     def _nearby_npc_ids(self, observation: dict[str, Any]) -> set[str]:
         scene_context = observation.get("scene_context", {}) if isinstance(observation, dict) else {}
@@ -1740,7 +1789,11 @@ class WorldEngine:
         if not self.ark.enabled:
             return
         seen_names = set(seed_seen_names or set())
+        refreshed = 0
+        refresh_cap = 2 if self._use_lightweight_scheduled_llm() else max(2, len(self.state.get("family_moves", [])))
         for family_move in self.state.get("family_moves", []):
+            if refreshed >= refresh_cap:
+                break
             family_name = str(family_move.get("name", ""))
             if not family_name:
                 continue
@@ -1772,12 +1825,17 @@ class WorldEngine:
                     }
                 ]
             )
+            refreshed += 1
 
     def _refresh_all_company_briefs(self, observation: dict[str, Any], seed_seen_ids: set[str] | None = None) -> None:
         if not self.ark.enabled:
             return
         seen_ids = set(seed_seen_ids or set())
+        refreshed = 0
+        refresh_cap = 2 if self._use_lightweight_scheduled_llm() else max(2, len(self.state.get("company_states", [])))
         for company in self.state.get("company_states", []):
+            if refreshed >= refresh_cap:
+                break
             company_id = str(company.get("id", ""))
             if not company_id:
                 continue
@@ -1804,6 +1862,7 @@ class WorldEngine:
                     }
                 ]
             )
+            refreshed += 1
 
     def _append_pulse_journal(self, trigger: str) -> None:
         rows = self.state.get("pulse_journal", [])
@@ -3110,7 +3169,7 @@ class WorldEngine:
             activity = "working"
             home_state = "away"
             if work_start <= minutes < work_end:
-                target = work_anchor
+                target = self._schedule_patrol_anchor(npc, work_anchor, "work", minutes)
                 activity = "working"
             elif depart_start <= minutes < work_start:
                 ratio = (minutes - depart_start) / max(work_start - depart_start, 1)
@@ -3127,7 +3186,7 @@ class WorldEngine:
                 }
                 activity = "returning"
             else:
-                target = home_anchor
+                target = self._schedule_patrol_anchor(npc, home_anchor, "home", minutes)
                 activity = "home"
                 if minutes >= sleep_start or minutes < max(depart_start - 40, 0):
                     home_state = "sleeping"
@@ -3162,6 +3221,37 @@ class WorldEngine:
             )
         for district in self.state["districts"]:
             district["traffic"] = self._traffic_for_district(district)
+
+    def _schedule_patrol_anchor(
+        self,
+        npc: dict[str, Any],
+        base_anchor: dict[str, float],
+        mode: str,
+        minutes: int,
+    ) -> dict[str, float]:
+        if mode == "home":
+            route_points = HOUSE_PATROL_POINTS.get(str(npc.get("home_id", "")), [])
+        else:
+            route_points = SUBREGION_ROUTE_POINTS.get(str(npc.get("subregion_id", "")), [])
+        if not route_points:
+            return {"x": float(base_anchor["x"]), "y": float(base_anchor["y"])}
+        try:
+            index_seed = max(1, int(str(npc.get("id", "npc_1")).split("_")[-1]))
+        except ValueError:
+            index_seed = (sum(ord(ch) for ch in str(npc.get("id", ""))) % 20) + 1
+        cadence = 24 if mode == "home" else 18
+        slot = int(minutes // cadence + index_seed) % len(route_points)
+        next_slot = (slot + 1) % len(route_points)
+        ratio = (minutes % cadence) / float(cadence)
+        ax, ay = route_points[slot]
+        bx, by = route_points[next_slot]
+        mix = 0.18 + ratio * 0.64
+        target_x = ax + (bx - ax) * mix
+        target_y = ay + (by - ay) * mix
+        return {
+            "x": round((target_x + float(base_anchor["x"]) * 0.35) / 1.35, 1),
+            "y": round((target_y + float(base_anchor["y"]) * 0.35) / 1.35, 1),
+        }
 
     def _traffic_for_district(self, district: dict[str, Any]) -> int:
         minutes = int(self.state.get("clock_minutes", 8 * 60))

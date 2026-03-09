@@ -6,6 +6,7 @@ const BACKGROUND_TEXTURE_PATH := "res://ditu_x4_realesrgan.png"
 const ROAD_OVERLAY_TEXTURE_PATH := WorldLayout.ROAD_MASK_TEXTURE_PATH
 const WORLD_RECT := WorldLayout.WORLD_RECT
 const ROAD_OVERLAY_RECT := WorldLayout.ROAD_MASK_WORLD_RECT
+const SHOW_ROAD_OVERLAY := false
 
 var district_states: Dictionary = {}
 var time_period := "day"
@@ -27,17 +28,18 @@ func _ready() -> void:
 		)
 	add_child(background_sprite)
 
-	var road_texture := _load_runtime_texture(ROAD_OVERLAY_TEXTURE_PATH)
-	road_overlay_sprite.centered = false
-	road_overlay_sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	road_overlay_sprite.texture = road_texture
-	road_overlay_sprite.position = ROAD_OVERLAY_RECT.position
-	if road_texture != null:
-		road_overlay_sprite.scale = Vector2(
-			ROAD_OVERLAY_RECT.size.x / maxf(float(road_texture.get_width()), 1.0),
-			ROAD_OVERLAY_RECT.size.y / maxf(float(road_texture.get_height()), 1.0)
-		)
-	add_child(road_overlay_sprite)
+	if SHOW_ROAD_OVERLAY:
+		var road_texture := _load_runtime_texture(ROAD_OVERLAY_TEXTURE_PATH)
+		road_overlay_sprite.centered = false
+		road_overlay_sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		road_overlay_sprite.texture = road_texture
+		road_overlay_sprite.position = ROAD_OVERLAY_RECT.position
+		if road_texture != null:
+			road_overlay_sprite.scale = Vector2(
+				ROAD_OVERLAY_RECT.size.x / maxf(float(road_texture.get_width()), 1.0),
+				ROAD_OVERLAY_RECT.size.y / maxf(float(road_texture.get_height()), 1.0)
+			)
+		add_child(road_overlay_sprite)
 
 
 func set_district_states(rows: Array) -> void:

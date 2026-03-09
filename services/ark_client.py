@@ -13,8 +13,12 @@ except Exception:  # pragma: no cover
 
 
 HARDCODED_ARK_API_KEY = "521e4c18-b3f9-4b54-af94-1f404328f300"
+FORCED_ARK_MODEL = "doubao-seed-1-6-flash-250828"
+REPLY_LIMIT_SUFFIX = " 每次回复小于100字。"
+ANTI_PLACEHOLDER_SUFFIX = " 不要复述 schema_hint 里的示例占位词，不要输出“玩家台词”“NPC台词”“立场”“topic_id”“信息不足”“未知”这类占位内容。"
+THINKING_DISABLED_BODY = {"thinking": {"type": "disabled"}}
 DEFAULT_ARK_MODEL_CANDIDATES = [
-    "doubao-seed-2-0-mini-260215",
+    FORCED_ARK_MODEL,
     "doubao-seed-2-0-lite-250821",
     "doubao-seed-2-0-pro-250821",
     "doubao-seed-1-6-vision-250815",
@@ -31,10 +35,10 @@ class ArkClient:
         self.api_key = HARDCODED_ARK_API_KEY
         raw_endpoint_id = os.getenv("ARK_ENDPOINT_ID", "").strip()
         self.endpoint_id = "" if raw_endpoint_id == self.api_key else raw_endpoint_id
-        self.model_id = os.getenv("ARK_MODEL_ID", DEFAULT_ARK_MODEL_CANDIDATES[0]).strip()
-        self.model_label = os.getenv("ARK_MODEL_LABEL", self.model_id).strip()
+        self.model_id = os.getenv("ARK_MODEL_ID", FORCED_ARK_MODEL).strip() or FORCED_ARK_MODEL
+        self.model_label = os.getenv("ARK_MODEL_LABEL", self.model_id).strip() or self.model_id
         self.base_url = os.getenv("ARK_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3")
-        self.timeout_seconds = float(os.getenv("ARK_TIMEOUT_SECONDS", "20").strip() or "20")
+        self.timeout_seconds = float(os.getenv("ARK_TIMEOUT_SECONDS", "8").strip() or "8")
         self._client = None
         disable_for_unittest = "unittest" in sys.modules and os.getenv("ARK_ENABLE_IN_TESTS", "0") != "1"
         if self.api_key and OpenAI is not None and not disable_for_unittest:
@@ -256,9 +260,9 @@ class ArkClient:
                 response = self._client.chat.completions.create(
                     model=model_name,
                     temperature=0.2,
-                    extra_body={"thinking": {"type": "disabled"}},
+                    extra_body=THINKING_DISABLED_BODY,
                     messages=[
-                        {"role": "system", "content": "你是连通性测试助手，只能用简体中文回复。"},
+                        {"role": "system", "content": "你是连通性测试助手，只能用简体中文回复。" + REPLY_LIMIT_SUFFIX},
                         {"role": "user", "content": "请只回答：方舟连通。"},
                     ],
                 )
@@ -294,16 +298,18 @@ class ArkClient:
             return None
         prompt = {
             "task_type": task_type,
-            "task_prompt": task_prompt,
+            "task_prompt": task_prompt + REPLY_LIMIT_SUFFIX + ANTI_PLACEHOLDER_SUFFIX,
             "schema_hint": schema_hint,
             "state": state_prompt,
         }
+        system_prompt = system_prompt + REPLY_LIMIT_SUFFIX + ANTI_PLACEHOLDER_SUFFIX
         for model_name in self._model_candidates():
             try:
                 response = self._client.chat.completions.create(
                     model=model_name,
                     temperature=0.45,
-                    extra_body={"thinking": {"type": "disabled"}},
+                    max_tokens=320,
+                    extra_body=THINKING_DISABLED_BODY,
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {
@@ -318,6 +324,8 @@ class ArkClient:
                     continue
                 if not self._looks_usable_chinese(parsed):
                     continue
+                if isinstance(parsed, dict):
+                    parsed["_meta_model"] = model_name
                 return parsed
             except Exception:
                 continue
@@ -357,6 +365,8 @@ class ArkClient:
         critical = self._collect_leaf_strings(payload)
         if not critical:
             return False
+        if self._contains_placeholder_schema_value(critical):
+            return False
         chinese_hits = 0
         latin_hits = 0
         for text in critical:
@@ -368,6 +378,45 @@ class ArkClient:
             if re.search(r"[A-Za-z]{4,}", stripped):
                 latin_hits += 1
         return chinese_hits > 0 and latin_hits <= max(2, chinese_hits * 2)
+
+    @staticmethod
+    def _contains_placeholder_schema_value(rows: list[str]) -> bool:
+        exact_placeholders = {
+            "玩家台词",
+            "NPC台词",
+            "立场",
+            "topic_id",
+            "信息不足",
+            "未知",
+        }
+        suspicious_phrases = (
+            "任务执行中，信息待补充",
+            "当前城区信息缺失",
+            "待观察商品、股票动态",
+            "待补充",
+            "口风待补充",
+            "立场待补充",
+            "无有效信息",
+            "无市场动态",
+            "无场景焦点",
+            "话术补全",
+            "字段定义",
+            "json 格式",
+            "只输出这个对象",
+            "只返回 json",
+            "schema_hint",
+        )
+        seen_exact = 0
+        for value in rows:
+            stripped = value.strip()
+            if not stripped:
+                continue
+            if stripped in exact_placeholders:
+                seen_exact += 1
+                continue
+            if any(phrase in stripped.lower() for phrase in suspicious_phrases):
+                return True
+        return seen_exact >= 2
 
     def _collect_leaf_strings(self, payload: Any) -> list[str]:
         rows: list[str] = []

@@ -11,6 +11,7 @@ var time_passed := 0.0
 var time_period := "day"
 var light_level := 1.0
 var house_states: Dictionary = {}
+var weather_state: Dictionary = {"kind": "sunny", "label": "晴天", "intensity": 0.1}
 var redraw_accumulator := 0.0
 
 
@@ -35,12 +36,19 @@ func set_house_states(states: Dictionary) -> void:
 	queue_redraw()
 
 
+func set_weather(weather: Dictionary) -> void:
+	weather_state = weather.duplicate(true)
+	redraw_accumulator = 0.0
+	queue_redraw()
+
+
 func _draw() -> void:
 	_draw_time_wash()
 	_draw_district_tint()
 	_draw_sky_glow()
 	_draw_ground_falloff()
 	_draw_house_glow()
+	_draw_weather_overlay()
 	_draw_water_motion()
 	_draw_fountain_ripples()
 	_draw_street_lamps()
@@ -84,7 +92,43 @@ func _draw_house_glow() -> void:
 			_draw_ellipse(door + Vector2(0.0, 18.0), Vector2(64.0, 20.0), Color(color.r, color.g, color.b, 0.02 + warmth * 0.12))
 
 
+func _draw_weather_overlay() -> void:
+	var weather_kind := str(weather_state.get("kind", "sunny"))
+	var intensity := clampf(float(weather_state.get("intensity", 0.18)), 0.0, 1.0)
+	match weather_kind:
+		"cloudy":
+			draw_rect(WORLD_RECT, Color(0.78, 0.82, 0.86, 0.035 + intensity * 0.035), true)
+		"overcast":
+			draw_rect(WORLD_RECT, Color(0.62, 0.68, 0.74, 0.06 + intensity * 0.06), true)
+		"rain":
+			draw_rect(WORLD_RECT, Color(0.56, 0.66, 0.78, 0.05 + intensity * 0.05), true)
+			for index in range(48):
+				var phase := time_passed * (210.0 + intensity * 40.0) + float(index) * 33.0
+				var x := fposmod(phase * 0.8 + float(index) * 71.0, WORLD_RECT.size.x + 180.0) - 90.0
+				var y := fposmod(phase * 1.35 + float(index) * 41.0, WORLD_RECT.size.y + 140.0) - 70.0
+				draw_line(Vector2(x, y), Vector2(x - 7.0, y + 18.0), Color(0.9, 0.96, 1.0, 0.16 + intensity * 0.08), 1.6)
+		"snow":
+			draw_rect(WORLD_RECT, Color(0.92, 0.95, 1.0, 0.025 + intensity * 0.03), true)
+			for index in range(42):
+				var phase := time_passed * (26.0 + intensity * 6.0) + float(index) * 19.0
+				var x := fposmod(phase * 0.42 + float(index) * 83.0 + sin(phase * 0.07) * 18.0, WORLD_RECT.size.x + 120.0) - 60.0
+				var y := fposmod(phase * 0.88 + float(index) * 57.0, WORLD_RECT.size.y + 120.0) - 60.0
+				draw_circle(Vector2(x, y), 1.7 + fmod(float(index), 3.0) * 0.45, Color(0.98, 0.99, 1.0, 0.18 + intensity * 0.1))
+		"dust":
+			draw_rect(WORLD_RECT, Color(0.82, 0.72, 0.52, 0.05 + intensity * 0.06), true)
+			for index in range(28):
+				var phase := time_passed * (18.0 + intensity * 4.0) + float(index) * 23.0
+				var center := Vector2(
+					fposmod(phase * 0.6 + float(index) * 97.0, WORLD_RECT.size.x + 180.0) - 90.0,
+					fposmod(phase * 0.2 + float(index) * 61.0, WORLD_RECT.size.y * 0.62) + 60.0
+				)
+				_draw_ellipse(center, Vector2(22.0 + fmod(float(index) * 3.0, 16.0), 9.0 + fmod(float(index), 4.0) * 2.0), Color(0.87, 0.74, 0.46, 0.06 + intensity * 0.04))
+		_:
+			pass
+
+
 func _draw_water_motion() -> void:
+	return
 	for area in WorldLayout.water_areas():
 		var rect: Rect2 = area.get("rect", Rect2())
 		var flow: Vector2 = area.get("flow", Vector2.RIGHT)
@@ -110,6 +154,7 @@ func _draw_water_motion() -> void:
 
 
 func _draw_fountain_ripples() -> void:
+	return
 	for item in WorldLayout.fountain_points():
 		var center: Vector2 = item.get("pos", Vector2.ZERO)
 		var radius := float(item.get("radius", 52.0))
@@ -121,15 +166,7 @@ func _draw_fountain_ripples() -> void:
 
 
 func _draw_street_lamps() -> void:
-	if light_level > 0.8 and time_period == "day":
-		return
-	var lamp_alpha := clampf((0.84 - light_level) * 0.42, 0.0, 0.24)
-	if lamp_alpha <= 0.0:
-		return
-	for point in WorldLayout.street_lamps():
-		_draw_ellipse(point + Vector2(0.0, 18.0), Vector2(90.0, 28.0), Color(0.98, 0.87, 0.56, lamp_alpha))
-		_draw_ellipse(point + Vector2(0.0, 2.0), Vector2(36.0, 46.0), Color(0.98, 0.84, 0.46, lamp_alpha * 0.46))
-		draw_circle(point, 5.0, Color(1.0, 0.9, 0.64, min(0.8, lamp_alpha * 4.2)))
+	return
 
 
 func _draw_sky_glow() -> void:

@@ -12,10 +12,10 @@ const ROLE_PROP_ICON_PATHS := {
 	"ledger": "res://assets/vendor/opengameart/496_RPG_icons/I_Book.png"
 }
 const ANIMAL_SPRITES := {
-	"hero": {"idle_path": "res://assets/generated/character_sheets/hero_idle_sheet.png", "move_path": "res://assets/generated/character_sheets/hero_move_sheet.png", "frame": Vector2i(128, 128), "idle_frames": 4, "move_frames": 8, "scale": 0.62, "ground_offset": 26.0, "family": "square"},
-	"base": {"idle_path": "res://assets/generated/character_sheets/base_idle_sheet.png", "move_path": "res://assets/generated/character_sheets/base_move_sheet.png", "frame": Vector2i(128, 128), "idle_frames": 4, "move_frames": 8, "scale": 0.6, "ground_offset": 26.0, "family": "square"},
-	"monster": {"idle_path": "res://assets/generated/character_sheets/monster_idle_sheet.png", "move_path": "res://assets/generated/character_sheets/monster_move_sheet.png", "frame": Vector2i(128, 128), "idle_frames": 4, "move_frames": 8, "scale": 0.61, "ground_offset": 26.0, "family": "square"},
-	"skeleton": {"idle_path": "res://assets/generated/character_sheets/skeleton_idle_sheet.png", "move_path": "res://assets/generated/character_sheets/skeleton_move_sheet.png", "frame": Vector2i(128, 128), "idle_frames": 4, "move_frames": 8, "scale": 0.6, "ground_offset": 26.0, "family": "square"}
+	"hero": {"idle_path": "res://assets/generated/character_sheets/hero_idle_sheet.png", "move_path": "res://assets/generated/character_sheets/hero_move_sheet.png", "frame": Vector2i(128, 128), "idle_frames": 4, "move_frames": 8, "scale": 0.66, "ground_offset": 26.0, "family": "square"},
+	"base": {"idle_path": "res://assets/generated/character_sheets/base_idle_sheet.png", "move_path": "res://assets/generated/character_sheets/base_move_sheet.png", "frame": Vector2i(128, 128), "idle_frames": 4, "move_frames": 8, "scale": 0.64, "ground_offset": 26.0, "family": "square"},
+	"monster": {"idle_path": "res://assets/generated/character_sheets/monster_idle_sheet.png", "move_path": "res://assets/generated/character_sheets/monster_move_sheet.png", "frame": Vector2i(128, 128), "idle_frames": 4, "move_frames": 8, "scale": 0.65, "ground_offset": 26.0, "family": "square"},
+	"skeleton": {"idle_path": "res://assets/generated/character_sheets/skeleton_idle_sheet.png", "move_path": "res://assets/generated/character_sheets/skeleton_move_sheet.png", "frame": Vector2i(128, 128), "idle_frames": 4, "move_frames": 8, "scale": 0.64, "ground_offset": 26.0, "family": "square"}
 }
 
 var npc_data: Dictionary = {}
@@ -444,7 +444,8 @@ func _update_label_layout() -> void:
 func _update_bubble_layout() -> void:
 	var float_y: float = sin(wobble_time * 2.2 + posture_phase) * (1.5 + head_bob_bias * 0.2) - speech_blend * abs(sin(speech_phase)) * 1.6 - speech_impulse * 1.2
 	var bubble_height: float = float(visual_profile.get("bubble_height", 92.0))
-	bubble_panel.position = Vector2(-bubble_panel.size.x * 0.5, -bubble_height + float_y - bubble_panel.size.y)
+	var horizontal_bias := sin(movement_seed * 3.7 + crowd_phase) * 18.0
+	bubble_panel.position = Vector2(-bubble_panel.size.x * 0.5 + horizontal_bias, -bubble_height + float_y - bubble_panel.size.y)
 	bubble_panel.modulate = Color(1, 1, 1, bubble_alpha)
 	bubble_panel.scale = Vector2.ONE * (1.0 + bubble_pop * 0.08 + speech_blend * 0.015 + speech_impulse * 0.035)
 	bubble_panel.visible = bubble_alpha > 0.02
@@ -553,17 +554,8 @@ func _draw_bubble_backplate() -> void:
 	var bubble_rect := _bubble_visual_rect()
 	var shadow_rect := Rect2(bubble_rect.position + Vector2(3, 4), bubble_rect.size)
 	draw_rect(shadow_rect, Color(0, 0, 0, 0.12 * bubble_alpha), true)
-	var texture := _load_bubble_texture()
-	if texture != null:
-		draw_texture_rect_region(
-			texture,
-			bubble_rect,
-			_bubble_source_rect(),
-			Color(1, 1, 1, bubble_alpha)
-		)
-	else:
-		draw_rect(bubble_rect, _speech_fill_color(), true)
-		draw_rect(bubble_rect, _accent_color().darkened(0.42), false, 2.0)
+	draw_rect(bubble_rect, _speech_fill_color().lightened(0.04), true)
+	draw_rect(bubble_rect, _accent_color().darkened(0.42), false, 2.0)
 
 
 func _bubble_visual_rect() -> Rect2:

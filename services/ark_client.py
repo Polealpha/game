@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import sys
 from typing import Any
 
 try:
@@ -11,16 +12,32 @@ except Exception:  # pragma: no cover
     OpenAI = None
 
 
+HARDCODED_ARK_API_KEY = "521e4c18-b3f9-4b54-af94-1f404328f300"
+DEFAULT_ARK_MODEL_CANDIDATES = [
+    "doubao-seed-2-0-mini-260215",
+    "doubao-seed-2-0-lite-250821",
+    "doubao-seed-2-0-pro-250821",
+    "doubao-seed-1-6-vision-250815",
+    "doubao-1-5-vision-pro-250328",
+    "doubao-1-5-vision-lite-250315",
+    "doubao-seed-1-6-251015",
+    "doubao-seed-1-6-flash-250715",
+    "doubao-seed-1-6-lite-250615",
+]
+
+
 class ArkClient:
     def __init__(self) -> None:
-        self.api_key = os.getenv("ARK_API_KEY", "").strip()
-        self.endpoint_id = os.getenv("ARK_ENDPOINT_ID", "").strip()
-        self.model_id = os.getenv("ARK_MODEL_ID", "doubao-seed-2-0-mini").strip()
-        self.model_label = os.getenv("ARK_MODEL_LABEL", "Doubao Seed 2.0 mini").strip()
+        self.api_key = HARDCODED_ARK_API_KEY
+        raw_endpoint_id = os.getenv("ARK_ENDPOINT_ID", "").strip()
+        self.endpoint_id = "" if raw_endpoint_id == self.api_key else raw_endpoint_id
+        self.model_id = os.getenv("ARK_MODEL_ID", DEFAULT_ARK_MODEL_CANDIDATES[0]).strip()
+        self.model_label = os.getenv("ARK_MODEL_LABEL", self.model_id).strip()
         self.base_url = os.getenv("ARK_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3")
         self.timeout_seconds = float(os.getenv("ARK_TIMEOUT_SECONDS", "20").strip() or "20")
         self._client = None
-        if self.api_key and OpenAI is not None:
+        disable_for_unittest = "unittest" in sys.modules and os.getenv("ARK_ENABLE_IN_TESTS", "0") != "1"
+        if self.api_key and OpenAI is not None and not disable_for_unittest:
             self._client = OpenAI(api_key=self.api_key, base_url=self.base_url, timeout=self.timeout_seconds)
 
     @property
@@ -33,17 +50,22 @@ class ArkClient:
             task_type="dialogue_turn",
             schema_hint='{"lines":["玩家台词","NPC台词"],"stance":"立场","truthfulness":0.0,"revealed_topic_ids":["topic_id"]}',
             system_prompt=(
-                "You write dialogue for a medieval pixel-art animal capitalist city simulation. "
-                "Output concise Chinese lines in a cold, realistic, profit-driven tone. "
-                "Do not invent prices, asset changes, or world events beyond the provided state."
+                "你是《壳与市场》的角色对话引擎。"
+                "必须只输出简体中文 JSON，不得输出英文句子、解释、思维过程、Markdown。"
+                "禁止编造输入之外的价格、资产变动、政策结果或世界事件。"
+                "如果身份资料和记忆不足，就根据提供的职业、家族、街区、饥饿、负债、舆论压力谨慎回答。"
             ),
             task_prompt=(
-                "Generate one dialogue turn based on the two characters, the topic, the speaking approach, "
-                "and the current scene. If player_input is present, use it as the exact player line and make the NPC answer it directly. Return JSON only."
+                "根据角色身份、独立记忆、立场、工具规则、当前截图和玩家话语，生成一轮对话。"
+                "如果 player_input 不为空，必须把它原样作为玩家台词。"
+                "NPC 必须结合自己的身份和最近记忆直接回答，不要空话。"
+                "只返回 JSON。"
             ),
             state_prompt={
                 "speaker": payload.get("speaker", {}),
                 "listener": payload.get("listener", {}),
+                "speaker_agent": payload.get("speaker_agent", {}),
+                "listener_agent": payload.get("listener_agent", {}),
                 "district": payload.get("district", ""),
                 "trigger": payload.get("trigger", ""),
                 "player_input": payload.get("player_input", ""),
@@ -61,13 +83,13 @@ class ArkClient:
         scene_observation = payload.get("scene_observation", {})
         return self._request_json(
             task_type="news_copy",
-            schema_hint='{"title":"标题","body":"正文","tags":["标签"],"tone":"tone"}',
+            schema_hint='{"title":"标题","body":"正文","tags":["标签"],"tone":"语气"}',
             system_prompt=(
-                "You are an editor in the animal capitalist city. "
-                "Package only the provided facts into concise Chinese news copy. "
-                "Do not invent market results, balance changes, or event outcomes."
+                "你是《壳与市场》的城内新闻编辑。"
+                "必须只输出简体中文 JSON。"
+                "只能包装输入里已经存在的事实，不得虚构市场结果、余额变化或不存在的事件。"
             ),
-            task_prompt="Turn the provided event, macro state, and market context into one short news item. Return JSON only.",
+            task_prompt="把提供的事件、宏观状态、市场变化写成一条短新闻。只返回 JSON。",
             state_prompt={
                 "event_name": payload.get("event_name", ""),
                 "district": payload.get("district", ""),
@@ -90,11 +112,11 @@ class ArkClient:
             task_type="scene_read",
             schema_hint='{"director_note":"导演旁白","headline_title":"标题","headline_body":"摘要"}',
             system_prompt=(
-                "You are the director AI of a social simulation game. "
-                "Summarize atmosphere and visible tension in concise Chinese. "
-                "Do not invent new system results."
+                "你是《壳与市场》的场景导演。"
+                "必须只输出简体中文 JSON。"
+                "只能总结画面气氛、人物紧张感、交易和舆论温度，不得编造新结果。"
             ),
-            task_prompt="Based on the screenshot and current state, write one director note and one short headline. Return JSON only.",
+            task_prompt="根据截图和当前状态，写一条导演旁白和一条短标题。只返回 JSON。",
             state_prompt={
                 "trigger": payload.get("trigger", ""),
                 "day": payload.get("day", 1),
@@ -112,13 +134,15 @@ class ArkClient:
             task_type="npc_spin",
             schema_hint='{"stance":"立场","truthfulness":0.0,"market_tilt":"neutral","lines":["一句说法"]}',
             system_prompt=(
-                "You only package an NPC's motive and wording. "
-                "Output concise Chinese in a cold, realistic tone. "
-                "Do not change the underlying facts from the rule system."
+                "你只负责包装一个 NPC 当下会怎么说。"
+                "必须只输出简体中文 JSON。"
+                "语气冷静、现实、逐利，但要符合该角色的职业、家族、负债和生活处境。"
+                "不能篡改规则层事实。"
             ),
-            task_prompt="Generate how this NPC would phrase the situation right now. Return JSON only.",
+            task_prompt="根据角色档案、独立记忆、街区信号和截图，写出这名 NPC 当下会抛出的说法。只返回 JSON。",
             state_prompt={
                 "npc": payload.get("npc", {}),
+                "agent_profile": payload.get("agent_profile", {}),
                 "topic": payload.get("topic", {}),
                 "truth_profile": payload.get("truth_profile", {}),
                 "district_signals": payload.get("district_signals", {}),
@@ -135,10 +159,11 @@ class ArkClient:
             task_type="family_briefing",
             schema_hint='{"public_line":"公开口风","hidden_line":"暗线口风","focus":"焦点","signal":"steady"}',
             system_prompt=(
-                "You write a powerful family's public wording and hidden posture. "
-                "Output concise Chinese. Do not invent cash, prices, or event truth."
+                "你负责家族简报。"
+                "必须只输出简体中文 JSON。"
+                "公开口风和暗线口风都要短、狠、像权力机关，不得虚构价格和账户数字。"
             ),
-            task_prompt="Write a short family briefing from the provided movement, pressure, and controlled companies. Return JSON only.",
+            task_prompt="根据家族动作、控制公司和街区压力写一段公开口风和暗线口风。只返回 JSON。",
             state_prompt={
                 "family": payload.get("family", {}),
                 "controlled_companies": payload.get("controlled_companies", []),
@@ -155,10 +180,11 @@ class ArkClient:
             task_type="company_briefing",
             schema_hint='{"headline":"公司摘要","worker_note":"工人感受","risk_note":"风险提示","signal":"steady"}',
             system_prompt=(
-                "You write a company's expression layer. "
-                "Output concise Chinese. Do not invent operating numbers or asset changes."
+                "你负责公司层简报。"
+                "必须只输出简体中文 JSON。"
+                "不得编造经营数字和资产涨跌，只能包装输入里的经营状态和风险。"
             ),
-            task_prompt="Write a short company briefing from the provided operating state and pressure. Return JSON only.",
+            task_prompt="根据公司经营状态、街区压力和近期简报写出公司摘要。只返回 JSON。",
             state_prompt={
                 "company": payload.get("company", {}),
                 "district_signals": payload.get("district_signals", {}),
@@ -173,21 +199,17 @@ class ArkClient:
         return self._request_json(
             task_type="pulse_brief",
             schema_hint=(
-                '{"pulse_summary":"一句总览","market_note":"一句市场注释","scene_focus":"一句场景焦点",'
+                '{"pulse_summary":"一句总览","market_note":"一句市场提示","scene_focus":"一句场景焦点",'
                 '"npc_updates":[{"id":"npc_id","line":"一句口风","stance":"立场","market_tilt":"neutral"}],'
                 '"family_updates":[{"name":"家族名","public_line":"公开动作","hidden_line":"暗线动作","focus":"焦点","signal":"steady"}],'
                 '"company_updates":[{"id":"company_id","headline":"一句公司状态","worker_note":"工人感受","risk_note":"风险提示","signal":"steady"}]}'
             ),
             system_prompt=(
-                "You are the pulse director of a social-capital city simulation. "
-                "Summarize and phrase what is already present in the supplied state. "
-                "Do not invent prices, balance changes, or event truth. "
-                "Cover every NPC id provided in the input if possible."
+                "你是《壳与市场》的五分钟 AI 脉冲导演。"
+                "必须只输出简体中文 JSON。"
+                "覆盖所有输入里的 NPC、家族和公司，但只能总结已有状态，不得编造价格、余额或胜负结果。"
             ),
-            task_prompt=(
-                "Use the screenshot, market state, families, companies, and all NPC summaries to produce a five-minute pulse brief. "
-                "Return JSON only."
-            ),
+            task_prompt="用截图、市场状态、家族、公司和 NPC 摘要生成一次 AI 脉冲简报。只返回 JSON。",
             state_prompt={
                 "trigger": payload.get("trigger", ""),
                 "day": payload.get("day", 1),
@@ -224,47 +246,39 @@ class ArkClient:
         if not self.enabled:
             return {
                 "ok": False,
-                "message": "ARK_API_KEY 未配置，当前仍处于本地 mock 模式。",
+                "message": "方舟客户端未启用，当前仍在规则回退模式。",
                 "endpoint_id": self.endpoint_id,
                 "model_label": self.model_label,
             }
-        try:
-            errors: list[str] = []
-            for model_name in self._model_candidates():
-                try:
-                    response = self._client.chat.completions.create(
-                        model=model_name,
-                        temperature=0.2,
-                        messages=[
-                            {"role": "system", "content": "你是连通性测试助手，只回复一句极短中文。"},
-                            {"role": "user", "content": "请只回复：方舟连通。"},
-                        ],
-                    )
-                    content = response.choices[0].message.content or ""
-                    return {
-                        "ok": True,
-                        "message": content.strip(),
-                        "endpoint_id": self.endpoint_id,
-                        "model_id": model_name,
-                        "model_label": self.model_label,
-                    }
-                except Exception as inner_exc:
-                    errors.append(f"{model_name}: {inner_exc}")
-            return {
-                "ok": False,
-                "message": " | ".join(errors),
-                "endpoint_id": self.endpoint_id,
-                "model_id": self.model_id,
-                "model_label": self.model_label,
-            }
-        except Exception as exc:
-            return {
-                "ok": False,
-                "message": str(exc),
-                "endpoint_id": self.endpoint_id,
-                "model_id": self.model_id,
-                "model_label": self.model_label,
-            }
+        errors: list[str] = []
+        for model_name in self._model_candidates():
+            try:
+                response = self._client.chat.completions.create(
+                    model=model_name,
+                    temperature=0.2,
+                    extra_body={"thinking": {"type": "disabled"}},
+                    messages=[
+                        {"role": "system", "content": "你是连通性测试助手，只能用简体中文回复。"},
+                        {"role": "user", "content": "请只回答：方舟连通。"},
+                    ],
+                )
+                content = response.choices[0].message.content or ""
+                return {
+                    "ok": True,
+                    "message": content.strip(),
+                    "endpoint_id": self.endpoint_id,
+                    "model_id": model_name,
+                    "model_label": model_name,
+                }
+            except Exception as exc:
+                errors.append(f"{model_name}: {exc}")
+        return {
+            "ok": False,
+            "message": " | ".join(errors),
+            "endpoint_id": self.endpoint_id,
+            "model_id": self.model_id,
+            "model_label": self.model_label,
+        }
 
     def _request_json(
         self,
@@ -284,11 +298,12 @@ class ArkClient:
             "schema_hint": schema_hint,
             "state": state_prompt,
         }
-        try:
-            for model_name in self._model_candidates():
+        for model_name in self._model_candidates():
+            try:
                 response = self._client.chat.completions.create(
                     model=model_name,
-                    temperature=0.65,
+                    temperature=0.45,
+                    extra_body={"thinking": {"type": "disabled"}},
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {
@@ -299,10 +314,13 @@ class ArkClient:
                 )
                 content = response.choices[0].message.content or ""
                 parsed = self._extract_json(content)
-                if parsed:
-                    return parsed
-        except Exception:
-            return None
+                if not parsed:
+                    continue
+                if not self._looks_usable_chinese(parsed):
+                    continue
+                return parsed
+            except Exception:
+                continue
         return None
 
     @staticmethod
@@ -317,14 +335,7 @@ class ArkClient:
 
     def _model_candidates(self) -> list[str]:
         candidates: list[str] = []
-        for value in [
-            self.endpoint_id,
-            self.model_id,
-            self.model_label,
-            "doubao-seed-2-0-mini",
-            "doubao-seed-2.0-mini",
-            "Doubao-Seed-2.0-mini",
-        ]:
+        for value in [self.endpoint_id, self.model_id, self.model_label, *DEFAULT_ARK_MODEL_CANDIDATES]:
             cleaned = str(value).strip()
             if cleaned and cleaned not in candidates:
                 candidates.append(cleaned)
@@ -338,8 +349,34 @@ class ArkClient:
             {"type": "text", "text": text_prompt},
             {
                 "type": "image_url",
-                "image_url": {
-                    "url": f"data:image/png;base64,{screenshot_b64}"
-                },
+                "image_url": {"url": f"data:image/png;base64,{screenshot_b64}"},
             },
         ]
+
+    def _looks_usable_chinese(self, payload: Any) -> bool:
+        critical = self._collect_leaf_strings(payload)
+        if not critical:
+            return False
+        chinese_hits = 0
+        latin_hits = 0
+        for text in critical:
+            stripped = text.strip()
+            if not stripped:
+                continue
+            if re.search(r"[\u4e00-\u9fff]", stripped):
+                chinese_hits += 1
+            if re.search(r"[A-Za-z]{4,}", stripped):
+                latin_hits += 1
+        return chinese_hits > 0 and latin_hits <= max(2, chinese_hits * 2)
+
+    def _collect_leaf_strings(self, payload: Any) -> list[str]:
+        rows: list[str] = []
+        if isinstance(payload, dict):
+            for value in payload.values():
+                rows.extend(self._collect_leaf_strings(value))
+        elif isinstance(payload, list):
+            for value in payload:
+                rows.extend(self._collect_leaf_strings(value))
+        elif isinstance(payload, str):
+            rows.append(payload)
+        return rows

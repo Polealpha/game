@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import json
+import math
 import random
 import threading
 import time
@@ -152,6 +153,7 @@ class WorldEngine:
                 "clock_minutes": 8 * 60,
                 "time_period": "morning",
                 "light_level": 0.95,
+                "weather": {"kind": "sunny", "label": "晴天", "intensity": 0.12, "slot": -1, "day": 1},
                 "last_tick_at": time.time(),
                 "player": {
                     "cash": 30,
@@ -316,6 +318,7 @@ class WorldEngine:
                 self._record_scene_observation(scene_observation)
             self.state["demo_metrics"]["ai_pulses"] = int(self.state["demo_metrics"].get("ai_pulses", 0)) + 1
             self._generate_ai_pulse(trigger=trigger)
+            self._run_agent_social_turns(scene_observation or {})
             self._apply_intraday_market_move(reason="ai_pulse", decay=0.72)
             self._decay_district_signals()
             self._refresh_derived_views()
@@ -355,33 +358,43 @@ class WorldEngine:
             topic = self._resolve_talk_topic(npc, topic_id, district or npc["district"])
             truth_profile = self._truth_metrics_for_topic(npc, topic, approach, intent)
             trust_delta, intel_strength, npc_openness = self._evaluate_talk_approach(npc, topic, approach)
-            dialogue = self.ark.generate_dialogue_turn(
-                {
-                    "speaker": {
-                        "name": "壳仔",
+            self._queue_agent_task(npc, "player_talk", str(topic.get("label", "玩家搭话")))
+            dialogue = None
+            if self._consume_agent_budget(npc, "player_talk", 1):
+                dialogue = self.ark.generate_dialogue_turn(
+                    {
+                        "speaker": {
+                            "name": "壳仔",
+                            "district": district or npc["district"],
+                            "family_affiliation": "无",
+                            "mood": "wary",
+                            "current_goal": topic.get("label", "打听风声"),
+                            "fear": 24,
+                            "greed": 28,
+                            "relationship_memory": copy.deepcopy(npc.get("player_memory", {})),
+                        },
+                        "speaker_agent": {
+                            "agent_id": "player_proxy",
+                            "system_prompt": "你是底层起步的乌龟玩家代理，问题短、谨慎、想知道价格和风向。",
+                            "tool_policy": ["只能问问题", "不能替 NPC 决定", "必须说中文"],
+                            "memory": copy.deepcopy(list(npc.get("relationship_memory", []))[:4]),
+                        },
+                        "listener": npc,
+                        "listener_agent": self._npc_agent_profile(npc),
                         "district": district or npc["district"],
-                        "family_affiliation": "无",
-                        "mood": "wary",
-                        "current_goal": topic.get("label", "打听风声"),
-                        "fear": 24,
-                        "greed": 28,
-                        "relationship_memory": copy.deepcopy(npc.get("player_memory", {})),
-                    },
-                    "listener": npc,
-                    "district": district or npc["district"],
-                    "trigger": "玩家搭话",
-                    "topic": topic,
-                    "approach": approach,
-                    "intent": intent,
-                    "player_input": player_input,
-                    "scene_observation": live_observation,
-                    "truth_profile": truth_profile,
-                    "relationship_memory": {
-                        "player_memory": copy.deepcopy(npc.get("player_memory", {})),
-                        "recent_events": copy.deepcopy(list(npc.get("relationship_memory", []))[:4]),
-                    },
-                }
-            )
+                        "trigger": "玩家搭话",
+                        "topic": topic,
+                        "approach": approach,
+                        "intent": intent,
+                        "player_input": player_input,
+                        "scene_observation": live_observation,
+                        "truth_profile": truth_profile,
+                        "relationship_memory": {
+                            "player_memory": copy.deepcopy(npc.get("player_memory", {})),
+                            "recent_events": copy.deepcopy(list(npc.get("relationship_memory", []))[:4]),
+                        },
+                    }
+                )
             player_input = player_input.strip()
             lines = [str(line) for line in dialogue.get("lines", [])[:2]] if dialogue else []
             stance = str(dialogue.get("stance", truth_profile.get("bias", npc.get("stance", "观望")))) if dialogue else str(
@@ -398,6 +411,9 @@ class WorldEngine:
             if len(lines) < 2:
                 fallback_lines = self._rule_player_talk_lines(npc, topic, approach, npc_openness, intent)
                 lines = [player_input, fallback_lines[1]] if player_input else fallback_lines
+            lines[1] = self._normalize_spoken_line(str(npc.get("name", "")), lines[1], self._rule_player_talk_lines(npc, topic, approach, npc_openness, intent)[1])
+            if dialogue:
+                self._remember_agent_output(npc, "player_talk", lines[1])
 
             npc["speech_lines"] = [lines[1], *npc["speech_lines"][:2]]
             npc["stance"] = stance
@@ -460,6 +476,8 @@ class WorldEngine:
             self.state["last_dialogue"]["npc_id"] = npc_id
             self.state["last_dialogue"]["district"] = npc["district"]
             self.state["last_dialogue"]["heard_by"] = heard_by
+            self.state["last_dialogue"]["source"] = "llm" if dialogue else "rule"
+            self.state["last_dialogue"]["model"] = "doubao-seed-2-0-mini-260215" if dialogue else "rule"
             self._refresh_ambient_speeches()
             self._apply_intraday_market_move(reason="player_talk", decay=0.78)
             self._refresh_derived_views()
@@ -486,23 +504,29 @@ class WorldEngine:
             live_observation = copy.deepcopy(self.state.get("scene_observation", {}))
             self._refresh_derived_views()
             topic = self._resolve_talk_topic(speaker, "", speaker["district"])
-            dialogue = self.ark.generate_dialogue_turn(
-                {
-                    "speaker": speaker,
-                    "listener": listener,
-                    "district": speaker["district"],
-                    "trigger": trigger,
-                    "topic": topic,
-                    "approach": "cautious",
-                    "intent": "街头搭话",
-                    "scene_observation": live_observation,
-                    "truth_profile": self._truth_metrics_for_topic(listener, topic, "cautious", "街头搭话"),
-                    "relationship_memory": {
-                        "speaker_recent_events": copy.deepcopy(list(speaker.get("relationship_memory", []))[:3]),
-                        "listener_recent_events": copy.deepcopy(list(listener.get("relationship_memory", []))[:3]),
-                    },
-                }
-            )
+            self._queue_agent_task(speaker, "npc_conversation", str(listener.get("name", "")))
+            self._queue_agent_task(listener, "npc_conversation", str(speaker.get("name", "")))
+            dialogue = None
+            if self._consume_agent_budget(speaker, "npc_conversation", 1) and self._consume_agent_budget(listener, "npc_conversation", 1):
+                dialogue = self.ark.generate_dialogue_turn(
+                    {
+                        "speaker": speaker,
+                        "speaker_agent": self._npc_agent_profile(speaker),
+                        "listener": listener,
+                        "listener_agent": self._npc_agent_profile(listener),
+                        "district": speaker["district"],
+                        "trigger": trigger,
+                        "topic": topic,
+                        "approach": "cautious",
+                        "intent": "街头搭话",
+                        "scene_observation": live_observation,
+                        "truth_profile": self._truth_metrics_for_topic(listener, topic, "cautious", "街头搭话"),
+                        "relationship_memory": {
+                            "speaker_recent_events": copy.deepcopy(list(speaker.get("relationship_memory", []))[:3]),
+                            "listener_recent_events": copy.deepcopy(list(listener.get("relationship_memory", []))[:3]),
+                        },
+                    }
+                )
             lines = None
             if dialogue:
                 raw_lines = dialogue.get("lines", [])
@@ -510,6 +534,13 @@ class WorldEngine:
                     lines = [str(raw_lines[0]), str(raw_lines[1])]
             if not lines:
                 lines = self._rule_conversation_lines(speaker, listener, trigger)
+            else:
+                fallback_lines = self._rule_conversation_lines(speaker, listener, trigger)
+                lines[0] = self._normalize_spoken_line(str(speaker.get("name", "")), lines[0], fallback_lines[0])
+                lines[1] = self._normalize_spoken_line(str(listener.get("name", "")), lines[1], fallback_lines[1])
+            if dialogue:
+                self._remember_agent_output(speaker, "npc_conversation", lines[0])
+                self._remember_agent_output(listener, "npc_conversation", lines[1])
 
             speaker["speech_lines"] = [lines[0], *speaker["speech_lines"][:2]]
             listener["speech_lines"] = [lines[1], *listener["speech_lines"][:2]]
@@ -584,6 +615,51 @@ class WorldEngine:
             self._refresh_ambient_speeches()
             self._refresh_derived_views()
             return ActionResult("", self.snapshot())
+
+    def _run_agent_social_turns(self, scene_observation: dict[str, Any]) -> None:
+        rows: list[tuple[float, float, str, str]] = []
+        npcs = self.state.get("npcs", [])
+        for index, speaker in enumerate(npcs):
+            for listener in npcs[index + 1 :]:
+                if str(speaker.get("district", "")) != str(listener.get("district", "")):
+                    continue
+                distance = self._distance(speaker, listener)
+                if distance > min(float(speaker.get("social_radius", 180)), float(listener.get("social_radius", 180))) * 0.82:
+                    continue
+                district_signals = self.state.get("district_signals", {}).get(str(speaker.get("district", "")), {})
+                district_heat = float(district_signals.get("gossip", 0.0)) + float(district_signals.get("fear", 0.0)) + float(district_signals.get("labor_heat", 0.0))
+                social_pull = float(speaker.get("proactive_interest", 0.3)) + float(listener.get("proactive_interest", 0.3))
+                same_subregion_bonus = 0.22 if str(speaker.get("subregion_id", "")) == str(listener.get("subregion_id", "")) else 0.0
+                role_bonus = 0.18 if str(speaker.get("role", "")) in {"记者", "代理人", "工会领袖"} else 0.0
+                role_bonus += 0.18 if str(listener.get("role", "")) in {"记者", "代理人", "工会领袖"} else 0.0
+                score = social_pull + district_heat * 0.24 + same_subregion_bonus + role_bonus - distance / 420.0
+                rows.append((score, distance, str(speaker.get("id", "")), str(listener.get("id", ""))))
+        rows.sort(key=lambda item: (item[0], -item[1]), reverse=True)
+        used: set[str] = set()
+        turns = 0
+        max_turns = min(6, max(3, len(npcs) // 4))
+        for _, _, speaker_id, listener_id in rows:
+            if speaker_id in used or listener_id in used:
+                continue
+            speaker = self._find_npc(speaker_id)
+            listener = self._find_npc(listener_id)
+            if not speaker or not listener:
+                continue
+            self._queue_agent_task(speaker, "agent_social", str(listener.get("name", "")))
+            self._queue_agent_task(listener, "agent_social", str(speaker.get("name", "")))
+            trigger = "盘前试探"
+            if str(speaker.get("district", "")) == "工厂区":
+                trigger = "工棚低声串话"
+            elif str(speaker.get("district", "")) == "港口":
+                trigger = "码头换班闲聊"
+            elif str(speaker.get("district", "")) == "贫民街":
+                trigger = "巷口传话"
+            self.conversation(speaker_id, listener_id, trigger, scene_observation=scene_observation)
+            used.add(speaker_id)
+            used.add(listener_id)
+            turns += 1
+            if turns >= max_turns:
+                break
 
     def _load_json(self, filename: str) -> Any:
         return json.loads((DATA_DIR / filename).read_text(encoding="utf-8"))
@@ -819,9 +895,17 @@ class WorldEngine:
             family_bonus = self._stock_family_bonus(stock)
             company_bonus = self._stock_company_bonus(stock)
             rumor_pressure = float(self.state["market_pressure"]["stocks"].get(stock["name"], 0.0))
-            factor = 1.0 + drift + shock + macro_bonus + family_bonus + company_bonus + rumor_pressure * 0.75
+            reference_price = float(stock.get("reference_price", stock["current_price"]))
+            stock["reference_price"] = reference_price
+            mispricing = (float(stock["current_price"]) - reference_price) / max(reference_price, 1.0)
+            reversion = -mispricing * 0.18
+            interest_drag = -max(0.0, float(self.state.get("macro", {}).get("interest_rate", 4.0)) - 4.2) * 0.008
+            profit_taking = -max(0.0, mispricing - 0.22) * 0.28
+            factor = 1.0 + drift + shock + macro_bonus + family_bonus + company_bonus + rumor_pressure * 0.52 + reversion + interest_drag + profit_taking
+            factor = max(0.86, min(1.16, factor))
             previous_price = int(stock["current_price"])
             stock["current_price"] = max(3, int(round(stock["current_price"] * factor)))
+            stock["reference_price"] = round(reference_price * 0.985 + float(stock["current_price"]) * 0.015, 3)
             stock["market_sentiment"] = "乐观" if factor > 1.02 else "恐慌" if factor < 0.98 else "谨慎"
             if stock["current_price"] == previous_price:
                 stock["market_sentiment"] = "谨慎"
@@ -1072,9 +1156,18 @@ class WorldEngine:
             self._apply_fallback_pulse_brief()
             return
 
-        self.state["llm_pulse_summary"] = str(generated.get("pulse_summary", "")).strip() or self._fallback_pulse_summary()
-        self.state["llm_market_note"] = str(generated.get("market_note", "")).strip() or self._fallback_market_note()
-        self.state["llm_scene_focus"] = str(generated.get("scene_focus", "")).strip() or self._fallback_scene_focus()
+        self.state["llm_pulse_summary"] = self._prefer_chinese_text(
+            str(generated.get("pulse_summary", "")).strip(),
+            self._fallback_pulse_summary(),
+        )
+        self.state["llm_market_note"] = self._prefer_chinese_text(
+            str(generated.get("market_note", "")).strip(),
+            self._fallback_market_note(),
+        )
+        self.state["llm_scene_focus"] = self._prefer_chinese_text(
+            str(generated.get("scene_focus", "")).strip(),
+            self._fallback_scene_focus(),
+        )
         seen_npcs = self._apply_llm_npc_updates(generated.get("npc_updates", []))
         seen_families = self._apply_llm_family_updates(generated.get("family_updates", []))
         seen_companies = self._apply_llm_company_updates(generated.get("company_updates", []))
@@ -1156,6 +1249,8 @@ class WorldEngine:
                     "name": str(card.get("name", "")),
                     "district": str(card.get("district", "")),
                     "role": str(card.get("role", "")),
+                    "agent_prompt": str(card.get("agent_prompt", "")),
+                    "agent_budget_left": int(card.get("agent_budget_left", 0)),
                     "summary": str(card.get("personal_summary", "")),
                     "memory_summary": str(card.get("memory_summary", "")),
                     "truthfulness": float(card.get("truthfulness", 0.5)),
@@ -1488,9 +1583,13 @@ class WorldEngine:
                 continue
             topic = self._resolve_talk_topic(npc, "", str(npc.get("district", "")))
             truth_profile = self._truth_metrics_for_topic(npc, topic, "cautious", "街头风声")
+            if not self._consume_agent_budget(npc, "npc_spin", 1):
+                continue
+            self._queue_agent_task(npc, "npc_spin", str(topic.get("label", "街头风声")))
             generated = self.ark.generate_npc_spin(
                 {
                     "npc": copy.deepcopy(npc),
+                    "agent_profile": self._npc_agent_profile(npc),
                     "topic": copy.deepcopy(topic),
                     "truth_profile": truth_profile,
                     "district_signals": copy.deepcopy(self.state.get("district_signals", {}).get(str(npc.get("district", "")), {})),
@@ -1509,6 +1608,7 @@ class WorldEngine:
                 continue
             npc["last_llm_brief_pulse"] = pulse_index
             npc["llm_refresh_cadence"] = cadence
+            self._remember_agent_output(npc, "npc_spin", str((generated.get("lines", [""]) or [""])[0]))
             self._apply_llm_npc_updates(
                 [
                     {
@@ -1656,12 +1756,23 @@ class WorldEngine:
             tilt = self._coerce_market_tilt(str(spin.get("market_tilt", "")), npc)
             position_kind, position_name, _, _ = self._dominant_position(npc)
             district_name = str(npc.get("district", ""))
+            policy = npc.get("agent_policy", {})
+            style = str(policy.get("market_style", self._npc_market_style(npc)))
+            weight = float(policy.get("budget_weight", 1.0))
             if position_name and position_kind == "stock":
-                delta = 0.012 if tilt in {"bullish", "supportive"} else -0.012 if tilt in {"bearish", "panic"} else 0.0
+                base_delta = 0.012 if tilt in {"bullish", "supportive"} else -0.012 if tilt in {"bearish", "panic"} else 0.0
+                if "控险" in style:
+                    base_delta *= 0.68
+                elif "追涨杀跌" in style:
+                    base_delta *= 1.18
+                delta = base_delta * weight
                 if delta != 0.0:
                     self.state["market_pressure"]["stocks"][position_name] = float(self.state["market_pressure"]["stocks"].get(position_name, 0.0)) + delta
             elif position_name and position_kind == "goods":
-                delta = 0.01 if tilt in {"bullish", "supportive"} else -0.01 if tilt in {"bearish", "panic"} else 0.0
+                base_delta = 0.01 if tilt in {"bullish", "supportive"} else -0.01 if tilt in {"bearish", "panic"} else 0.0
+                if "保现金流" in style:
+                    base_delta *= 0.72
+                delta = base_delta * weight
                 if delta != 0.0:
                     self.state["market_pressure"]["goods"][position_name] = float(self.state["market_pressure"]["goods"].get(position_name, 0.0)) + delta
             if tilt in {"panic", "bearish"}:
@@ -1814,6 +1925,16 @@ class WorldEngine:
         self._rebuild_company_states()
         self._rebuild_family_moves()
         self._rebuild_npc_truth_profile()
+        for npc in self.state["npcs"]:
+            npc["agent_prompt"] = self._npc_agent_prompt(npc)
+            npc["agent_tool_policy"] = self._npc_tool_policy(npc)
+            npc["agent_policy"] = {
+                **npc.get("agent_policy", {}),
+                "social_style": self._npc_social_style(npc),
+                "market_style": self._npc_market_style(npc),
+                "agenda": self._npc_agent_agenda(npc),
+                "budget_weight": round(max(0.4, min(1.8, self._npc_daily_agent_budget(npc) / 6.0)), 2),
+            }
         self.state["npc_cards"] = self._build_npc_cards()
         self._rebuild_talk_topics()
         self.state["local_rumor"] = copy.deepcopy(self.state.get("rumor_log", [])[:8])
@@ -1851,6 +1972,8 @@ class WorldEngine:
             "clock_label": self._clock_label(),
             "time_period": self.state.get("time_period", "day"),
             "light_level": self.state.get("light_level", 1.0),
+            "weather": copy.deepcopy(self.state.get("weather", {})),
+            "weather_label": str(self.state.get("weather", {}).get("label", "晴天")),
             "interest_rate": macro["interest_rate"],
             "economy_heat": macro["economy_heat"],
             "housing_heat": macro["housing_heat"],
@@ -1894,6 +2017,7 @@ class WorldEngine:
             "latest_news_title": str(latest_news.get('title', '')),
             "latest_news_body": str(latest_news.get('body', '')),
             "latest_rumor": str(latest_rumor.get('line', '')),
+            "weather_label": str(self.state.get("weather", {}).get("label", "晴天")),
             "social_prompt": str(lead_topic.get("label", "")),
             "institution_flash": str(lead_institution.get("public_line", "")),
             "ai_focus": str(self.state.get("llm_pulse_summary", "")),
@@ -2205,8 +2329,15 @@ class WorldEngine:
             if abs(pressure) < 0.015:
                 continue
             previous = int(good["current_price"])
-            factor = 1.0 + pressure * 0.22 + self.random.uniform(-0.012, 0.012)
+            reference_price = float(good.get("reference_price", good["current_price"]))
+            good["reference_price"] = reference_price
+            mispricing = (float(good["current_price"]) - reference_price) / max(reference_price, 1.0)
+            weather_drag = 0.02 if str(self.state.get("weather", {}).get("kind", "sunny")) in {"rain", "snow", "dust"} else 0.0
+            profit_taking = max(0.0, mispricing - 0.18) * 0.16
+            factor = 1.0 + pressure * 0.16 + self.random.uniform(-0.01, 0.01) - mispricing * 0.12 - weather_drag - profit_taking
+            factor = max(0.92, min(1.08, factor))
             good["current_price"] = max(1, int(round(good["current_price"] * factor)))
+            good["reference_price"] = round(reference_price * 0.99 + float(good["current_price"]) * 0.01, 3)
             good["price_trend"] = "涨" if good["current_price"] > previous else "跌" if good["current_price"] < previous else "平"
             if good["current_price"] != previous:
                 moved.append(f"{good['name']}{good['price_trend']}到{good['current_price']}")
@@ -2216,8 +2347,15 @@ class WorldEngine:
             if abs(pressure) < 0.015:
                 continue
             previous = int(stock["current_price"])
-            factor = 1.0 + pressure * 0.2 + self.random.uniform(-0.015, 0.015)
+            reference_price = float(stock.get("reference_price", stock["current_price"]))
+            stock["reference_price"] = reference_price
+            mispricing = (float(stock["current_price"]) - reference_price) / max(reference_price, 1.0)
+            interest_drag = max(0.0, float(self.state.get("macro", {}).get("interest_rate", 4.0)) - 4.2) * 0.006
+            profit_taking = max(0.0, mispricing - 0.18) * 0.24
+            factor = 1.0 + pressure * 0.14 + self.random.uniform(-0.012, 0.012) - mispricing * 0.16 - interest_drag - profit_taking
+            factor = max(0.9, min(1.1, factor))
             stock["current_price"] = max(3, int(round(stock["current_price"] * factor)))
+            stock["reference_price"] = round(reference_price * 0.992 + float(stock["current_price"]) * 0.008, 3)
             stock["market_sentiment"] = "乐观" if stock["current_price"] > previous else "恐慌" if stock["current_price"] < previous else "谨慎"
             if stock["current_price"] != previous:
                 moved.append(f"{stock['name']}{'涨' if stock['current_price'] > previous else '跌'}到{stock['current_price']}")
@@ -2822,23 +2960,70 @@ class WorldEngine:
 
     def _apply_clock_state(self) -> None:
         minutes = int(self.state.get("clock_minutes", 8 * 60))
-        if minutes < 6 * 60:
+        weather = self._update_weather(minutes)
+        solar_ratio = max(0.0, math.cos((float(minutes) - 720.0) / 720.0 * math.pi))
+        if minutes < 5 * 60 or minutes >= 20 * 60:
             period = "night"
-            light = 0.34
-        elif minutes < 8 * 60:
+        elif minutes < 7 * 60:
             period = "dawn"
-            light = 0.62
         elif minutes < 17 * 60:
             period = "day"
-            light = 1.0
-        elif minutes < 19 * 60 + 30:
-            period = "dusk"
-            light = 0.58
         else:
-            period = "night"
-            light = 0.32
+            period = "evening"
+        weather_dim = {
+            "sunny": 0.0,
+            "breezy": 0.01,
+            "cloudy": 0.04,
+            "overcast": 0.08,
+            "rain": 0.11,
+            "snow": 0.09,
+            "dust": 0.14,
+        }.get(str(weather.get("kind", "sunny")), 0.0)
+        light = round(max(0.18, min(1.0, 0.18 + solar_ratio * 0.82 - weather_dim)), 2)
         self.state["time_period"] = period
         self.state["light_level"] = light
+
+    def _update_weather(self, minutes: int) -> dict[str, Any]:
+        day = int(self.state.get("day", 1))
+        slot = int(minutes // 180)
+        current = self.state.get("weather", {})
+        if int(current.get("day", -1)) == day and int(current.get("slot", -1)) == slot:
+            return current
+        rng = random.Random(day * 1009 + slot * 131 + 17)
+        roll = rng.random()
+        candidates: list[tuple[float, dict[str, Any]]] = [
+            (0.58, {"kind": "sunny", "label": "晴天", "intensity": 0.1}),
+            (0.12, {"kind": "breezy", "label": "晴朗有风", "intensity": 0.18}),
+            (0.12, {"kind": "cloudy", "label": "多云", "intensity": 0.24}),
+            (0.08, {"kind": "overcast", "label": "阴天", "intensity": 0.34}),
+            (0.06, {"kind": "rain", "label": "下雨", "intensity": 0.7}),
+            (0.02, {"kind": "snow", "label": "下雪", "intensity": 0.62}),
+            (0.02, {"kind": "dust", "label": "沙尘", "intensity": 0.76}),
+        ]
+        selected = candidates[0][1]
+        cursor = 0.0
+        for weight, entry in candidates:
+            cursor += weight
+            if roll <= cursor:
+                selected = entry
+                break
+        weather = dict(selected)
+        weather["slot"] = slot
+        weather["day"] = day
+        previous_kind = str(current.get("kind", ""))
+        self.state["weather"] = weather
+        if previous_kind and previous_kind != str(weather["kind"]):
+            self.state["global_news"].insert(
+                0,
+                {
+                    "title": "天气换了一阵风向",
+                    "body": f"城里天气转成{weather['label']}，摊位、人流和市场情绪都在跟着变。",
+                    "tags": ["天气", str(weather["label"])],
+                    "scope": "city",
+                },
+            )
+            self.state["global_news"] = self.state["global_news"][:8]
+        return weather
 
     def _apply_npc_schedule(self) -> None:
         minutes = int(self.state.get("clock_minutes", 8 * 60))
@@ -2876,15 +3061,9 @@ class WorldEngine:
                     home_state = "evening_home"
                 else:
                     home_state = "resting"
-            wander_scale = 10
-            if activity == "home":
-                wander_scale = 2 if home_state == "sleeping" else 5
-            elif activity in {"returning", "commuting"}:
-                wander_scale = 4
-            wander_x = (((int(npc["id"].split("_")[-1]) * 19) % 21) - 10) * wander_scale / 10.0
-            wander_y = (((int(npc["id"].split("_")[-1]) * 13) % 17) - 8) * wander_scale / 10.0
-            npc["x"] = round(target["x"] + wander_x, 1)
-            npc["y"] = round(target["y"] + wander_y, 1)
+            route_x, route_y = self._activity_route_offset(npc, minutes, activity, home_state)
+            npc["x"] = round(target["x"] + route_x, 1)
+            npc["y"] = round(target["y"] + route_y, 1)
             npc["activity"] = activity
             npc["home_state"] = home_state
             npc["indoor_activity"] = self._indoor_activity_for_npc(npc, activity, home_state, minutes)
@@ -2969,6 +3148,54 @@ class WorldEngine:
         if role == "roamer":
             return 7 * 60, 8 * 60 + 30, 18 * 60 + 30, 20 * 60 + 15, 22 * 60 + 30
         return 6 * 60, 8 * 60, 17 * 60, 19 * 60 + 20, 21 * 60 + 30
+
+    def _activity_route_offset(self, npc: dict[str, Any], minutes: int, activity: str, home_state: str) -> tuple[float, float]:
+        raw_id = str(npc.get("id", "npc_0")).split("_")[-1]
+        try:
+            index = max(1, int(raw_id))
+        except ValueError:
+            index = max(1, (sum(ord(ch) for ch in str(npc.get("id", ""))) % 19) + 1)
+        role = str(npc.get("schedule_role", "worker"))
+        district = str(npc.get("district", ""))
+        subregion = str(npc.get("subregion_id", ""))
+        sub_seed = (sum(ord(ch) for ch in subregion) % 23) / 23.0
+        phase = minutes / 18.0 + index * 0.71 + sub_seed * 2.6
+        route_step = int(minutes // (16 if role == "roamer" else 22 if role == "keeper" else 18) + index) % 5
+        route_points = [
+            (-1.0, -0.25),
+            (-0.45, 0.82),
+            (0.72, 0.58),
+            (0.94, -0.42),
+            (0.08, -0.9),
+        ]
+        turn_x, turn_y = route_points[route_step]
+        drift_x = math.sin(phase) * 0.34 + math.cos(phase * 0.47) * 0.18
+        drift_y = math.cos(phase * 1.13) * 0.28 + math.sin(phase * 0.63) * 0.14
+        if district == "港口":
+            drift_y *= 0.62
+            drift_x += 0.08
+        elif district == "交易所":
+            drift_x *= 0.76
+            drift_y -= 0.06
+        elif district == "工厂区":
+            drift_y += 0.1
+        else:
+            drift_x -= 0.06
+        if activity == "working":
+            radius_x, radius_y = 18.0, 10.0
+            if role == "roamer":
+                radius_x, radius_y = 34.0, 18.0
+            elif role == "keeper":
+                radius_x, radius_y = 14.0, 8.0
+        elif activity in {"commuting", "returning"}:
+            radius_x, radius_y = 12.0, 6.0
+            turn_x *= 0.55
+            turn_y *= 0.45
+        else:
+            if home_state == "sleeping":
+                return round(math.sin(phase * 0.45) * 0.9, 1), round(math.cos(phase * 0.35) * 0.7, 1)
+            radius_x, radius_y = (8.0, 4.0) if home_state == "resting" else (14.0, 8.0)
+        return round((turn_x + drift_x) * radius_x, 1), round((turn_y + drift_y) * radius_y, 1)
 
     def _indoor_activity_for_npc(self, npc: dict[str, Any], activity: str, home_state: str, minutes: int) -> str:
         if activity != "home":
@@ -3343,6 +3570,38 @@ class WorldEngine:
                 },
             )
         )
+        npc["agent_prompt"] = self._npc_agent_prompt(npc)
+        npc["agent_tool_policy"] = self._npc_tool_policy(npc)
+        npc["agent_memory"] = copy.deepcopy(npc.get("agent_memory", []))
+        npc["agent_queue"] = copy.deepcopy(npc.get("agent_queue", []))
+        npc["agent_budget"] = copy.deepcopy(
+            npc.get(
+                "agent_budget",
+                {
+                    "daily_calls": self._npc_daily_agent_budget(npc),
+                    "calls_left": self._npc_daily_agent_budget(npc),
+                    "last_day": 1,
+                    "last_reason": "",
+                },
+            )
+        )
+        npc["agent_policy"] = {
+            "cadence": int(npc.get("llm_refresh_cadence", 1)),
+            "tool_mode": "observe_only",
+            "allow_market_spin": True,
+            "allow_news_hint": True,
+            "social_style": self._npc_social_style(npc),
+            "market_style": self._npc_market_style(npc),
+            "agenda": self._npc_agent_agenda(npc),
+            "budget_weight": round(max(0.4, min(1.8, self._npc_daily_agent_budget(npc) / 6.0)), 2),
+        }
+        npc["proactive_interest"] = float(
+            npc.get(
+                "proactive_interest",
+                max(0.24, min(0.92, 0.28 + float(npc.get("player_relation", 0)) * 0.06 + float(npc.get("social_radius", 160)) / 520.0)),
+            )
+        )
+        npc["proactive_cooldown_until"] = float(npc.get("proactive_cooldown_until", 0.0))
 
     def _default_income_type(self, npc: dict[str, Any]) -> str:
         role = str(npc.get("role", ""))
@@ -3363,6 +3622,218 @@ class WorldEngine:
         if class_name == "中层":
             return 6
         return 3
+
+    def _npc_daily_agent_budget(self, npc: dict[str, Any]) -> int:
+        role = str(npc.get("role", ""))
+        if role in {"记者", "代理人", "银行经理"}:
+            return 8
+        if role in {"工会领袖", "投机者", "老板"}:
+            return 7
+        if role in {"店主"}:
+            return 6
+        return 5
+
+    def _npc_tool_policy(self, npc: dict[str, Any]) -> list[str]:
+        policy = ["只观察截图与状态", "不篡改规则层事实", "不直接改价格", "不输出思维过程", "必须只说中文"]
+        role = str(npc.get("role", ""))
+        district = str(npc.get("district", ""))
+        family = str(npc.get("family_affiliation", "")) or "无"
+        if role in {"记者", "代理人"}:
+            policy.append("优先包装传闻与舆论")
+        if role in {"工人", "临时工", "工会领袖"}:
+            policy.append("优先关心工钱、班次、口粮和住房")
+        if role in {"投机者", "银行经理"}:
+            policy.append("优先关心利率、信用、仓位和抛压")
+        if role in {"老板", "店主"}:
+            policy.append("优先保护现金流、库存和客流")
+        if family != "无":
+            policy.append(f"优先维护{family}的表面利益")
+        if district == "交易所":
+            policy.append("默认从资金和价格角度理解事件")
+        elif district == "工厂区":
+            policy.append("默认从工钱、裁员和罢工角度理解事件")
+        elif district == "港口":
+            policy.append("默认从货流、班次和装卸风险角度理解事件")
+        else:
+            policy.append("默认从房租、粮价和街头口碑角度理解事件")
+        return policy
+
+    def _npc_social_style(self, npc: dict[str, Any]) -> str:
+        role = str(npc.get("role", ""))
+        if role in {"记者", "代理人"}:
+            return "主动探口风，擅长递话、试探和二次传播"
+        if role == "工会领袖":
+            return "会主动把零散抱怨拢成集体情绪"
+        if role in {"投机者", "银行经理"}:
+            return "偏冷静，先看筹码，再决定要不要说真话"
+        if role in {"老板", "店主"}:
+            return "先算账，再说话，倾向维护自己的地盘"
+        if role in {"工人", "临时工"}:
+            return "更在意工钱、口粮和今天能不能熬过去"
+        return "谨慎观望，只在有利时多说几句"
+
+    def _npc_market_style(self, npc: dict[str, Any]) -> str:
+        role = str(npc.get("role", ""))
+        risk = float(npc.get("risk_preference", 40.0))
+        if role == "投机者":
+            return "追涨杀跌，喜欢把局部波动放大成行情"
+        if role == "银行经理":
+            return "关注信用收缩、利率和坏账，偏向控险"
+        if role in {"代理人", "记者"}:
+            return "通过风声和叙事影响盘口，而不是直接下场"
+        if role in {"老板", "店主"}:
+            return "优先保现金流和库存，涨太快也会担心接不住"
+        if risk >= 65:
+            return "敢赌，但也容易在高位变得敏感"
+        return "偏保守，只在看见确定机会时跟进"
+
+    def _npc_agent_agenda(self, npc: dict[str, Any]) -> str:
+        role = str(npc.get("role", ""))
+        goal = str(npc.get("current_goal", npc.get("current_target", "活下去")))
+        family = str(npc.get("family_affiliation", "")) or "无家族"
+        if role == "记者":
+            return f"把能卖的真话和能点火的风声区分开，再挑最值钱的那条。当前目标：{goal}。"
+        if role == "代理人":
+            return f"替{family}试探情绪、放风和控场，但不能把牌直接打穿。当前目标：{goal}。"
+        if role == "工会领袖":
+            return f"判断街头不满值不值得组织起来，并寻找能带头的人。当前目标：{goal}。"
+        if role in {"老板", "店主"}:
+            return f"先守住现金流、货和人，再决定要不要冒险。当前目标：{goal}。"
+        if role in {"投机者", "银行经理"}:
+            return f"判断现在该追价、护盘还是先退一步，不能只会单边押注。当前目标：{goal}。"
+        return f"优先保住今天的生计，再考虑明天要站哪边。当前目标：{goal}。"
+
+    def _npc_agent_prompt(self, npc: dict[str, Any]) -> str:
+        family = str(npc.get("family_affiliation", "")) or "无家族靠山"
+        subregion = str(npc.get("subregion_name", "")) or str(npc.get("district", ""))
+        domains = "、".join([str(value) for value in npc.get("information_domain", [])[:4]]) or "街头风声"
+        social_style = self._npc_social_style(npc)
+        market_style = self._npc_market_style(npc)
+        agenda = self._npc_agent_agenda(npc)
+        return (
+            f"你是常驻 NPC agent：{npc.get('name', '无名者')}。"
+            f"物种={npc.get('species', '动物')}，职业={npc.get('role', '街头角色')}，阶层={npc.get('class', '底层')}，"
+            f"家族={family}，常驻区={npc.get('district', '街区')}，活动点={subregion}。"
+            f"现金={int(npc.get('cash', 0))}，债务={int(npc.get('debt', 0))}，饥饿={int(npc.get('hunger', 0))}，"
+            f"恐惧={int(npc.get('fear', 0))}，贪婪={int(npc.get('greed', 0))}，忠诚={int(npc.get('loyalty', 0))}。"
+            f"说话口气={npc.get('voice_style', '平稳')}，关注领域={domains}。"
+            f"社交风格={social_style}。金融风格={market_style}。"
+            f"{agenda}"
+            f"你必须按自己的利益、饥饿、债务、声望、忠诚和恐惧说话，不得替玩家或旁人做决定。"
+            f"你会保留自己的记忆和立场，但不能凭空发明世界事实。"
+        )
+
+    def _npc_agent_profile(self, npc: dict[str, Any]) -> dict[str, Any]:
+        budget = npc.get("agent_budget", {})
+        return {
+            "agent_id": str(npc.get("id", "")),
+            "system_prompt": str(npc.get("agent_prompt", "")),
+            "identity": {
+                "name": str(npc.get("name", "")),
+                "role": str(npc.get("role", "")),
+                "family": str(npc.get("family_affiliation", "")) or "无",
+                "district": str(npc.get("district", "")),
+                "subregion": str(npc.get("subregion_name", "")) or str(npc.get("district", "")),
+                "social_style": self._npc_social_style(npc),
+                "market_style": self._npc_market_style(npc),
+            },
+            "tool_policy": copy.deepcopy(npc.get("agent_tool_policy", [])),
+            "memory": copy.deepcopy(list(npc.get("agent_memory", []))[:6]),
+            "queue": copy.deepcopy(list(npc.get("agent_queue", []))[:4]),
+            "budget": {
+                "daily_calls": int(budget.get("daily_calls", self._npc_daily_agent_budget(npc))),
+                "calls_left": int(budget.get("calls_left", self._npc_daily_agent_budget(npc))),
+                "last_day": int(budget.get("last_day", int(self.state.get("day", 1)))),
+                "last_reason": str(budget.get("last_reason", "")),
+            },
+            "policy": copy.deepcopy(npc.get("agent_policy", {})),
+        }
+
+    def _refresh_agent_budget(self, npc: dict[str, Any]) -> None:
+        budget = npc.get("agent_budget", {})
+        if not isinstance(budget, dict):
+            budget = {}
+            npc["agent_budget"] = budget
+        day = int(self.state.get("day", 1))
+        if int(budget.get("last_day", day)) != day:
+            daily_calls = self._npc_daily_agent_budget(npc)
+            budget["daily_calls"] = daily_calls
+            budget["calls_left"] = daily_calls
+            budget["last_day"] = day
+            budget["last_reason"] = "daily_reset"
+
+    def _consume_agent_budget(self, npc: dict[str, Any], reason: str, cost: int = 1) -> bool:
+        self._refresh_agent_budget(npc)
+        budget = npc.get("agent_budget", {})
+        calls_left = int(budget.get("calls_left", self._npc_daily_agent_budget(npc)))
+        if calls_left < cost:
+            return False
+        budget["calls_left"] = calls_left - cost
+        budget["last_reason"] = reason
+        return True
+
+    def _queue_agent_task(self, npc: dict[str, Any], kind: str, note: str) -> None:
+        queue = npc.get("agent_queue", [])
+        if not isinstance(queue, list):
+            queue = []
+        queue.insert(
+            0,
+            {
+                "day": int(self.state.get("day", 1)),
+                "clock": self._clock_label(),
+                "kind": kind,
+                "note": note[:96],
+            },
+        )
+        npc["agent_queue"] = queue[:8]
+
+    def _remember_agent_output(self, npc: dict[str, Any], kind: str, summary: str) -> None:
+        rows = npc.get("agent_memory", [])
+        if not isinstance(rows, list):
+            rows = []
+        rows.insert(
+            0,
+            {
+                "day": int(self.state.get("day", 1)),
+                "clock": self._clock_label(),
+                "kind": kind,
+                "summary": summary[:140],
+            },
+        )
+        npc["agent_memory"] = rows[:12]
+
+    @staticmethod
+    def _is_english_heavy_text(text: str) -> bool:
+        ascii_letters = sum(1 for ch in text if ("a" <= ch <= "z") or ("A" <= ch <= "Z"))
+        cjk_chars = sum(1 for ch in text if "\u4e00" <= ch <= "\u9fff")
+        return ascii_letters >= 10 and ascii_letters > cjk_chars * 2
+
+    def _prefer_chinese_text(self, text: str, fallback: str) -> str:
+        cleaned = str(text or "").strip()
+        if not cleaned:
+            return fallback
+        if self._is_english_heavy_text(cleaned):
+            return fallback
+        return cleaned
+
+    def _normalize_spoken_line(self, speaker_name: str, line: str, fallback: str = "") -> str:
+        cleaned = str(line or "").strip()
+        if not cleaned:
+            return fallback
+        prefixes = [
+            f"{speaker_name}：",
+            f"{speaker_name}:",
+            f"{speaker_name} :",
+            f"{speaker_name} ：",
+        ]
+        changed = True
+        while changed:
+            changed = False
+            for prefix in prefixes:
+                if cleaned.startswith(prefix):
+                    cleaned = cleaned[len(prefix) :].strip()
+                    changed = True
+        return self._prefer_chinese_text(cleaned, fallback)
 
     def _infer_company_id_for_npc(self, npc: dict[str, Any], companies: list[dict[str, Any]]) -> str:
         role = str(npc.get("role", ""))
@@ -3988,6 +4459,11 @@ class WorldEngine:
                     "memory_summary": memory_summary,
                     "relation_status": relation_status,
                     "player_memory": copy.deepcopy(self._npc_player_memory(npc)),
+                    "agent_prompt": str(npc.get("agent_prompt", "")),
+                    "agent_budget_left": int(npc.get("agent_budget", {}).get("calls_left", 0)),
+                    "agent_tool_policy": copy.deepcopy(npc.get("agent_tool_policy", [])),
+                    "agent_memory": copy.deepcopy(list(npc.get("agent_memory", []))[:4]),
+                    "agent_policy": copy.deepcopy(npc.get("agent_policy", {})),
                     "brief_history": brief_history,
                     "brief_history_summary": self._brief_history_summary(brief_history, ("line", "stance")),
                     "llm_refresh_cadence": int(npc.get("llm_refresh_cadence", 1)),

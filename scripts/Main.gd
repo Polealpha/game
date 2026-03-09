@@ -12,7 +12,7 @@ const WorldLayout = preload("res://scripts/world/WorldLayout.gd")
 
 const WORLD_RECT := WorldLayout.WORLD_RECT
 const WORLD_VISUAL_SCALE := 2.0
-const PLAYER_SPEED := 300.0
+const PLAYER_SPEED := 260.0
 const AI_PULSE_SECONDS := 60.0
 const VISUAL_DAY_CYCLE_SECONDS := 600.0
 const VISUAL_START_CLOCK_MINUTES := 8 * 60
@@ -21,6 +21,9 @@ const CAMERA_WORLD_ZOOM := Vector2(1.08, 1.08)
 const CAMERA_LOOKAHEAD_DISTANCE := 76.0
 const CAMERA_LOOKAHEAD_LERP := 7.5
 const DISTRICT_RECTS := WorldLayout.DISTRICT_RECTS
+const NEWS_TICKER_SECONDS := 5.5
+const NPC_AUTO_TALK_SECONDS := 12.0
+const NPC_AUTO_TALK_RADIUS := 96.0
 
 var player := PlayerView.new()
 var world_tint := CanvasModulate.new()
@@ -71,6 +74,11 @@ var visual_time_synced := false
 var last_visual_clock_label := ""
 var last_visual_period := ""
 var active_dialogue_context: Dictionary = {}
+var news_ticker_items: Array[String] = []
+var news_ticker_index := 0
+var news_ticker_elapsed := 0.0
+var npc_auto_talk_elapsed := 0.0
+var npc_last_auto_talker := ""
 
 var minimap := MiniMapView.new()
 var overview_label := Label.new()
@@ -98,6 +106,7 @@ var modal_send_button := Button.new()
 var modal_hint_label := Label.new()
 var compact_hud_label := RichTextLabel.new()
 var market_flash_label := RichTextLabel.new()
+var news_ticker_label := RichTextLabel.new()
 var interaction_badge_label := Label.new()
 var inspect_badge := Label.new()
 var hud_badge := Label.new()
@@ -183,6 +192,7 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	_advance_visual_clock(delta)
+	_advance_news_ticker(delta)
 	if interior_mode:
 		house_interior.tick(delta)
 		current_interactable = house_interior.get_current_interactable()
@@ -192,6 +202,7 @@ func _process(delta: float) -> void:
 		_update_world_camera(delta)
 		_update_current_interactable()
 		_update_npc_attention()
+		_maybe_trigger_proactive_npc_talk(delta)
 	_refresh_interaction_badge()
 	_update_subtitles()
 	if not interior_mode:
@@ -273,6 +284,15 @@ func _build_ui() -> void:
 	market_flash_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	market_flash_label.add_theme_color_override("default_color", Color("f5e8c6"))
 	market_margin.add_child(market_flash_label)
+
+	var ticker_margin := _make_overlay_card(Rect2(282, 742, 888, 44))
+	news_ticker_label.bbcode_enabled = true
+	news_ticker_label.fit_content = false
+	news_ticker_label.scroll_active = false
+	news_ticker_label.autowrap_mode = TextServer.AUTOWRAP_OFF
+	news_ticker_label.custom_minimum_size = Vector2(860, 30)
+	news_ticker_label.add_theme_color_override("default_color", Color("f3e7c7"))
+	ticker_margin.add_child(news_ticker_label)
 
 	var overview_panel := _make_panel(Rect2(18, 18, 448, 148), "乌龟账本")
 	overview_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -595,8 +615,9 @@ func _update_compact_hud(snapshot: Dictionary, district_name: String) -> void:
 		area_label = "%s · %s" % [district_name, subregion_name]
 	var social_prompt := str(quick.get("social_prompt", ""))
 	var institution_flash := str(quick.get("institution_flash", ""))
-	var ai_focus := str(quick.get("ai_focus", ""))
-	var market_note := str(quick.get("market_note", ""))
+	var ai_focus := _sanitize_visible_text(str(quick.get("ai_focus", "")), "")
+	var market_note := _sanitize_visible_text(str(quick.get("market_note", "")), "")
+	var market_flash := _sanitize_visible_text(str(quick.get("market_flash", "")), "市场还安静")
 	var objective_line := str(quick.get("objective", "先在街上看一圈。"))
 	if not social_prompt.is_empty():
 		objective_line += "\n街上最值得问的是：%s" % social_prompt
@@ -614,16 +635,152 @@ func _update_compact_hud(snapshot: Dictionary, district_name: String) -> void:
 		metrics.get("intel_actions", 0),
 		metrics.get("stock_trades", 0)
 	]
-	var secondary_line := str(quick.get("latest_news_title", ""))
+	var secondary_line := _sanitize_visible_text(str(quick.get("latest_news_title", "")), "")
 	if secondary_line.is_empty():
-		secondary_line = str(quick.get("latest_rumor", "街上暂时没新风声。"))
+		secondary_line = _sanitize_visible_text(str(quick.get("latest_rumor", "街上暂时没新风声。")), "街上暂时没新风声。")
 	if not market_note.is_empty():
 		secondary_line += "\n%s" % market_note
 	market_flash_label.text = "[b]盘口[/b] %s\n%s" % [
-		quick.get("market_flash", "市场还安静"),
+		market_flash,
 		secondary_line
 	]
 
+
+func _refresh_news_ticker(snapshot: Dictionary) -> void:
+	news_ticker_items.clear()
+	news_ticker_index = 0
+	news_ticker_elapsed = 0.0
+	var quick: Dictionary = snapshot.get("quick_hud", {})
+	var weather: Dictionary = snapshot.get("weather", {})
+	var weather_label := _weather_label_cn(str(weather.get("label", "晴天")))
+	var market_flash := _sanitize_visible_text(str(quick.get("market_flash", "")).strip_edges(), "市场还算平静")
+	var market_note := _sanitize_visible_text(str(quick.get("market_note", "")).strip_edges(), "")
+	var news_rows: Array = snapshot.get("city_news", snapshot.get("global_news", []))
+	if not market_flash.is_empty():
+		var market_line := "[b]盘口[/b] %s" % market_flash
+		if not market_note.is_empty():
+			market_line += "  |  %s" % market_note
+		news_ticker_items.append(market_line)
+	for item in news_rows.slice(0, min(6, news_rows.size())):
+		var row: Dictionary = item
+		var title := _sanitize_visible_text(str(row.get("title", "")).strip_edges(), "街头广播")
+		var body := _sanitize_visible_text(str(row.get("body", "")).strip_edges(), "全城暂时没有新广播。")
+		if title.is_empty() and body.is_empty():
+			continue
+		news_ticker_items.append("[b]%s[/b]  |  %s" % [title, body])
+	if news_ticker_items.is_empty():
+		news_ticker_items.append("[b]天气[/b] %s  |  全城暂时没有新广播。" % weather_label)
+	_apply_news_ticker_line()
+
+func _advance_news_ticker(delta: float) -> void:
+	if news_ticker_items.size() <= 1:
+		return
+	news_ticker_elapsed += delta
+	if news_ticker_elapsed < NEWS_TICKER_SECONDS:
+		return
+	news_ticker_elapsed = 0.0
+	news_ticker_index = posmod(news_ticker_index + 1, news_ticker_items.size())
+	_apply_news_ticker_line()
+
+
+func _apply_news_ticker_line() -> void:
+	if news_ticker_items.is_empty():
+		news_ticker_label.text = "[b]快讯[/b] 全城暂时没有新广播。"
+		return
+	news_ticker_label.text = "[b]快讯[/b] %s" % news_ticker_items[news_ticker_index]
+
+
+func _looks_like_english_text(text: String) -> bool:
+	var ascii_letters := 0
+	var cjk_chars := 0
+	for ch in text:
+		var code := ch.unicode_at(0)
+		if code >= 0x4E00 and code <= 0x9FFF:
+			cjk_chars += 1
+		elif (code >= 65 and code <= 90) or (code >= 97 and code <= 122):
+			ascii_letters += 1
+	return ascii_letters >= 12 and ascii_letters > cjk_chars * 2
+
+
+func _weather_label_cn(raw_label: String) -> String:
+	var label := raw_label.strip_edges()
+	match label.to_lower():
+		"sunny", "clear":
+			return "晴天"
+		"cloudy":
+			return "多云"
+		"overcast":
+			return "阴天"
+		"rain":
+			return "雨天"
+		"snow":
+			return "雪天"
+		"dust":
+			return "沙尘"
+	if label == "鏅村ぉ":
+		return "晴天"
+	return label if not label.is_empty() else "晴天"
+
+
+func _sanitize_visible_text(text: String, fallback: String = "") -> String:
+	var cleaned := text.strip_edges()
+	if cleaned.is_empty():
+		return fallback
+	cleaned = cleaned.replace("[b]Market[/b]", "[b]盘口[/b]")
+	cleaned = cleaned.replace("[b]Ticker[/b]", "[b]快讯[/b]")
+	cleaned = cleaned.replace("[b]Weather[/b]", "[b]天气[/b]")
+	cleaned = cleaned.replace("No new city bulletin yet.", "全城暂时没有新广播。")
+	cleaned = cleaned.replace("on", "开").replace("off", "关")
+	if _looks_like_english_text(cleaned):
+		return fallback if not fallback.is_empty() else "城里刚有一阵新风声。"
+	return cleaned
+
+
+func _maybe_trigger_proactive_npc_talk(delta: float) -> void:
+	if modal_overlay.visible or ledger_ui_visible or inspection_mode:
+		npc_auto_talk_elapsed = 0.0
+		return
+	npc_auto_talk_elapsed += delta
+	if npc_auto_talk_elapsed < NPC_AUTO_TALK_SECONDS:
+		return
+	var nearby_npcs := _get_nearby_npcs(3)
+	if nearby_npcs.is_empty():
+		return
+	for npc_card in nearby_npcs:
+		var npc_id := str(npc_card.get("id", ""))
+		if npc_id.is_empty() or not npc_views.has(npc_id):
+			continue
+		if npc_id == npc_last_auto_talker and nearby_npcs.size() > 1:
+			continue
+		var view: NPCView = npc_views[npc_id]
+		var distance := float(npc_card.get("distance", 99999.0))
+		if distance > NPC_AUTO_TALK_RADIUS * WORLD_VISUAL_SCALE:
+			continue
+		var proactive_interest := clampf(float(view.npc_data.get("proactive_interest", 0.32)), 0.12, 0.92)
+		if music_rng.randf() > proactive_interest:
+			continue
+		npc_auto_talk_elapsed = 0.0
+		npc_last_auto_talker = npc_id
+		view.trigger_social_beat(player.position, true, "speaker", 1.08, 1.0)
+		active_dialogue_context = {
+			"npc_id": npc_id,
+			"district": _current_district_for_position(player.position),
+			"topic_id": "",
+			"approach": "friendly",
+			"intent": "主动搭话"
+		}
+		var live_scene := _build_scene_observation_payload(true)
+		ApiClient.post_json("/npc/player_talk", {
+			"npc_id": npc_id,
+			"district": _current_district_for_position(player.position),
+			"topic_id": "",
+			"approach": "friendly",
+			"intent": "主动搭话",
+			"player_position": live_scene.get("player_position", {}),
+			"screenshot_b64": str(live_scene.get("screenshot_b64", "")),
+			"scene_context": live_scene.get("scene_context", {})
+		}, "player_talk")
+		return
 
 func _talk_topics_for_npc(npc_id: String, district_name: String) -> Array:
 	var topics: Array = GameState.snapshot.get("talk_topics", [])
@@ -750,22 +907,8 @@ func _move_player(delta: float) -> void:
 	last_move_input = input_vector
 	player.set_movement_direction(input_vector)
 	var world_size := WORLD_RECT.size * WORLD_VISUAL_SCALE
-	var proposed_x := Vector2(
-		clampf(player.position.x + input_vector.x * PLAYER_SPEED * delta, 0.0, world_size.x),
-		player.position.y
-	)
-	if WorldLayout.is_walkable_point(proposed_x / WORLD_VISUAL_SCALE):
-		player.position.x = proposed_x.x
-	else:
-		player.position.x = _to_world_position(WorldLayout.snap_to_walkable(proposed_x / WORLD_VISUAL_SCALE)).x
-	var proposed_y := Vector2(
-		player.position.x,
-		clampf(player.position.y + input_vector.y * PLAYER_SPEED * delta, 0.0, world_size.y)
-	)
-	if WorldLayout.is_walkable_point(proposed_y / WORLD_VISUAL_SCALE):
-		player.position.y = proposed_y.y
-	else:
-		player.position.y = _to_world_position(WorldLayout.snap_to_walkable(proposed_y / WORLD_VISUAL_SCALE)).y
+	player.position.x = clampf(player.position.x + input_vector.x * PLAYER_SPEED * delta, 0.0, world_size.x)
+	player.position.y = clampf(player.position.y + input_vector.y * PLAYER_SPEED * delta, 0.0, world_size.y)
 
 
 func _update_world_camera(delta: float) -> void:
@@ -811,13 +954,22 @@ func _update_current_interactable() -> void:
 		current_interactable = house_interior.get_current_interactable()
 		hint_label.text = house_interior.get_hint_text()
 		return
+	if not _get_nearby_npcs(1).is_empty():
+		for node in interactables:
+			node.set_highlighted(false)
+		current_interactable = null
+		hint_label.text = "附近有人。按 E 直接搭话，H 账本，Tab 查看模式。"
+		return
 	var previous_interactable := current_interactable
 	var nearest: InteractableView = null
 	var best_distance := 99999.0
 	for node in interactables:
 		var distance := player.position.distance_to(node.position)
-		node.set_focus_strength(clampf(1.0 - distance / (200.0 * WORLD_VISUAL_SCALE), 0.0, 1.0))
-		var is_target := distance < 112.0 * WORLD_VISUAL_SCALE and distance < best_distance
+		var interaction_radius := 78.0 * WORLD_VISUAL_SCALE
+		if node.kind == "house":
+			interaction_radius = 44.0 * WORLD_VISUAL_SCALE
+		node.set_focus_strength(clampf(1.0 - distance / (interaction_radius * 1.5), 0.0, 1.0))
+		var is_target := distance < interaction_radius and distance < best_distance
 		if is_target:
 			best_distance = distance
 			nearest = node
@@ -891,13 +1043,15 @@ func _trigger_primary_interaction() -> void:
 
 
 func _default_payload_for_current_context() -> Dictionary:
-	if current_interactable != null:
-		return _default_payload_for_interactable(current_interactable)
 	var nearby_npcs := _get_nearby_npcs(1)
 	if nearby_npcs.is_empty():
+		if current_interactable != null:
+			return _default_payload_for_interactable(current_interactable)
 		return {}
 	var npc_id := str(nearby_npcs[0].get("id", ""))
 	if npc_id.is_empty():
+		if current_interactable != null:
+			return _default_payload_for_interactable(current_interactable)
 		return {}
 	return {
 		"action_type":"player_talk",
@@ -1600,19 +1754,31 @@ func _find_emotion_echo_candidates(excluded_ids: Array, midpoint: Vector2, distr
 
 func _on_api_response(tag: String, data: Dictionary) -> void:
 	_confirm_player_action_reaction(tag, data)
+	var dialogue_payload: Dictionary = {}
+	if tag == "player_talk":
+		dialogue_payload = data.get("dialogue", {})
+		if dialogue_payload.is_empty() and data.has("world_state"):
+			dialogue_payload = data.get("world_state", {}).get("last_dialogue", {})
 	if data.has("world_state"):
 		GameState.apply_snapshot(data["world_state"])
-	if tag == "player_talk" and data.has("dialogue"):
-		var dialogue: Dictionary = data.get("dialogue", {})
+	if tag == "player_talk":
+		var dialogue: Dictionary = dialogue_payload
 		modal_send_button.disabled = false
 		if not dialogue.is_empty():
+			dialogue["title"] = _sanitize_visible_text(str(dialogue.get("title", "")), "街头交谈")
+			dialogue["body"] = _sanitize_visible_text(str(dialogue.get("body", "")), "对方沉默了一会，又看了你一眼。")
 			_play_player_talk_feedback(dialogue)
 			modal_send_button.disabled = false
-			UiRouter.push_modal(str(dialogue.get("title", "街头交谈")), str(dialogue.get("body", "")), str(dialogue.get("tone", "conversation")))
+			UiRouter.push_modal(
+				str(dialogue.get("title", "街头交谈")),
+				str(dialogue.get("body", "")),
+				str(dialogue.get("tone", "conversation")),
+				{"dialogue": dialogue}
+			)
 	elif tag == "probe_ai":
-		UiRouter.push_modal("AI 连接测试", "[b]状态[/b]\n%s" % str(data.get("message", "")), "probe")
+		UiRouter.push_modal("AI 连接测试", "[b]状态[/b]\n%s" % _sanitize_visible_text(str(data.get("message", "")), "连接已建立，正在等待下一轮脉冲。"), "probe")
 	if data.has("message") and not str(data["message"]).is_empty():
-		GameState.add_toast(str(data["message"]))
+		GameState.add_toast(_sanitize_visible_text(str(data["message"]), "城里刚有一阵新风声。"))
 	elif tag == "world_state":
 		status_label.text = "服务在线，正在等待下一轮耳语。"
 	if data.has("world_state"):
@@ -1727,25 +1893,32 @@ func _compose_visual_macro_summary(base_summary: Dictionary) -> Dictionary:
 	var minutes := visual_clock_minutes
 	var clock_label := "%02d:%02d" % [int(minutes / 60), minutes % 60]
 	var period := "day"
-	var level := 1.0
-	if minutes < 300:
+	var solar_ratio := clampf(cos((float(minutes) - 720.0) / 720.0 * PI), -1.0, 1.0)
+	var level := 0.2 + ((solar_ratio + 1.0) * 0.5) * 0.8
+	if minutes < 300 or minutes >= 1200:
 		period = "night"
-		level = 0.24 + float(minutes) / 300.0 * 0.08
 	elif minutes < 420:
 		period = "dawn"
-		level = lerpf(0.34, 0.78, float(minutes - 300) / 120.0)
 	elif minutes < 1020:
 		period = "day"
-		level = 0.84 + sin(float(minutes - 420) / 600.0 * PI) * 0.14
-	elif minutes < 1140:
-		period = "evening"
-		level = lerpf(0.76, 0.36, float(minutes - 1020) / 120.0)
 	else:
-		period = "night"
-		level = lerpf(0.3, 0.22, float(minutes - 1140) / 300.0)
+		period = "evening"
+	var weather: Dictionary = last_snapshot.get("weather", {})
+	var weather_kind := str(weather.get("kind", "sunny"))
+	var weather_dim: float = {
+		"sunny": 0.0,
+		"breezy": 0.01,
+		"cloudy": 0.05,
+		"overcast": 0.08,
+		"rain": 0.08,
+		"snow": 0.1,
+		"dust": 0.14,
+	}.get(weather_kind, 0.0)
+	level = snapped(clampf(level - weather_dim, 0.2, 1.0), 0.01)
 	summary["clock_label"] = clock_label
 	summary["time_period"] = period
-	summary["light_level"] = clampf(level, 0.2, 1.0)
+	summary["light_level"] = level
+	summary["weather"] = weather
 	return summary
 
 
@@ -1754,6 +1927,8 @@ func _refresh_visual_macro_state() -> void:
 		return
 	var snapshot := last_snapshot
 	var player_data: Dictionary = snapshot.get("player", {})
+	var weather: Dictionary = snapshot.get("weather", {})
+	var weather_label := _weather_label_cn(str(weather.get("label", "晴天")))
 	var district_name := _current_district_for_position(player.position if not interior_mode else house_interior.get_player_position())
 	var subregion_name := _current_subregion_for_position(player.position if not interior_mode else house_interior.get_player_position())
 	var area_label := district_name
@@ -1771,16 +1946,19 @@ func _refresh_visual_macro_state() -> void:
 		player_data.get("goods_inventory", {}),
 		player_data.get("stock_holdings", {}).keys().size()
 	]
-	status_label.text = "天色: %s  ·  区域: %s  ·  上次 AI 脉冲: %s  ·  新闻数: %s  ·  听觉场: %s" % [
+	status_label.text = "天色: %s  ·  天气: %s  ·  区域: %s  ·  上次 AI 脉冲: %s  ·  新闻数: %s  ·  听觉圈: %s" % [
 		visual_summary.get("time_period", "day"),
+		weather_label,
 		area_label,
-		snapshot.get("last_pulse_at", "未触发"),
+		str(snapshot.get("last_pulse_at", "未触发")),
 		snapshot.get("global_news", []).size(),
 		"开" if show_hearing_debug else "关"
 	]
 	_update_compact_hud(snapshot, district_name)
 	_update_macro(visual_summary)
+	_refresh_news_ticker(snapshot)
 	_apply_time_of_day(visual_summary)
+	ambient.set_weather(weather)
 	_update_music(visual_summary, district_name)
 	house_interior.set_time_of_day(
 		str(visual_summary.get("time_period", "day")),
@@ -1797,6 +1975,8 @@ func _on_snapshot_updated(snapshot: Dictionary) -> void:
 	if not visual_time_synced:
 		_sync_visual_clock_from_snapshot(snapshot)
 	var player_data: Dictionary = snapshot.get("player", {})
+	var weather: Dictionary = snapshot.get("weather", {})
+	var weather_label := _weather_label_cn(str(weather.get("label", "晴天")))
 	var district_name := _current_district_for_position(player.position if not interior_mode else house_interior.get_player_position())
 	var subregion_name := _current_subregion_for_position(player.position if not interior_mode else house_interior.get_player_position())
 	var area_label := district_name
@@ -1822,10 +2002,12 @@ func _on_snapshot_updated(snapshot: Dictionary) -> void:
 		news_items.size(),
 		"开" if show_hearing_debug else "关"
 	]
+	status_label.text += "  ·  天气: %s" % weather_label
 	_update_compact_hud(snapshot, district_name)
 	_update_goods(snapshot.get("goods", []), player_data.get("goods_inventory", {}))
 	_update_stocks(snapshot.get("stocks", []), player_data.get("stock_holdings", {}))
 	_update_news(news_items)
+	_refresh_news_ticker(snapshot)
 	_update_families(snapshot.get("families", []))
 	_update_macro(visual_summary)
 	_apply_time_of_day(visual_summary)
@@ -1835,6 +2017,7 @@ func _on_snapshot_updated(snapshot: Dictionary) -> void:
 	backdrop.set_district_states(snapshot.get("districts", []))
 	foreground.set_house_states(snapshot.get("house_states", {}))
 	ambient.set_house_states(snapshot.get("house_states", {}))
+	ambient.set_weather(weather)
 	_update_music(visual_summary, district_name)
 	house_interior.set_time_of_day(
 		str(visual_summary.get("time_period", "day")),
@@ -1916,9 +2099,9 @@ func _refresh_npcs() -> void:
 		else:
 			view = npc_views[npc_id]
 		var view_data: Dictionary = data.duplicate(true)
-		var snapped_backend := WorldLayout.snap_to_walkable(Vector2(float(data.get("x", 0.0)), float(data.get("y", 0.0))))
-		view_data["x"] = snapped_backend.x * WORLD_VISUAL_SCALE
-		view_data["y"] = snapped_backend.y * WORLD_VISUAL_SCALE
+		var backend_pos := _coerce_npc_backend_position(Vector2(float(data.get("x", 0.0)), float(data.get("y", 0.0))))
+		view_data["x"] = backend_pos.x * WORLD_VISUAL_SCALE
+		view_data["y"] = backend_pos.y * WORLD_VISUAL_SCALE
 		view_data["social_radius"] = float(data.get("social_radius", 180.0)) * WORLD_VISUAL_SCALE
 		view.apply_data(view_data, show_hearing_debug)
 	for npc_id in npc_views.keys():
@@ -1972,8 +2155,8 @@ func _update_news(news: Array) -> void:
 		var scope_tag := "[color=#8f2f33]全城[/color]" if scope == "city" else "[color=#315748]街区[/color]"
 		lines.append("%s [b]%s[/b]\n%s\n[i]%s[/i]" % [
 			scope_tag,
-			item.get("title", ""),
-			item.get("body", ""),
+			_sanitize_visible_text(str(item.get("title", "")), "街头广播"),
+			_sanitize_visible_text(str(item.get("body", "")), "城里刚有一阵新风声。"),
 			", ".join(item.get("tags", []))
 		])
 	news_label.text = "\n\n".join(lines)
@@ -2740,6 +2923,19 @@ func _to_world_position(pos: Vector2) -> Vector2:
 	return pos * WORLD_VISUAL_SCALE
 
 
+func _coerce_npc_backend_position(pos: Vector2) -> Vector2:
+	var clamped := Vector2(
+		clampf(pos.x, WORLD_RECT.position.x + 6.0, WORLD_RECT.end.x - 6.0),
+		clampf(pos.y, WORLD_RECT.position.y + 6.0, WORLD_RECT.end.y - 6.0)
+	)
+	if WorldLayout.is_walkable_point(clamped):
+		return clamped
+	var snapped := WorldLayout.snap_to_walkable(clamped)
+	if clamped.distance_to(snapped) <= 24.0:
+		return snapped
+	return clamped
+
+
 func _scaled_district_rects() -> Dictionary:
 	var scaled: Dictionary = {}
 	for district_name in DISTRICT_RECTS.keys():
@@ -2876,8 +3072,8 @@ func _show_next_toast() -> void:
 
 func _on_modal_requested(payload: Dictionary) -> void:
 	var tone := str(payload.get("tone", "news"))
-	modal_title.text = str(payload.get("title", "告示"))
-	modal_body.text = str(payload.get("body", ""))
+	modal_title.text = _sanitize_visible_text(str(payload.get("title", "告示")), "告示")
+	modal_body.text = _sanitize_visible_text(str(payload.get("body", "")), "城里刚有一阵新风声。")
 	active_dialogue_context = {}
 	modal_input.visible = false
 	modal_send_button.visible = false

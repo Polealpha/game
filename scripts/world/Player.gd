@@ -3,7 +3,7 @@ class_name PlayerView
 
 const TURN_DURATION := 0.18
 const INTERACT_DURATION := 0.34
-const CHARACTER_SCALE := Vector2(0.72, 0.72)
+const CHARACTER_SCALE := Vector2(0.82, 0.82)
 const CHARACTER_BASE_PATH := "res://assets/generated/character_sheets"
 const SHEET_PATHS := {
 	"idle": {

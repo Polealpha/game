@@ -29,7 +29,7 @@ const DIRECT_TALK_RADIUS := 88.0
 const HOUSE_ENTRY_RADIUS := 42.0
 const BACKEND_RETRY_MSEC := 5000
 const BACKEND_HEALTHCHECK_MSEC := 1600
-const PLAYER_TALK_TIMEOUT_MSEC := 11000
+const PLAYER_TALK_TIMEOUT_MSEC := 24000
 const PLAYER_TALK_RETRY_LIMIT := 1
 
 var player := PlayerView.new()
@@ -37,7 +37,7 @@ var world_tint := CanvasModulate.new()
 var backdrop := WorldBackdrop.new()
 var ambient := WorldAmbient.new()
 var foreground := WorldForeground.new()
-var structure_overlay := WorldStructureOverlay.new()
+var top_overlay := WorldStructureOverlay.new()
 var world_actor_layer := Node2D.new()
 var house_interior := HouseInteriorView.new()
 var world_camera := Camera2D.new()
@@ -137,14 +137,12 @@ func _ready() -> void:
 	Engine.max_fps = 60
 	add_child(world_tint)
 	add_child(backdrop)
-	add_child(ambient)
 	add_child(world_actor_layer)
 	world_actor_layer.y_sort_enabled = true
 	world_actor_layer.add_child(interactable_layer)
 	world_actor_layer.add_child(npc_layer)
 	world_actor_layer.add_child(player)
-	world_actor_layer.add_child(structure_overlay)
-	add_child(foreground)
+	add_child(top_overlay)
 	add_child(house_interior)
 	add_child(world_camera)
 	add_child(music_player)
@@ -154,8 +152,7 @@ func _ready() -> void:
 	interactable_layer.z_index = -2
 	ui_layer.add_child(ui_root)
 	backdrop.scale = Vector2.ONE * WORLD_VISUAL_SCALE
-	ambient.scale = Vector2.ONE * WORLD_VISUAL_SCALE
-	foreground.scale = Vector2.ONE * WORLD_VISUAL_SCALE
+	top_overlay.scale = Vector2.ONE * WORLD_VISUAL_SCALE
 	player.position = _to_world_position(WorldLayout.snap_to_walkable(WorldLayout.PLAYER_START))
 	world_camera.enabled = true
 	world_camera.position_smoothing_enabled = true
@@ -178,7 +175,7 @@ func _ready() -> void:
 	house_interior.set_active(false)
 
 	ApiClient.response_received.connect(_on_api_response)
-	ApiClient.request_failed.connect(_on_api_error)
+	ApiClient.request_failed.connect(_handle_api_error_v3)
 	GameState.snapshot_updated.connect(_on_snapshot_updated)
 	GameState.toast_added.connect(_enqueue_toast)
 	UiRouter.modal_requested.connect(_on_modal_requested)
@@ -204,8 +201,7 @@ func _ready() -> void:
 	toast_timer.timeout.connect(_show_next_toast)
 	add_child(toast_timer)
 
-	_attempt_service_autostart()
-	_poll_world_state()
+	_probe_backend_health()
 
 
 func _process(delta: float) -> void:
@@ -833,7 +829,7 @@ func _sanitize_visible_text(text: String, fallback: String = "") -> String:
 
 
 func _maybe_trigger_proactive_npc_talk(delta: float) -> void:
-	if modal_overlay.visible or ledger_ui_visible or inspection_mode:
+	if modal_overlay.visible or ledger_ui_visible or inspection_mode or not pending_dialogue_request.is_empty():
 		npc_auto_talk_elapsed = 0.0
 		return
 	npc_auto_talk_elapsed += delta
@@ -1620,6 +1616,8 @@ func _poll_world_state() -> void:
 		return
 	if not pending_dialogue_request.is_empty():
 		return
+	if modal_overlay.visible:
+		return
 	var now := Time.get_ticks_msec()
 	if not backend_service_ready or now - backend_last_healthcheck_msec >= BACKEND_HEALTHCHECK_MSEC:
 		_probe_backend_health()
@@ -1677,6 +1675,10 @@ func _probe_backend_health() -> void:
 
 
 func _on_ai_pulse_timer_timeout() -> void:
+	if not pending_dialogue_request.is_empty():
+		return
+	if modal_overlay.visible:
+		return
 	_request_ai_pulse("scheduled_scene", false)
 
 
@@ -1739,6 +1741,8 @@ func _capture_scene_screenshot_b64() -> String:
 
 
 func _trigger_proximity_conversation() -> void:
+	if modal_overlay.visible or not pending_dialogue_request.is_empty():
+		return
 	if interior_mode:
 		return
 	if npc_views.size() < 2:
@@ -2088,6 +2092,92 @@ func _play_player_talk_feedback(dialogue: Dictionary) -> void:
 			continue
 		candidate.trigger_social_beat(midpoint, false, "bystand" if index == 0 else "glance", 0.82 + float(index) * 0.08, 0.72 - float(index) * 0.08)
 		candidate.trigger_emotion_wave("startled" if confidence >= 0.65 and index == 0 else "puzzled", midpoint, 0.88 + float(index) * 0.08, 0.54 - float(index) * 0.06)
+
+
+func _handle_api_error_v3(tag: String, status_code: int, message: String) -> void:
+	if tag == "health":
+		backend_health_pending = false
+	if not pending_player_reaction.is_empty() and str(pending_player_reaction.get("tag", "")) == tag:
+		pending_player_reaction = {}
+	if tag == "player_talk":
+		if not pending_dialogue_request.is_empty():
+			pending_dialogue_request["last_error_msec"] = Time.get_ticks_msec()
+		status_label.text = "对方还在组织说法，正在重试。"
+		return
+	backend_error_streak += 1
+	if tag == "health":
+		if backend_error_streak < 3:
+			status_label.text = "本地服务探活延迟，正在重试。"
+			return
+		backend_service_ready = false
+		status_label.text = "服务健康检查失败 (%s)" % status_code
+		_attempt_service_autostart(true)
+		GameState.add_toast("服务连续多次无响应。正在重试拉起本地 Python 服务。")
+	elif tag == "world_state":
+		status_label.text = "世界状态同步延迟，下一轮自动重试。"
+		GameState.add_toast("本轮同步延迟，下一轮自动重试。")
+	else:
+		status_label.text = "请求 %s 失败 (%s)" % [tag, status_code]
+		if backend_error_streak >= 2:
+			_probe_backend_health()
+			GameState.add_toast("本轮请求失败，正在检查本地服务。")
+	if not message.is_empty():
+		news_label.text = "[color=#6f1d1b]%s[/color]" % message
+
+
+func _handle_api_error_v2(tag: String, status_code: int, message: String) -> void:
+	if tag == "health":
+		backend_health_pending = false
+	if not pending_player_reaction.is_empty() and str(pending_player_reaction.get("tag", "")) == tag:
+		pending_player_reaction = {}
+	if tag == "player_talk":
+		if not pending_dialogue_request.is_empty():
+			pending_dialogue_request["last_error_msec"] = Time.get_ticks_msec()
+		status_label.text = "对方还在想怎么回你，正在重试。"
+		return
+	if tag == "health":
+		backend_service_ready = false
+		backend_error_streak += 1
+		status_label.text = "服务健康检查失败 (%s)" % status_code
+		_attempt_service_autostart(true)
+		GameState.add_toast("服务离线或未启动。正在重试拉起本地 Python 服务。")
+	else:
+		backend_error_streak += 1
+		status_label.text = "请求 %s 失败 (%s)" % [tag, status_code]
+		_probe_backend_health()
+		GameState.add_toast("本轮同步失败，正在重新检查本地服务。")
+	if not message.is_empty():
+		news_label.text = "[color=#6f1d1b]%s[/color]" % message
+
+
+func _handle_api_error(tag: String, status_code: int, message: String) -> void:
+	if tag == "health":
+		backend_health_pending = false
+	if not pending_player_reaction.is_empty() and str(pending_player_reaction.get("tag", "")) == tag:
+		pending_player_reaction = {}
+	if tag == "player_talk":
+		if not pending_dialogue_request.is_empty():
+			pending_dialogue_request["last_error_msec"] = Time.get_ticks_msec()
+		status_label.text = "对方还在想怎么回你，正在重试。"
+		return
+	backend_service_ready = false
+	backend_error_streak += 1
+	status_label.text = "请求 %s 失败 (%s)" % [tag, status_code]
+	if tag == "health":
+		_attempt_service_autostart(true)
+		GameState.add_toast("服务离线或未启动。正在重试拉起本地 Python 服务。")
+	else:
+		_probe_backend_health()
+		GameState.add_toast("本轮同步失败，正在重新检查本地服务。")
+	if not message.is_empty():
+		news_label.text = "[color=#6f1d1b]%s[/color]" % message
+	if tag == "player_talk":
+		UiRouter.push_modal(
+			"街头交谈",
+			"对方没有及时接上话，你先记下了这次接触。",
+			"conversation",
+			{"dialogue": active_dialogue_context if not active_dialogue_context.is_empty() else GameState.snapshot.get("last_dialogue", {})}
+		)
 
 
 func _on_api_error(tag: String, status_code: int, message: String) -> void:
@@ -3238,14 +3328,15 @@ func _set_ledger_ui_visible(enabled: bool) -> void:
 
 func _apply_visibility_modes() -> void:
 	backdrop.visible = not interior_mode
-	ambient.visible = not interior_mode
+	ambient.visible = false
 	interactable_layer.visible = not interior_mode
 	npc_layer.visible = not interior_mode
 	player.visible = not interior_mode
-	foreground.visible = not inspection_mode and not interior_mode
+	top_overlay.visible = not inspection_mode and not interior_mode
+	foreground.visible = false
 	backdrop.set_process(not interior_mode)
-	ambient.set_process(not interior_mode)
-	foreground.set_process(not inspection_mode and not interior_mode)
+	ambient.set_process(false)
+	foreground.set_process(false)
 	var ui_panels_visible := ledger_ui_visible and not inspection_mode
 	var compact_visible := not ledger_ui_visible and not inspection_mode
 	for node in optional_ui_nodes:

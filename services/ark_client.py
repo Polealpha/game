@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 import json
 import os
 import re
@@ -38,6 +39,8 @@ class ArkClient:
         self.base_url = os.getenv("ARK_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3")
         # Keep dialogue latency low and let the frontend retry once if a round stalls.
         self.timeout_seconds = float(os.getenv("ARK_TIMEOUT_SECONDS", "6.5").strip() or "6.5")
+        self.hard_timeout_seconds = float(os.getenv("ARK_HARD_TIMEOUT_SECONDS", "8.0").strip() or "8.0")
+        self._request_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="ark-client")
         self._client = None
         disable_for_unittest = "unittest" in sys.modules and os.getenv("ARK_ENABLE_IN_TESTS", "0") != "1"
         if self.api_key and OpenAI is not None and not disable_for_unittest:
@@ -46,6 +49,16 @@ class ArkClient:
     @property
     def enabled(self) -> bool:
         return self._client is not None
+
+    def _create_completion(self, **kwargs: Any) -> Any:
+        if self._client is None:
+            raise RuntimeError("ark client disabled")
+        future = self._request_executor.submit(self._client.chat.completions.create, **kwargs)
+        try:
+            return future.result(timeout=self.hard_timeout_seconds)
+        except FuturesTimeoutError as exc:
+            future.cancel()
+            raise TimeoutError(f"ark hard timeout after {self.hard_timeout_seconds:.1f}s") from exc
 
     def generate_dialogue_turn(self, payload: dict[str, Any]) -> dict[str, Any] | None:
         scene_observation = payload.get("scene_observation", {})
@@ -260,7 +273,7 @@ class ArkClient:
         errors: list[str] = []
         for model_name in self._model_candidates():
             try:
-                response = self._client.chat.completions.create(
+                response = self._create_completion(
                     model=model_name,
                     temperature=0.1,
                     max_tokens=24,
@@ -319,7 +332,7 @@ class ArkClient:
         final_system = system_prompt + REPLY_LIMIT_SUFFIX + ANTI_PLACEHOLDER_SUFFIX
         for model_name in self._model_candidates():
             try:
-                response = self._client.chat.completions.create(
+                response = self._create_completion(
                     model=model_name,
                     temperature=0.01,
                     max_tokens=self._task_max_tokens(task_type),

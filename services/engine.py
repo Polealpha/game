@@ -369,6 +369,9 @@ class WorldEngine:
         player_input: str = "",
         scene_observation: dict[str, Any] | None = None,
     ) -> ActionResult:
+        dialogue = None
+        llm_payload: dict[str, Any] | None = None
+        live_observation: dict[str, Any] = {}
         with self.lock:
             npc = self._find_npc(npc_id)
             if not npc:
@@ -376,53 +379,58 @@ class WorldEngine:
             if scene_observation:
                 self._record_scene_observation(scene_observation)
 
-            player = self.state["player"]
+            district = district or str(npc["district"])
             live_observation = copy.deepcopy(self.state.get("scene_observation", {}))
             self._refresh_derived_views()
-            topic = self._resolve_talk_topic(npc, topic_id, district or npc["district"])
+            topic = self._resolve_talk_topic(npc, topic_id, district)
             truth_profile = self._truth_metrics_for_topic(npc, topic, approach, intent)
             trust_delta, intel_strength, npc_openness = self._evaluate_talk_approach(npc, topic, approach)
-            self._queue_agent_task(npc, "player_talk", str(topic.get("label", "玩家搭话")))
-            dialogue = None
+            self._queue_agent_task(npc, "player_talk", str(topic.get("label", "????")))
             if self._consume_agent_budget(npc, "player_talk", 1):
-                dialogue = self.ark.generate_dialogue_turn(
-                    {
-                        "speaker": {
-                            "name": "壳仔",
-                            "district": district or npc["district"],
-                            "family_affiliation": "无",
-                            "mood": "wary",
-                            "current_goal": topic.get("label", "打听风声"),
-                            "fear": 24,
-                            "greed": 28,
-                            "relationship_memory": copy.deepcopy(npc.get("player_memory", {})),
-                        },
-                        "speaker_agent": {
-                            "agent_id": "player_proxy",
-                            "system_prompt": "你是底层起步的乌龟玩家代理，问题短、谨慎、想知道价格和风向。",
-                            "tool_policy": ["只能问问题", "不能替 NPC 决定", "必须说中文"],
-                            "memory": copy.deepcopy(list(npc.get("relationship_memory", []))[:4]),
-                        },
-                        "listener": npc,
-                        "listener_agent": self._npc_agent_profile(npc),
-                        "district": district or npc["district"],
-                        "trigger": "玩家搭话",
-                        "topic": topic,
-                        "approach": approach,
-                        "intent": intent,
-                        "player_input": player_input,
-                        "scene_observation": live_observation,
-                        "truth_profile": truth_profile,
-                        "relationship_memory": {
-                            "player_memory": copy.deepcopy(npc.get("player_memory", {})),
-                            "recent_events": copy.deepcopy(list(npc.get("relationship_memory", []))[:4]),
-                        },
-                    }
-                )
+                npc_snapshot = copy.deepcopy(npc)
+                llm_payload = {
+                    "speaker": {
+                        "name": "??",
+                        "district": district,
+                        "family_affiliation": "",
+                        "mood": "wary",
+                        "current_goal": topic.get("label", "????"),
+                        "fear": 24,
+                        "greed": 28,
+                        "relationship_memory": copy.deepcopy(npc_snapshot.get("player_memory", {})),
+                    },
+                    "speaker_agent": {
+                        "agent_id": "player_proxy",
+                        "system_prompt": "???????????????????????????????",
+                        "tool_policy": ["?????", "??? NPC ??", "?????"],
+                        "memory": copy.deepcopy(list(npc_snapshot.get("relationship_memory", []))[:4]),
+                    },
+                    "listener": npc_snapshot,
+                    "listener_agent": self._npc_agent_profile(npc_snapshot),
+                    "district": district,
+                    "trigger": "????",
+                    "topic": topic,
+                    "approach": approach,
+                    "intent": intent,
+                    "player_input": player_input,
+                    "scene_observation": live_observation,
+                    "truth_profile": truth_profile,
+                    "relationship_memory": {
+                        "player_memory": copy.deepcopy(npc_snapshot.get("player_memory", {})),
+                        "recent_events": copy.deepcopy(list(npc_snapshot.get("relationship_memory", []))[:4]),
+                    },
+                }
+        if llm_payload is not None:
+            dialogue = self.ark.generate_dialogue_turn(llm_payload)
+        with self.lock:
+            npc = self._find_npc(npc_id)
+            if not npc:
+                return ActionResult("你身边没有这个角色。", self.snapshot())
+            player = self.state["player"]
             player_input = player_input.strip()
             lines = [str(line) for line in dialogue.get("lines", [])[:2]] if dialogue else []
-            stance = str(dialogue.get("stance", truth_profile.get("bias", npc.get("stance", "观望")))) if dialogue else str(
-                truth_profile.get("bias", npc.get("stance", "观望"))
+            stance = str(dialogue.get("stance", truth_profile.get("bias", npc.get("stance", "??")))) if dialogue else str(
+                truth_profile.get("bias", npc.get("stance", "??"))
             )
             revealed_topic_ids = [str(value) for value in dialogue.get("revealed_topic_ids", []) if str(value).strip()] if dialogue else []
             if len(lines) < 2:
@@ -435,7 +443,8 @@ class WorldEngine:
             if len(lines) < 2:
                 fallback_lines = self._rule_player_talk_lines(npc, topic, approach, npc_openness, intent)
                 lines = [player_input, fallback_lines[1]] if player_input else fallback_lines
-            lines[1] = self._normalize_spoken_line(str(npc.get("name", "")), lines[1], self._rule_player_talk_lines(npc, topic, approach, npc_openness, intent)[1])
+            fallback_reply = self._rule_player_talk_lines(npc, topic, approach, npc_openness, intent)[1]
+            lines[1] = self._normalize_spoken_line(str(npc.get("name", "")), lines[1], fallback_reply)
             if dialogue:
                 self._remember_agent_output(npc, "player_talk", lines[1])
 
@@ -444,11 +453,11 @@ class WorldEngine:
             npc["player_relation"] = int(npc.get("player_relation", 0)) + trust_delta
             npc["player_trust"] = max(0.0, min(100.0, float(npc.get("player_trust", 0.0)) + trust_delta * 2.4))
             player["credit"] = min(100, int(player["credit"]) + 1)
-            player["reputation"] = min(100, int(player["reputation"]) + (1 if npc["class"] != "底层" and trust_delta > 0 else 0))
+            player["reputation"] = min(100, int(player["reputation"]) + (1 if npc["class"] != "??" and trust_delta > 0 else 0))
             npc["memory_tags"] = self._push_memory(npc["memory_tags"], "talk:player")
             npc["heard_topic_ids"] = self._push_memory(npc.get("heard_topic_ids", []), str(topic.get("id", "")))
             self.state["demo_metrics"]["npc_talks"] = int(self.state["demo_metrics"].get("npc_talks", 0)) + 1
-            intel = self._build_intel_packet_from_topic(topic, npc, district or npc["district"])
+            intel = self._build_intel_packet_from_topic(topic, npc, district)
             effective_strength = max(0.0, intel_strength * (0.45 + float(truth_profile.get("truthfulness", 0.5)) * 0.8))
             intel = self._spin_intel_packet(intel, npc, truth_profile, topic)
             promote_news = effective_strength >= 0.66 or str(topic.get("kind", "")) in {"asset", "family", "company", "institution", "panic"}
@@ -476,15 +485,14 @@ class WorldEngine:
             intel_note = intel["line"] if effective_strength > 0.12 else "这次没问出实货，只摸到一点态度。"
             self.state["last_dialogue"] = {
                 "title": f"你与 {npc['name']} 交谈",
-                "body": f"[b]话题[/b]：{topic.get('label', '街头风向')}  ·  [b]方式[/b]：{self._approach_label(approach)}\n\n[b]你[/b]：{lines[0]}\n\n[b]{npc['name']}[/b]：{lines[1]}\n\n[color=#6b4f2a][b]顺手递来的风声[/b][/color]\n{intel['line'] if intel_strength > 0 else '这次没问出实货，只摸到一点态度。'}\n\n[i]{npc['district']} 的风向因此更清楚了一点。[/i]",
                 "tone": "conversation",
             }
             self.state["last_dialogue"]["body"] = (
-                f"[b]话题[/b]：{topic.get('label', '街头风向')}  ·  [b]方式[/b]：{self._approach_label(approach)}\n\n"
+                f"[b]话题[/b]：{topic.get('label', '街头风向')}  路  [b]方式[/b]：{self._approach_label(approach)}\n\n"
                 f"[b]你[/b]：{lines[0]}\n\n"
                 f"[b]{npc['name']}[/b]：{lines[1]}\n\n"
                 f"[color=#6b4f2a][b]你实际拿到[/b][/color]\n{intel_note}\n"
-                f"可信度 {int(round(float(truth_profile.get('confidence', 0.5)) * 100))}%  ·  真话率 {int(round(float(truth_profile.get('truthfulness', 0.5)) * 100))}%\n\n"
+                f"可信度 {int(round(float(truth_profile.get('confidence', 0.5)) * 100))}%  路  真话率 {int(round(float(truth_profile.get('truthfulness', 0.5)) * 100))}%\n\n"
                 f"[color=#6b4f2a][b]世界变化[/b][/color]\n{world_effects}\n\n"
                 f"[i]{npc['district']} 的风向因此更清楚了一点。[/i]"
             )

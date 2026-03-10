@@ -254,38 +254,55 @@ func _exit_tree() -> void:
 func _maintain_pending_dialogue_request() -> void:
 	if pending_dialogue_request.is_empty():
 		return
+	if not modal_overlay.visible:
+		pending_dialogue_request = {}
+		return
 	var started_msec := int(pending_dialogue_request.get("started_msec", 0))
 	if started_msec <= 0:
 		pending_dialogue_request["started_msec"] = Time.get_ticks_msec()
 		return
 	var now := Time.get_ticks_msec()
-	if now - started_msec < PLAYER_TALK_TIMEOUT_MSEC:
+	var last_error_msec := int(pending_dialogue_request.get("last_error_msec", 0))
+	if last_error_msec > 0 and now - last_error_msec >= 650:
+		pending_dialogue_request.erase("last_error_msec")
+		_retry_pending_dialogue_request(now)
 		return
-	var retry_count := int(pending_dialogue_request.get("retry_count", 0))
-	if retry_count < PLAYER_TALK_RETRY_LIMIT:
-		pending_dialogue_request["retry_count"] = retry_count + 1
-		pending_dialogue_request["started_msec"] = now
-		var live_scene := _build_scene_observation_payload(false)
-		ApiClient.post_json("/npc/player_talk", {
-			"npc_id": str(pending_dialogue_request.get("npc_id", "")),
-			"district": str(pending_dialogue_request.get("district", _current_district_for_position(player.position))),
-			"topic_id": str(pending_dialogue_request.get("topic_id", "")),
-			"approach": str(pending_dialogue_request.get("approach", "cautious")),
-			"intent": str(pending_dialogue_request.get("intent", "continue")),
-			"player_input": str(pending_dialogue_request.get("player_input", "")),
-			"player_position": live_scene.get("player_position", {}),
-			"screenshot_b64": "",
-			"scene_context": live_scene.get("scene_context", {})
-		}, "player_talk")
+	if now - started_msec < PLAYER_TALK_TIMEOUT_MSEC:
+		status_label.text = "对方正在整理说法……"
+		return
+	if int(pending_dialogue_request.get("retry_count", 0)) < PLAYER_TALK_RETRY_LIMIT:
+		_retry_pending_dialogue_request(now)
 		return
 	modal_send_button.disabled = false
 	pending_dialogue_request = {}
+	status_label.text = "这轮对话超时了。"
 	UiRouter.push_modal(
 		"街头交谈",
 		"对方这轮没及时接上话，你可以再试一次。",
 		"conversation",
 		{"dialogue": active_dialogue_context if not active_dialogue_context.is_empty() else GameState.snapshot.get("last_dialogue", {})}
 	)
+
+
+func _retry_pending_dialogue_request(now: int = -1) -> void:
+	if pending_dialogue_request.is_empty():
+		return
+	var retry_started := Time.get_ticks_msec() if now < 0 else now
+	pending_dialogue_request["retry_count"] = int(pending_dialogue_request.get("retry_count", 0)) + 1
+	pending_dialogue_request["started_msec"] = retry_started
+	var live_scene := _build_scene_observation_payload(false)
+	ApiClient.post_json("/npc/player_talk", {
+		"npc_id": str(pending_dialogue_request.get("npc_id", "")),
+		"district": str(pending_dialogue_request.get("district", _current_district_for_position(player.position))),
+		"topic_id": str(pending_dialogue_request.get("topic_id", "")),
+		"approach": str(pending_dialogue_request.get("approach", "cautious")),
+		"intent": str(pending_dialogue_request.get("intent", "继续追问")),
+		"player_input": str(pending_dialogue_request.get("player_input", "")),
+		"player_position": live_scene.get("player_position", {}),
+		"screenshot_b64": "",
+		"scene_context": live_scene.get("scene_context", {})
+	}, "player_talk")
+	status_label.text = "对方还在组织话头，正在重试。"
 
 
 func _build_world_labels() -> void:
@@ -1169,6 +1186,7 @@ func _default_payload_for_current_context() -> Dictionary:
 		"district": _current_district_for_position(player.position),
 		"payload":{
 			"npc_id": npc_id,
+			"npc_name": str(nearby_npcs[0].get("name", "附近角色")),
 			"approach":"cautious",
 			"intent":"街头搭话",
 			"subregion_name": _current_subregion_for_position(player.position)
@@ -1467,7 +1485,9 @@ func _submit_interaction(payload: Dictionary) -> void:
 	elif action_type == "player_talk":
 		pending_player_reaction = {}
 		var npc_card := _npc_card_for_id(str(payload.get("payload", {}).get("npc_id", "")))
-		var npc_name := str(npc_card.get("name", "附近角色"))
+		var npc_name := str(payload.get("payload", {}).get("npc_name", ""))
+		if npc_name.is_empty():
+			npc_name = str(npc_card.get("name", "附近角色"))
 		var fallback_quotes := _fallback_trade_quotes(npc_card)
 		var request_dialogue := {
 			"npc_id": str(payload.get("payload", {}).get("npc_id", "")),
@@ -1495,6 +1515,7 @@ func _submit_interaction(payload: Dictionary) -> void:
 		pending_dialogue_request["player_input"] = ""
 		pending_dialogue_request["started_msec"] = Time.get_ticks_msec()
 		pending_dialogue_request["retry_count"] = 0
+		status_label.text = "对方正在整理说法……"
 		UiRouter.push_modal(
 			str(request_dialogue.get("title", "街头交谈")),
 			str(request_dialogue.get("body", "对方正在整理说法……")),
@@ -1946,10 +1967,21 @@ func _on_api_response(tag: String, data: Dictionary) -> void:
 	if data.has("world_state"):
 		GameState.apply_snapshot(data["world_state"])
 	if tag == "player_talk":
-		pending_dialogue_request = {}
+		var previous_pending := pending_dialogue_request.duplicate(true)
 		var dialogue: Dictionary = dialogue_payload
+		var dialogue_source := str(dialogue.get("source", ""))
+		if dialogue_source == "rule" and not previous_pending.is_empty() and int(previous_pending.get("retry_count", 0)) < PLAYER_TALK_RETRY_LIMIT:
+			pending_dialogue_request = previous_pending
+			_retry_pending_dialogue_request()
+			return
+		if dialogue.is_empty() and not previous_pending.is_empty() and int(previous_pending.get("retry_count", 0)) < PLAYER_TALK_RETRY_LIMIT:
+			pending_dialogue_request = previous_pending
+			_retry_pending_dialogue_request()
+			return
+		pending_dialogue_request = {}
 		modal_send_button.disabled = false
 		if not dialogue.is_empty():
+			status_label.text = "服务在线，正在等待下一轮耳语。"
 			if not active_dialogue_context.is_empty():
 				if str(dialogue.get("npc_id", "")).is_empty():
 					dialogue["npc_id"] = str(active_dialogue_context.get("npc_id", ""))
@@ -1975,6 +2007,7 @@ func _on_api_response(tag: String, data: Dictionary) -> void:
 				{"dialogue": dialogue}
 			)
 		else:
+			status_label.text = "这轮对话没及时接上。"
 			UiRouter.push_modal(
 				"街头交谈",
 				"对方一时没有答上来，只是谨慎地看着你。",
@@ -2049,9 +2082,10 @@ func _on_api_error(tag: String, status_code: int, message: String) -> void:
 	if not pending_player_reaction.is_empty() and str(pending_player_reaction.get("tag", "")) == tag:
 		pending_player_reaction = {}
 	if tag == "player_talk":
-		modal_send_button.disabled = false
 		if not pending_dialogue_request.is_empty():
 			pending_dialogue_request["last_error_msec"] = Time.get_ticks_msec()
+		status_label.text = "对方还在想怎么回你，正在重试。"
+		return
 	backend_service_ready = false
 	backend_error_streak += 1
 	status_label.text = "请求 %s 失败 (%s)" % [tag, status_code]
@@ -3357,6 +3391,7 @@ func _close_modal() -> void:
 		modal_overlay.visible = false
 	)
 	active_dialogue_context = {}
+	pending_dialogue_request = {}
 	modal_input.text = ""
 	modal_input.visible = false
 	modal_send_button.visible = false
@@ -3406,6 +3441,7 @@ func _submit_modal_player_talk() -> void:
 	pending_dialogue_request["started_msec"] = Time.get_ticks_msec()
 	pending_dialogue_request["retry_count"] = 0
 	modal_send_button.disabled = true
+	status_label.text = "对方正在整理说法……"
 	var live_scene := _build_scene_observation_payload(false)
 	ApiClient.post_json("/npc/player_talk", {
 		"npc_id": str(dialogue_context.get("npc_id", "")),

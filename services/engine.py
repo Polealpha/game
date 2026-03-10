@@ -499,7 +499,9 @@ class WorldEngine:
             self.state["last_dialogue"]["player_input"] = player_input
             self.state["last_dialogue"]["world_effects"] = world_effects
             self.state["last_dialogue"]["npc_id"] = npc_id
+            self.state["last_dialogue"]["npc_name"] = str(npc.get("name", ""))
             self.state["last_dialogue"]["district"] = npc["district"]
+            self.state["last_dialogue"]["relation_status"] = self._npc_player_status(npc)
             self.state["last_dialogue"]["heard_by"] = heard_by
             self.state["last_dialogue"]["source"] = "llm" if dialogue else "rule"
             self.state["last_dialogue"]["model"] = str(dialogue.get("_meta_model", self.ark.model_id)) if dialogue else "rule"
@@ -894,6 +896,36 @@ class WorldEngine:
         inventory = copy.deepcopy(npc.get("inventory", {}))
         rows = [f"{name}:{int(inventory.get(name, 0))}" for name in ["面包", "煤", "罐头"]]
         return " / ".join(rows)
+
+    def _normalize_npc_inventory(self, npc: dict[str, Any]) -> dict[str, int]:
+        inventory = copy.deepcopy(npc.get("inventory", {}))
+        if not isinstance(inventory, dict):
+            inventory = {}
+        normalized = {
+            "面包": int(inventory.get("面包", 0)),
+            "煤": int(inventory.get("煤", 0)),
+            "罐头": int(inventory.get("罐头", 0)),
+        }
+        if sum(normalized.values()) > 0:
+            return normalized
+        role = str(npc.get("role", ""))
+        district = str(npc.get("district", ""))
+        class_name = str(npc.get("class", ""))
+        if role in {"店主", "老板"}:
+            normalized = {"面包": 3, "煤": 1, "罐头": 2}
+        elif role in {"代理人", "银行经理", "记者", "投机者"}:
+            normalized = {"面包": 1, "煤": 0, "罐头": 1}
+        elif role in {"工会领袖"}:
+            normalized = {"面包": 2, "煤": 1, "罐头": 1}
+        elif class_name == "底层":
+            normalized = {"面包": 1, "煤": 1, "罐头": 0}
+        else:
+            normalized = {"面包": 2, "煤": 1, "罐头": 1}
+        if district == "港口":
+            normalized["罐头"] = max(normalized["罐头"], 1)
+        if district == "工厂区":
+            normalized["煤"] = max(normalized["煤"], 1)
+        return normalized
 
     def _trade_stock(self, stock_name: str, quantity: int, direction: int) -> ActionResult:
         player = self.state["player"]
@@ -3716,6 +3748,7 @@ class WorldEngine:
         npc["information_domain"] = self._npc_information_domains(npc)
         npc["stock_positions"] = copy.deepcopy(npc.get("stock_positions", self._default_stock_positions(npc)))
         npc["goods_positions"] = copy.deepcopy(npc.get("goods_positions", self._default_goods_positions(npc)))
+        npc["inventory"] = self._normalize_npc_inventory(npc)
         npc["relationship_memory"] = copy.deepcopy(npc.get("relationship_memory", []))
         npc["player_memory"] = copy.deepcopy(
             npc.get(
@@ -4601,7 +4634,20 @@ class WorldEngine:
                     "id": str(npc.get("id", "")),
                     "name": str(npc.get("name", "")),
                     "district": str(npc.get("district", "")),
+                    "subregion_id": str(npc.get("subregion_id", "")),
+                    "subregion_name": str(npc.get("subregion_name", "")),
                     "role": str(npc.get("role", "")),
+                    "x": round(float(npc.get("x", 0.0)), 1),
+                    "y": round(float(npc.get("y", 0.0)), 1),
+                    "home_x": round(float(npc.get("home_x", npc.get("x", 0.0))), 1),
+                    "home_y": round(float(npc.get("home_y", npc.get("y", 0.0))), 1),
+                    "work_x": round(float(npc.get("work_x", npc.get("x", 0.0))), 1),
+                    "work_y": round(float(npc.get("work_y", npc.get("y", 0.0))), 1),
+                    "social_radius": round(float(npc.get("social_radius", 180.0)), 1),
+                    "activity": str(npc.get("activity", "")),
+                    "home_state": str(npc.get("home_state", "away")),
+                    "indoor_activity": str(npc.get("indoor_activity", "away")),
+                    "schedule_note": str(npc.get("schedule_note", "")),
                     "cash": int(npc.get("cash", 0)),
                     "debt": int(npc.get("debt", 0)),
                     "hunger": int(npc.get("hunger", 0)),
@@ -4625,12 +4671,11 @@ class WorldEngine:
                     "memory_summary": memory_summary,
                     "relation_status": relation_status,
                     "player_memory": copy.deepcopy(self._npc_player_memory(npc)),
-                    "agent_prompt": str(npc.get("agent_prompt", "")),
+                    "agent_model": str(self.ark.model_id),
                     "agent_budget_left": int(npc.get("agent_budget", {}).get("calls_left", 0)),
-                    "agent_tool_policy": copy.deepcopy(npc.get("agent_tool_policy", [])),
-                    "agent_memory": copy.deepcopy(list(npc.get("agent_memory", []))[:4]),
-                    "agent_policy": copy.deepcopy(npc.get("agent_policy", {})),
-                    "brief_history": brief_history,
+                    "agent_style": "%s / %s" % (self._npc_social_style(npc), self._npc_market_style(npc)),
+                    "agent_agenda": self._npc_agent_agenda(npc),
+                    "agent_prompt_preview": str(npc.get("agent_prompt", ""))[:96],
                     "brief_history_summary": self._brief_history_summary(brief_history, ("line", "stance")),
                     "llm_refresh_cadence": int(npc.get("llm_refresh_cadence", 1)),
                     "last_llm_brief_pulse": int(npc.get("last_llm_brief_pulse", -1)),

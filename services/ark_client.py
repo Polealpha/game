@@ -13,10 +13,13 @@ except Exception:  # pragma: no cover
 
 
 HARDCODED_ARK_API_KEY = "521e4c18-b3f9-4b54-af94-1f404328f300"
-FORCED_ARK_MODEL = "doubao-seed-1-6-flash-250828"
+FORCED_ARK_MODEL = "doubao-seed-2-0-mini-260215"
 REPLY_LIMIT_SUFFIX = "每次回复都要简短、具体、只说眼下这轮需要的话。"
 ANTI_PLACEHOLDER_SUFFIX = "不要重复字段名、示例值、schema_hint 或提示词原文。不要输出英文说明。"
-THINKING_DISABLED_BODY = {"thinking": {"type": "disabled"}}
+THINKING_DISABLED_BODY = {
+    "thinking": {"type": "disabled"},
+    "reasoning_effort": "minimal",
+}
 DEFAULT_ARK_MODEL_CANDIDATES = [FORCED_ARK_MODEL]
 
 
@@ -25,10 +28,12 @@ class ArkClient:
         self.api_key = HARDCODED_ARK_API_KEY
         raw_endpoint_id = os.getenv("ARK_ENDPOINT_ID", "").strip()
         self.endpoint_id = "" if raw_endpoint_id == self.api_key else raw_endpoint_id
-        self.model_id = os.getenv("ARK_MODEL_ID", FORCED_ARK_MODEL).strip() or FORCED_ARK_MODEL
-        self.model_label = os.getenv("ARK_MODEL_LABEL", self.model_id).strip() or self.model_id
+        # Lock the runtime model to the low-latency 2.0 mini variant so .env cannot silently override it.
+        self.model_id = FORCED_ARK_MODEL
+        self.model_label = FORCED_ARK_MODEL
         self.base_url = os.getenv("ARK_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3")
-        self.timeout_seconds = float(os.getenv("ARK_TIMEOUT_SECONDS", "10").strip() or "10")
+        # Keep dialogue latency low and let the frontend retry once if a round stalls.
+        self.timeout_seconds = float(os.getenv("ARK_TIMEOUT_SECONDS", "5").strip() or "5")
         self._client = None
         disable_for_unittest = "unittest" in sys.modules and os.getenv("ARK_ENABLE_IN_TESTS", "0") != "1"
         if self.api_key and OpenAI is not None and not disable_for_unittest:
@@ -254,8 +259,7 @@ class ArkClient:
                 response = self._client.chat.completions.create(
                     model=model_name,
                     temperature=0.1,
-                    max_tokens=40,
-                    response_format={"type": "json_object"},
+                    max_tokens=32,
                     extra_body=THINKING_DISABLED_BODY,
                     messages=[
                         {
@@ -308,36 +312,44 @@ class ArkClient:
         }
         final_system = system_prompt + REPLY_LIMIT_SUFFIX + ANTI_PLACEHOLDER_SUFFIX
         for model_name in self._model_candidates():
-            for attempt in range(2):
-                try:
-                    response = self._client.chat.completions.create(
-                        model=model_name,
-                        temperature=0.15 if attempt == 0 else 0.05,
-                        max_tokens=360,
-                        response_format={"type": "json_object"},
-                        extra_body=THINKING_DISABLED_BODY,
-                        messages=[
-                            {"role": "system", "content": final_system},
-                            {
-                                "role": "user",
-                                "content": self._build_multimodal_content(json.dumps(prompt, ensure_ascii=False), screenshot_b64),
-                            },
-                        ],
-                    )
-                    content = self._message_to_text(response.choices[0].message.content)
-                    parsed = self._extract_json(content)
-                    if not parsed:
-                        continue
-                    normalized = normalizer(parsed) if normalizer is not None else parsed
-                    if not normalized:
-                        continue
-                    if not self._looks_usable_chinese(normalized):
-                        continue
-                    normalized["_meta_model"] = model_name
-                    return normalized
-                except Exception:
+            try:
+                response = self._client.chat.completions.create(
+                    model=model_name,
+                    temperature=0.05,
+                    max_tokens=self._task_max_tokens(task_type),
+                    extra_body=THINKING_DISABLED_BODY,
+                    messages=[
+                        {"role": "system", "content": final_system},
+                        {
+                            "role": "user",
+                            "content": self._build_multimodal_content(json.dumps(prompt, ensure_ascii=False), screenshot_b64),
+                        },
+                    ],
+                )
+                content = self._message_to_text(response.choices[0].message.content)
+                parsed = self._extract_json(content)
+                if not parsed:
                     continue
+                normalized = normalizer(parsed) if normalizer is not None else parsed
+                if not normalized:
+                    continue
+                if not self._looks_usable_chinese(normalized):
+                    continue
+                normalized["_meta_model"] = model_name
+                return normalized
+            except Exception:
+                continue
         return None
+
+    @staticmethod
+    def _task_max_tokens(task_type: str) -> int:
+        if task_type == "dialogue_turn":
+            return 180
+        if task_type == "npc_spin":
+            return 120
+        if task_type in {"news_copy", "scene_read"}:
+            return 160
+        return 300
 
     @staticmethod
     def _message_to_text(content: Any) -> str:

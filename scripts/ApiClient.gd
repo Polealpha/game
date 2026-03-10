@@ -22,6 +22,7 @@ func post_json(path: String, payload: Dictionary, tag: String) -> void:
 
 func _request_json(method: int, path: String, payload: Dictionary, tag: String) -> void:
 	var request := HTTPRequest.new()
+	request.timeout = 5.0 if tag == "player_talk" else 8.0
 	add_child(request)
 	request.request_completed.connect(_on_request_completed.bind(request, tag))
 	var headers := PackedStringArray(["Content-Type: application/json"])

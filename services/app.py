@@ -78,7 +78,7 @@ async def pulse_loop() -> None:
     while True:
         await asyncio.sleep(engine.pulse_interval_seconds)
         with contextlib.suppress(Exception):
-            engine.ai_pulse(trigger="scheduled")
+            engine.ai_pulse(trigger="scheduled", allow_live_llm=False)
 
 
 @asynccontextmanager
@@ -126,6 +126,7 @@ def world_end_day(_payload: WorldActionRequest) -> dict[str, Any]:
 def ai_pulse(payload: AIPulseRequest) -> dict[str, Any]:
     result = engine.ai_pulse(
         trigger=payload.trigger,
+        allow_live_llm=True,
         scene_observation={
             "current_district": payload.current_district,
             "player_position": payload.player_position,
@@ -160,6 +161,7 @@ def npc_conversation(payload: ConversationRequest) -> dict[str, Any]:
             "screenshot_b64": payload.screenshot_b64,
             "scene_context": payload.scene_context,
         },
+        allow_llm=False,
     )
     return {"message": result.message, "world_state": result.world_state}
 

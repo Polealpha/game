@@ -1,0 +1,149 @@
+{
+  "stage": "stage2_irregular_no_road",
+  "items": [
+    {
+      "name": "hilltop_temple_block",
+      "path": "E:\\Desktop\\gamexu\\assets\\generated\\ditu_8k_house_layers_stage2_irregular_no_road\\hilltop_temple_block.png",
+      "left": 500,
+      "top": 220
+    },
+    {
+      "name": "hill_stair_shop",
+      "path": "E:\\Desktop\\gamexu\\assets\\generated\\ditu_8k_house_layers_stage2_irregular_no_road\\hill_stair_shop.png",
+      "left": 860,
+      "top": 1180
+    },
+    {
+      "name": "closed_market_block",
+      "path": "E:\\Desktop\\gamexu\\assets\\generated\\ditu_8k_house_layers_stage2_irregular_no_road\\closed_market_block.png",
+      "left": 620,
+      "top": 1980
+    },
+    {
+      "name": "general_store_block",
+      "path": "E:\\Desktop\\gamexu\\assets\\generated\\ditu_8k_house_layers_stage2_irregular_no_road\\general_store_block.png",
+      "left": 980,
+      "top": 3000
+    },
+    {
+      "name": "fish_market_block",
+      "path": "E:\\Desktop\\gamexu\\assets\\generated\\ditu_8k_house_layers_stage2_irregular_no_road\\fish_market_block.png",
+      "left": 0,
+      "top": 3460
+    },
+    {
+      "name": "subway_station",
+      "path": "E:\\Desktop\\gamexu\\assets\\generated\\ditu_8k_house_layers_stage2_irregular_no_road\\subway_station.png",
+      "left": 160,
+      "top": 4560
+    },
+    {
+      "name": "exchange_row_left",
+      "path": "E:\\Desktop\\gamexu\\assets\\generated\\ditu_8k_house_layers_stage2_irregular_no_road\\exchange_row_left.png",
+      "left": 3140,
+      "top": 120
+    },
+    {
+      "name": "exchange_row_mid",
+      "path": "E:\\Desktop\\gamexu\\assets\\generated\\ditu_8k_house_layers_stage2_irregular_no_road\\exchange_row_mid.png",
+      "left": 4440,
+      "top": 100
+    },
+    {
+      "name": "stock_exchange",
+      "path": "E:\\Desktop\\gamexu\\assets\\generated\\ditu_8k_house_layers_stage2_irregular_no_road\\stock_exchange.png",
+      "left": 5380,
+      "top": 80
+    },
+    {
+      "name": "clocktower_building",
+      "path": "E:\\Desktop\\gamexu\\assets\\generated\\ditu_8k_house_layers_stage2_irregular_no_road\\clocktower_building.png",
+      "left": 7440,
+      "top": 20
+    },
+    {
+      "name": "exchange_row_right",
+      "path": "E:\\Desktop\\gamexu\\assets\\generated\\ditu_8k_house_layers_stage2_irregular_no_road\\exchange_row_right.png",
+      "left": 6940,
+      "top": 300
+    },
+    {
+      "name": "bank_hall",
+      "path": "E:\\Desktop\\gamexu\\assets\\generated\\ditu_8k_house_layers_stage2_irregular_no_road\\bank_hall.png",
+      "left": 2940,
+      "top": 1100
+    },
+    {
+      "name": "bank_side_shop",
+      "path": "E:\\Desktop\\gamexu\\assets\\generated\\ditu_8k_house_layers_stage2_irregular_no_road\\bank_side_shop.png",
+      "left": 4600,
+      "top": 1160
+    },
+    {
+      "name": "lower_exchange_stalls",
+      "path": "E:\\Desktop\\gamexu\\assets\\generated\\ditu_8k_house_layers_stage2_irregular_no_road\\lower_exchange_stalls.png",
+      "left": 3160,
+      "top": 2020
+    },
+    {
+      "name": "memorial_row",
+      "path": "E:\\Desktop\\gamexu\\assets\\generated\\ditu_8k_house_layers_stage2_irregular_no_road\\memorial_row.png",
+      "left": 6620,
+      "top": 780
+    },
+    {
+      "name": "fountain_right_row",
+      "path": "E:\\Desktop\\gamexu\\assets\\generated\\ditu_8k_house_layers_stage2_irregular_no_road\\fountain_right_row.png",
+      "left": 6440,
+      "top": 1340
+    },
+    {
+      "name": "warehouse_small",
+      "path": "E:\\Desktop\\gamexu\\assets\\generated\\ditu_8k_house_layers_stage2_irregular_no_road\\warehouse_small.png",
+      "left": 5100,
+      "top": 2760
+    },
+    {
+      "name": "iron_claw_factory",
+      "path": "E:\\Desktop\\gamexu\\assets\\generated\\ditu_8k_house_layers_stage2_irregular_no_road\\iron_claw_factory.png",
+      "left": 5660,
+      "top": 2480
+    },
+    {
+      "name": "factory_right_row",
+      "path": "E:\\Desktop\\gamexu\\assets\\generated\\ditu_8k_house_layers_stage2_irregular_no_road\\factory_right_row.png",
+      "left": 7340,
+      "top": 2120
+    },
+    {
+      "name": "seal_flour",
+      "path": "E:\\Desktop\\gamexu\\assets\\generated\\ditu_8k_house_layers_stage2_irregular_no_road\\seal_flour.png",
+      "left": 4960,
+      "top": 3780
+    },
+    {
+      "name": "warehouse_24",
+      "path": "E:\\Desktop\\gamexu\\assets\\generated\\ditu_8k_house_layers_stage2_irregular_no_road\\warehouse_24.png",
+      "left": 6360,
+      "top": 4160
+    },
+    {
+      "name": "harbor_office",
+      "path": "E:\\Desktop\\gamexu\\assets\\generated\\ditu_8k_house_layers_stage2_irregular_no_road\\harbor_office.png",
+      "left": 7240,
+      "top": 4480
+    },
+    {
+      "name": "lighthouse",
+      "path": "E:\\Desktop\\gamexu\\assets\\generated\\ditu_8k_house_layers_stage2_irregular_no_road\\lighthouse.png",
+      "left": 5900,
+      "top": 4380
+    },
+    {
+      "name": "container_yard",
+      "path": "E:\\Desktop\\gamexu\\assets\\generated\\ditu_8k_house_layers_stage2_irregular_no_road\\container_yard.png",
+      "left": 6420,
+      "top": 4720
+    }
+  ]
+}

@@ -2,7 +2,7 @@ extends Node2D
 class_name WorldBackdrop
 
 const WorldLayout = preload("res://scripts/world/WorldLayout.gd")
-const BACKGROUND_TEXTURE_PATH := "res://ditu_runtime_display.png"
+const BACKGROUND_TEXTURE_PATH := "res://ditu_x4_realesrgan.png"
 const ROAD_OVERLAY_TEXTURE_PATH := WorldLayout.ROAD_MASK_TEXTURE_PATH
 const WORLD_RECT := WorldLayout.WORLD_RECT
 const ROAD_OVERLAY_RECT := WorldLayout.ROAD_MASK_WORLD_RECT

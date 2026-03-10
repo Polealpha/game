@@ -1,0 +1,149 @@
+{
+  "stage": "stage1_irregular",
+  "items": [
+    {
+      "name": "hilltop_temple_block",
+      "path": "E:\\Desktop\\gamexu\\assets\\generated\\ditu_8k_house_layers_stage1_irregular\\hilltop_temple_block.png",
+      "left": 420,
+      "top": 220
+    },
+    {
+      "name": "hill_stair_shop",
+      "path": "E:\\Desktop\\gamexu\\assets\\generated\\ditu_8k_house_layers_stage1_irregular\\hill_stair_shop.png",
+      "left": 820,
+      "top": 1180
+    },
+    {
+      "name": "closed_market_block",
+      "path": "E:\\Desktop\\gamexu\\assets\\generated\\ditu_8k_house_layers_stage1_irregular\\closed_market_block.png",
+      "left": 560,
+      "top": 1960
+    },
+    {
+      "name": "general_store_block",
+      "path": "E:\\Desktop\\gamexu\\assets\\generated\\ditu_8k_house_layers_stage1_irregular\\general_store_block.png",
+      "left": 900,
+      "top": 2960
+    },
+    {
+      "name": "fish_market_block",
+      "path": "E:\\Desktop\\gamexu\\assets\\generated\\ditu_8k_house_layers_stage1_irregular\\fish_market_block.png",
+      "left": 0,
+      "top": 3440
+    },
+    {
+      "name": "subway_station",
+      "path": "E:\\Desktop\\gamexu\\assets\\generated\\ditu_8k_house_layers_stage1_irregular\\subway_station.png",
+      "left": 120,
+      "top": 4540
+    },
+    {
+      "name": "exchange_row_left",
+      "path": "E:\\Desktop\\gamexu\\assets\\generated\\ditu_8k_house_layers_stage1_irregular\\exchange_row_left.png",
+      "left": 3100,
+      "top": 120
+    },
+    {
+      "name": "exchange_row_mid",
+      "path": "E:\\Desktop\\gamexu\\assets\\generated\\ditu_8k_house_layers_stage1_irregular\\exchange_row_mid.png",
+      "left": 4460,
+      "top": 100
+    },
+    {
+      "name": "stock_exchange",
+      "path": "E:\\Desktop\\gamexu\\assets\\generated\\ditu_8k_house_layers_stage1_irregular\\stock_exchange.png",
+      "left": 5360,
+      "top": 80
+    },
+    {
+      "name": "clocktower_building",
+      "path": "E:\\Desktop\\gamexu\\assets\\generated\\ditu_8k_house_layers_stage1_irregular\\clocktower_building.png",
+      "left": 7440,
+      "top": 20
+    },
+    {
+      "name": "exchange_row_right",
+      "path": "E:\\Desktop\\gamexu\\assets\\generated\\ditu_8k_house_layers_stage1_irregular\\exchange_row_right.png",
+      "left": 6940,
+      "top": 300
+    },
+    {
+      "name": "bank_hall",
+      "path": "E:\\Desktop\\gamexu\\assets\\generated\\ditu_8k_house_layers_stage1_irregular\\bank_hall.png",
+      "left": 2900,
+      "top": 1080
+    },
+    {
+      "name": "bank_side_shop",
+      "path": "E:\\Desktop\\gamexu\\assets\\generated\\ditu_8k_house_layers_stage1_irregular\\bank_side_shop.png",
+      "left": 4580,
+      "top": 1140
+    },
+    {
+      "name": "lower_exchange_stalls",
+      "path": "E:\\Desktop\\gamexu\\assets\\generated\\ditu_8k_house_layers_stage1_irregular\\lower_exchange_stalls.png",
+      "left": 3120,
+      "top": 2000
+    },
+    {
+      "name": "memorial_row",
+      "path": "E:\\Desktop\\gamexu\\assets\\generated\\ditu_8k_house_layers_stage1_irregular\\memorial_row.png",
+      "left": 6600,
+      "top": 760
+    },
+    {
+      "name": "fountain_right_row",
+      "path": "E:\\Desktop\\gamexu\\assets\\generated\\ditu_8k_house_layers_stage1_irregular\\fountain_right_row.png",
+      "left": 6420,
+      "top": 1320
+    },
+    {
+      "name": "warehouse_small",
+      "path": "E:\\Desktop\\gamexu\\assets\\generated\\ditu_8k_house_layers_stage1_irregular\\warehouse_small.png",
+      "left": 5080,
+      "top": 2720
+    },
+    {
+      "name": "iron_claw_factory",
+      "path": "E:\\Desktop\\gamexu\\assets\\generated\\ditu_8k_house_layers_stage1_irregular\\iron_claw_factory.png",
+      "left": 5640,
+      "top": 2460
+    },
+    {
+      "name": "factory_right_row",
+      "path": "E:\\Desktop\\gamexu\\assets\\generated\\ditu_8k_house_layers_stage1_irregular\\factory_right_row.png",
+      "left": 7320,
+      "top": 2100
+    },
+    {
+      "name": "seal_flour",
+      "path": "E:\\Desktop\\gamexu\\assets\\generated\\ditu_8k_house_layers_stage1_irregular\\seal_flour.png",
+      "left": 4940,
+      "top": 3760
+    },
+    {
+      "name": "warehouse_24",
+      "path": "E:\\Desktop\\gamexu\\assets\\generated\\ditu_8k_house_layers_stage1_irregular\\warehouse_24.png",
+      "left": 6340,
+      "top": 4140
+    },
+    {
+      "name": "harbor_office",
+      "path": "E:\\Desktop\\gamexu\\assets\\generated\\ditu_8k_house_layers_stage1_irregular\\harbor_office.png",
+      "left": 7240,
+      "top": 4480
+    },
+    {
+      "name": "lighthouse",
+      "path": "E:\\Desktop\\gamexu\\assets\\generated\\ditu_8k_house_layers_stage1_irregular\\lighthouse.png",
+      "left": 5840,
+      "top": 4340
+    },
+    {
+      "name": "container_yard",
+      "path": "E:\\Desktop\\gamexu\\assets\\generated\\ditu_8k_house_layers_stage1_irregular\\container_yard.png",
+      "left": 6420,
+      "top": 4680
+    }
+  ]
+}

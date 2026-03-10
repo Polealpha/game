@@ -28,6 +28,8 @@ const DIRECT_TALK_RADIUS := 72.0
 const HOUSE_ENTRY_RADIUS := 42.0
 const BACKEND_RETRY_MSEC := 5000
 const BACKEND_HEALTHCHECK_MSEC := 1600
+const PLAYER_TALK_TIMEOUT_MSEC := 9000
+const PLAYER_TALK_RETRY_LIMIT := 1
 
 var player := PlayerView.new()
 var world_tint := CanvasModulate.new()
@@ -72,6 +74,7 @@ var backend_health_pending := false
 var backend_last_start_msec := -60000
 var backend_last_healthcheck_msec := -60000
 var backend_error_streak := 0
+var pending_dialogue_request: Dictionary = {}
 var music_rng := RandomNumberGenerator.new()
 var music_library: Array[String] = []
 var current_music_path := ""
@@ -205,6 +208,7 @@ func _ready() -> void:
 func _process(delta: float) -> void:
 	_advance_visual_clock(delta)
 	_advance_news_ticker(delta)
+	_maintain_pending_dialogue_request()
 	if interior_mode:
 		house_interior.tick(delta)
 		current_interactable = house_interior.get_current_interactable()
@@ -245,6 +249,43 @@ func _exit_tree() -> void:
 	if is_instance_valid(music_player):
 		music_player.stop()
 		music_player.stream = null
+
+
+func _maintain_pending_dialogue_request() -> void:
+	if pending_dialogue_request.is_empty():
+		return
+	var started_msec := int(pending_dialogue_request.get("started_msec", 0))
+	if started_msec <= 0:
+		pending_dialogue_request["started_msec"] = Time.get_ticks_msec()
+		return
+	var now := Time.get_ticks_msec()
+	if now - started_msec < PLAYER_TALK_TIMEOUT_MSEC:
+		return
+	var retry_count := int(pending_dialogue_request.get("retry_count", 0))
+	if retry_count < PLAYER_TALK_RETRY_LIMIT:
+		pending_dialogue_request["retry_count"] = retry_count + 1
+		pending_dialogue_request["started_msec"] = now
+		var live_scene := _build_scene_observation_payload(false)
+		ApiClient.post_json("/npc/player_talk", {
+			"npc_id": str(pending_dialogue_request.get("npc_id", "")),
+			"district": str(pending_dialogue_request.get("district", _current_district_for_position(player.position))),
+			"topic_id": str(pending_dialogue_request.get("topic_id", "")),
+			"approach": str(pending_dialogue_request.get("approach", "cautious")),
+			"intent": str(pending_dialogue_request.get("intent", "continue")),
+			"player_input": str(pending_dialogue_request.get("player_input", "")),
+			"player_position": live_scene.get("player_position", {}),
+			"screenshot_b64": "",
+			"scene_context": live_scene.get("scene_context", {})
+		}, "player_talk")
+		return
+	modal_send_button.disabled = false
+	pending_dialogue_request = {}
+	UiRouter.push_modal(
+		"街头交谈",
+		"对方这轮没及时接上话，你可以再试一次。",
+		"conversation",
+		{"dialogue": active_dialogue_context if not active_dialogue_context.is_empty() else GameState.snapshot.get("last_dialogue", {})}
+	)
 
 
 func _build_world_labels() -> void:
@@ -1015,12 +1056,10 @@ func _update_current_interactable() -> void:
 		current_interactable = house_interior.get_current_interactable()
 		hint_label.text = house_interior.get_hint_text()
 		return
-	if not _get_nearby_npcs(1, DIRECT_TALK_RADIUS * WORLD_VISUAL_SCALE).is_empty():
-		for node in interactables:
-			node.set_highlighted(false)
-		current_interactable = null
-		hint_label.text = "附近有人。按 E 直接搭话，H 账本，Tab 查看模式。"
-		return
+	var nearby_npcs := _get_nearby_npcs(1, DIRECT_TALK_RADIUS * WORLD_VISUAL_SCALE)
+	var nearest_npc_distance := 99999.0
+	if not nearby_npcs.is_empty():
+		nearest_npc_distance = float(nearby_npcs[0].get("distance", 99999.0))
 	var previous_interactable := current_interactable
 	var nearest: InteractableView = null
 	var best_distance := 99999.0
@@ -1036,11 +1075,15 @@ func _update_current_interactable() -> void:
 			nearest = node
 	for node in interactables:
 		node.set_highlighted(node == nearest)
-	current_interactable = nearest
+	var prefer_house := false
+	if nearest != null and nearest.kind == "house":
+		prefer_house = nearby_npcs.is_empty() or best_distance + 10.0 < nearest_npc_distance
+	current_interactable = nearest if (nearest != null and (nearby_npcs.is_empty() or prefer_house)) else null
+	for node in interactables:
+		node.set_highlighted(node == current_interactable)
 	if ledger_ui_visible and previous_interactable != current_interactable:
 		_open_interactable_actions()
 	if current_interactable == null:
-		var nearby_npcs := _get_nearby_npcs(2)
 		if nearby_npcs.is_empty():
 			hint_label.text = "四处走动。靠近摊位、告示板、交易席位或工牌后按 E 打开操作。F3 显示听觉圈，Tab 切换查看模式。"
 		else:
@@ -1105,6 +1148,13 @@ func _trigger_primary_interaction() -> void:
 
 func _default_payload_for_current_context() -> Dictionary:
 	var nearby_npcs := _get_nearby_npcs(1, DIRECT_TALK_RADIUS * WORLD_VISUAL_SCALE)
+	if current_interactable != null and current_interactable.kind == "house":
+		if nearby_npcs.is_empty():
+			return _default_payload_for_interactable(current_interactable)
+		var nearest_npc_distance := float(nearby_npcs[0].get("distance", 99999.0))
+		var house_distance := player.position.distance_to(current_interactable.position)
+		if house_distance + 10.0 < nearest_npc_distance:
+			return _default_payload_for_interactable(current_interactable)
 	if nearby_npcs.is_empty():
 		if current_interactable != null:
 			return _default_payload_for_interactable(current_interactable)
@@ -1416,24 +1466,38 @@ func _submit_interaction(payload: Dictionary) -> void:
 		ApiClient.post_json("/world/reset", {}, "reset_world")
 	elif action_type == "player_talk":
 		pending_player_reaction = {}
+		var npc_card := _npc_card_for_id(str(payload.get("payload", {}).get("npc_id", "")))
+		var npc_name := str(npc_card.get("name", "附近角色"))
+		var fallback_quotes := _fallback_trade_quotes(npc_card)
 		var request_dialogue := {
 			"npc_id": str(payload.get("payload", {}).get("npc_id", "")),
 			"district": str(payload.get("district", "")),
 			"topic_id": str(payload.get("payload", {}).get("topic_id", "")),
 			"approach": str(payload.get("payload", {}).get("approach", "cautious")),
 			"intent": str(payload.get("payload", {}).get("intent", "")),
-			"source": "pending"
+			"source": "pending",
+			"title": "你与 %s 交谈" % npc_name,
+			"body": "[b]%s[/b] 正在整理说法，你也可以先看看对方手里的报价。" % npc_name,
+			"npc_name": npc_name,
+			"relation_status": str(npc_card.get("relation_status", "还在观察你")),
+			"trade_quotes": fallback_quotes,
 		}
 		active_dialogue_context = {
 			"npc_id": str(request_dialogue.get("npc_id", "")),
 			"district": str(request_dialogue.get("district", _current_district_for_position(player.position))),
 			"topic_id": str(request_dialogue.get("topic_id", "")),
 			"approach": str(request_dialogue.get("approach", "cautious")),
-			"intent": "继续追问"
+			"intent": "继续追问",
+			"npc_name": npc_name,
+			"trade_quotes": fallback_quotes,
 		}
+		pending_dialogue_request = active_dialogue_context.duplicate(true)
+		pending_dialogue_request["player_input"] = ""
+		pending_dialogue_request["started_msec"] = Time.get_ticks_msec()
+		pending_dialogue_request["retry_count"] = 0
 		UiRouter.push_modal(
-			"街头交谈",
-			"对方正在整理说法……",
+			str(request_dialogue.get("title", "街头交谈")),
+			str(request_dialogue.get("body", "对方正在整理说法……")),
 			"conversation",
 			{"dialogue": request_dialogue}
 		)
@@ -1528,6 +1592,8 @@ func _npc_focus_direction(npc_id: String) -> Vector2:
 
 func _poll_world_state() -> void:
 	if backend_health_pending:
+		return
+	if not pending_dialogue_request.is_empty():
 		return
 	var now := Time.get_ticks_msec()
 	if not backend_service_ready or now - backend_last_healthcheck_msec >= BACKEND_HEALTHCHECK_MSEC:
@@ -1880,9 +1946,25 @@ func _on_api_response(tag: String, data: Dictionary) -> void:
 	if data.has("world_state"):
 		GameState.apply_snapshot(data["world_state"])
 	if tag == "player_talk":
+		pending_dialogue_request = {}
 		var dialogue: Dictionary = dialogue_payload
 		modal_send_button.disabled = false
 		if not dialogue.is_empty():
+			if not active_dialogue_context.is_empty():
+				if str(dialogue.get("npc_id", "")).is_empty():
+					dialogue["npc_id"] = str(active_dialogue_context.get("npc_id", ""))
+				if str(dialogue.get("district", "")).is_empty():
+					dialogue["district"] = str(active_dialogue_context.get("district", ""))
+				if str(dialogue.get("topic_id", "")).is_empty():
+					dialogue["topic_id"] = str(active_dialogue_context.get("topic_id", ""))
+				if str(dialogue.get("approach", "")).is_empty():
+					dialogue["approach"] = str(active_dialogue_context.get("approach", "cautious"))
+				if str(dialogue.get("intent", "")).is_empty():
+					dialogue["intent"] = str(active_dialogue_context.get("intent", "继续追问"))
+				if dialogue.get("trade_quotes", []).is_empty():
+					dialogue["trade_quotes"] = active_dialogue_context.get("trade_quotes", [])
+				if str(dialogue.get("npc_name", "")).is_empty():
+					dialogue["npc_name"] = str(active_dialogue_context.get("npc_name", ""))
 			dialogue["title"] = _sanitize_visible_text(str(dialogue.get("title", "")), "街头交谈")
 			dialogue["body"] = _sanitize_visible_text(str(dialogue.get("body", "")), "对方沉默了一会，又看了你一眼。")
 			_play_player_talk_feedback(dialogue)
@@ -1897,7 +1979,7 @@ func _on_api_response(tag: String, data: Dictionary) -> void:
 				"街头交谈",
 				"对方一时没有答上来，只是谨慎地看着你。",
 				"conversation",
-				{"dialogue": GameState.snapshot.get("last_dialogue", {})}
+				{"dialogue": active_dialogue_context if not active_dialogue_context.is_empty() else GameState.snapshot.get("last_dialogue", {})}
 			)
 	elif tag == "probe_ai":
 		UiRouter.push_modal(
@@ -1968,6 +2050,8 @@ func _on_api_error(tag: String, status_code: int, message: String) -> void:
 		pending_player_reaction = {}
 	if tag == "player_talk":
 		modal_send_button.disabled = false
+		if not pending_dialogue_request.is_empty():
+			pending_dialogue_request["last_error_msec"] = Time.get_ticks_msec()
 	backend_service_ready = false
 	backend_error_streak += 1
 	status_label.text = "请求 %s 失败 (%s)" % [tag, status_code]
@@ -1980,7 +2064,7 @@ func _on_api_error(tag: String, status_code: int, message: String) -> void:
 			"街头交谈",
 			"对方没有及时接话，你先记下了这次接触。",
 			"conversation",
-			{"dialogue": GameState.snapshot.get("last_dialogue", {})}
+			{"dialogue": active_dialogue_context if not active_dialogue_context.is_empty() else GameState.snapshot.get("last_dialogue", {})}
 		)
 
 
@@ -3234,10 +3318,12 @@ func _on_modal_requested(payload: Dictionary) -> void:
 		if not dialogue_context.is_empty():
 			active_dialogue_context = {
 				"npc_id": str(dialogue_context.get("npc_id", "")),
-				"district": _current_district_for_position(player.position if not interior_mode else house_interior.get_player_position()),
+				"district": str(dialogue_context.get("district", _current_district_for_position(player.position if not interior_mode else house_interior.get_player_position()))),
 				"topic_id": str(dialogue_context.get("topic_id", "")),
 				"approach": str(dialogue_context.get("approach", "cautious")),
-				"intent": "继续追问"
+				"intent": str(dialogue_context.get("intent", "继续追问")),
+				"npc_name": str(dialogue_context.get("npc_name", "")),
+				"trade_quotes": dialogue_context.get("trade_quotes", [])
 			}
 			modal_input.visible = true
 			modal_send_button.visible = true
@@ -3295,7 +3381,9 @@ func _submit_modal_player_talk() -> void:
 				"district": str(last_dialogue.get("district", _current_district_for_position(player.position))),
 				"topic_id": str(last_dialogue.get("topic_id", "")),
 				"approach": str(last_dialogue.get("approach", "cautious")),
-				"intent": "继续追问"
+				"intent": "继续追问",
+				"npc_name": str(last_dialogue.get("npc_name", "")),
+				"trade_quotes": last_dialogue.get("trade_quotes", [])
 			}
 	if str(dialogue_context.get("npc_id", "")).is_empty():
 		var nearby_npcs := _get_nearby_npcs(1)
@@ -3305,12 +3393,18 @@ func _submit_modal_player_talk() -> void:
 				"district": _current_district_for_position(player.position),
 				"topic_id": "",
 				"approach": "cautious",
-				"intent": "继续追问"
+				"intent": "继续追问",
+				"npc_name": str(nearby_npcs[0].get("name", "附近角色")),
+				"trade_quotes": _fallback_trade_quotes(_npc_card_for_id(str(nearby_npcs[0].get("id", ""))))
 			}
 	if str(dialogue_context.get("npc_id", "")).is_empty():
 		GameState.add_toast("附近没有可继续追问的角色。")
 		return
 	active_dialogue_context = dialogue_context
+	pending_dialogue_request = active_dialogue_context.duplicate(true)
+	pending_dialogue_request["player_input"] = player_input
+	pending_dialogue_request["started_msec"] = Time.get_ticks_msec()
+	pending_dialogue_request["retry_count"] = 0
 	modal_send_button.disabled = true
 	var live_scene := _build_scene_observation_payload(false)
 	ApiClient.post_json("/npc/player_talk", {
@@ -3362,13 +3456,12 @@ func _modal_trade_payload(dialogue_context: Dictionary) -> Dictionary:
 	if npc_id.is_empty():
 		return {}
 	var npc_card := _npc_card_for_id(npc_id)
-	if npc_card.is_empty():
-		return {}
-	var dialogue: Dictionary = GameState.snapshot.get("last_dialogue", {})
-	var quotes: Array = []
-	if str(dialogue.get("npc_id", "")) == npc_id:
-		quotes = dialogue.get("trade_quotes", [])
+	var quotes: Array = dialogue_context.get("trade_quotes", [])
 	if quotes.is_empty():
+		var dialogue: Dictionary = GameState.snapshot.get("last_dialogue", {})
+		if str(dialogue.get("npc_id", "")) == npc_id:
+			quotes = dialogue.get("trade_quotes", [])
+	if quotes.is_empty() and not npc_card.is_empty():
 		quotes = _fallback_trade_quotes(npc_card)
 	if quotes.is_empty():
 		return {}
@@ -3376,7 +3469,7 @@ func _modal_trade_payload(dialogue_context: Dictionary) -> Dictionary:
 	for quote in quotes:
 		quote_lines.append("• %s" % str(quote.get("description", "")))
 	return {
-		"npc_name": str(npc_card.get("name", "对方")),
+		"npc_name": str(dialogue_context.get("npc_name", npc_card.get("name", "对方"))),
 		"summary": "[b]身份[/b] %s · [b]态度[/b] %s\n[b]库存[/b] %s\n%s" % [
 			str(npc_card.get("role", "街头角色")),
 			str(npc_card.get("relation_status", "观望")),

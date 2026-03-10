@@ -5,7 +5,7 @@ const WorldLayout = preload("res://scripts/world/WorldLayout.gd")
 const REDRAW_INTERVAL := 0.25
 const WORLD_RECT := WorldLayout.WORLD_RECT
 const HOUSE_IDS := ["slum_house", "dock_house", "factory_house", "exchange_house"]
-const STRUCTURE_OVERLAY_TEXTURE_PATH := "res://world_overlay_layer_3.png"
+const STRUCTURE_OVERLAY_TEXTURE_PATH := "res://world_overlay_layer_3_display.png"
 
 var pulse_time := 0.0
 var time_period := "day"

@@ -22,6 +22,10 @@ THINKING_DISABLED_BODY = {
 }
 DEFAULT_ARK_MODEL_CANDIDATES = [FORCED_ARK_MODEL]
 
+# Override earlier mojibake literals with the intended low-latency Chinese prompts.
+REPLY_LIMIT_SUFFIX = "每次回复都要简短、具体、只说眼下这轮需要的话。"
+ANTI_PLACEHOLDER_SUFFIX = "不要重复字段名、示例值、schema_hint 或提示词原文。不要输出英文说明。"
+
 
 class ArkClient:
     def __init__(self) -> None:
@@ -33,7 +37,7 @@ class ArkClient:
         self.model_label = FORCED_ARK_MODEL
         self.base_url = os.getenv("ARK_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3")
         # Keep dialogue latency low and let the frontend retry once if a round stalls.
-        self.timeout_seconds = float(os.getenv("ARK_TIMEOUT_SECONDS", "5").strip() or "5")
+        self.timeout_seconds = float(os.getenv("ARK_TIMEOUT_SECONDS", "6.5").strip() or "6.5")
         self._client = None
         disable_for_unittest = "unittest" in sys.modules and os.getenv("ARK_ENABLE_IN_TESTS", "0") != "1"
         if self.api_key and OpenAI is not None and not disable_for_unittest:
@@ -272,6 +276,8 @@ class ArkClient:
                 content = self._message_to_text(response.choices[0].message.content)
                 parsed = self._extract_json(content)
                 message = self._sanitize_text(str(parsed.get("message", "")))
+                if not message and "方舟连通" in content:
+                    message = "方舟连通"
                 if not message:
                     continue
                 return {
@@ -328,6 +334,8 @@ class ArkClient:
                 )
                 content = self._message_to_text(response.choices[0].message.content)
                 parsed = self._extract_json(content)
+                if not parsed and task_type == "dialogue_turn":
+                    parsed = self._dialogue_fallback_from_text(content)
                 if not parsed:
                     continue
                 normalized = normalizer(parsed) if normalizer is not None else parsed
@@ -344,12 +352,12 @@ class ArkClient:
     @staticmethod
     def _task_max_tokens(task_type: str) -> int:
         if task_type == "dialogue_turn":
-            return 180
+            return 112
         if task_type == "npc_spin":
-            return 120
+            return 96
         if task_type in {"news_copy", "scene_read"}:
-            return 160
-        return 300
+            return 128
+        return 220
 
     @staticmethod
     def _message_to_text(content: Any) -> str:
@@ -391,6 +399,21 @@ class ArkClient:
         except json.JSONDecodeError:
             return {}
         return {}
+
+    @classmethod
+    def _dialogue_fallback_from_text(cls, content: str) -> dict[str, Any]:
+        cleaned = cls._sanitize_text(str(content))
+        if not cleaned:
+            return {}
+        lines = [line.strip("：: -") for line in cleaned.splitlines() if line.strip()]
+        npc_line = ""
+        for line in lines:
+            if len(line) >= 6:
+                npc_line = line
+                break
+        if not npc_line:
+            npc_line = cleaned[:120]
+        return {"lines": ["……", npc_line], "stance": "谨慎", "truthfulness": 0.52}
 
     def _model_candidates(self) -> list[str]:
         forced_model = str(self.model_id).strip() or FORCED_ARK_MODEL

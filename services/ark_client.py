@@ -263,7 +263,7 @@ class ArkClient:
                 response = self._client.chat.completions.create(
                     model=model_name,
                     temperature=0.1,
-                    max_tokens=32,
+                    max_tokens=24,
                     extra_body=THINKING_DISABLED_BODY,
                     messages=[
                         {
@@ -321,7 +321,7 @@ class ArkClient:
             try:
                 response = self._client.chat.completions.create(
                     model=model_name,
-                    temperature=0.05,
+                    temperature=0.01,
                     max_tokens=self._task_max_tokens(task_type),
                     extra_body=THINKING_DISABLED_BODY,
                     messages=[
@@ -352,12 +352,12 @@ class ArkClient:
     @staticmethod
     def _task_max_tokens(task_type: str) -> int:
         if task_type == "dialogue_turn":
-            return 112
-        if task_type == "npc_spin":
             return 96
+        if task_type == "npc_spin":
+            return 80
         if task_type in {"news_copy", "scene_read"}:
-            return 128
-        return 220
+            return 112
+        return 192
 
     @staticmethod
     def _message_to_text(content: Any) -> str:

@@ -24,11 +24,11 @@ const DISTRICT_RECTS := WorldLayout.DISTRICT_RECTS
 const NEWS_TICKER_SECONDS := 5.5
 const NPC_AUTO_TALK_SECONDS := 12.0
 const NPC_AUTO_TALK_RADIUS := 112.0
-const DIRECT_TALK_RADIUS := 72.0
+const DIRECT_TALK_RADIUS := 88.0
 const HOUSE_ENTRY_RADIUS := 42.0
 const BACKEND_RETRY_MSEC := 5000
 const BACKEND_HEALTHCHECK_MSEC := 1600
-const PLAYER_TALK_TIMEOUT_MSEC := 9000
+const PLAYER_TALK_TIMEOUT_MSEC := 11000
 const PLAYER_TALK_RETRY_LIMIT := 1
 
 var player := PlayerView.new()
@@ -855,16 +855,25 @@ func _maybe_trigger_proactive_npc_talk(delta: float) -> void:
 		npc_auto_talk_elapsed = 0.0
 		npc_last_auto_talker = npc_id
 		view.trigger_social_beat(player.position, true, "speaker", 1.08, 1.0)
+		var npc_card_detail := _npc_card_for_id(npc_id)
+		var npc_name := str(npc_card.get("name", str(npc_card_detail.get("name", "附近角色"))))
+		var proactive_quotes := _fallback_trade_quotes(npc_card_detail)
 		active_dialogue_context = {
 			"npc_id": npc_id,
 			"district": _current_district_for_position(player.position),
 			"topic_id": "",
 			"approach": "friendly",
-			"intent": "主动搭话"
+			"intent": "主动搭话",
+			"npc_name": npc_name,
+			"trade_quotes": proactive_quotes
 		}
+		pending_dialogue_request = active_dialogue_context.duplicate(true)
+		pending_dialogue_request["player_input"] = ""
+		pending_dialogue_request["started_msec"] = Time.get_ticks_msec()
+		pending_dialogue_request["retry_count"] = 0
 		var live_scene := _build_scene_observation_payload(false)
 		UiRouter.push_modal(
-			"%s 主动搭话" % str(npc_card.get("name", "附近角色")),
+			"%s 主动搭话" % npc_name,
 			"对方正在整理想法……",
 			"conversation",
 			{"dialogue": {
@@ -873,9 +882,14 @@ func _maybe_trigger_proactive_npc_talk(delta: float) -> void:
 				"topic_id": "",
 				"approach": "cautious",
 				"source": "pending",
-				"body": "对方正在整理想法……"
+				"title": "%s 主动搭话" % npc_name,
+				"body": "对方正在整理想法……",
+				"npc_name": npc_name,
+				"trade_quotes": proactive_quotes
 			}}
 		)
+		status_label.text = "对方正在整理说法……"
+		modal_send_button.disabled = true
 		ApiClient.post_json("/npc/player_talk", {
 			"npc_id": npc_id,
 			"district": _current_district_for_position(player.position),
@@ -1092,10 +1106,7 @@ func _update_current_interactable() -> void:
 			nearest = node
 	for node in interactables:
 		node.set_highlighted(node == nearest)
-	var prefer_house := false
-	if nearest != null and nearest.kind == "house":
-		prefer_house = nearby_npcs.is_empty() or best_distance + 10.0 < nearest_npc_distance
-	current_interactable = nearest if (nearest != null and (nearby_npcs.is_empty() or prefer_house)) else null
+	current_interactable = nearest if nearby_npcs.is_empty() else null
 	for node in interactables:
 		node.set_highlighted(node == current_interactable)
 	if ledger_ui_visible and previous_interactable != current_interactable:
@@ -1165,33 +1176,23 @@ func _trigger_primary_interaction() -> void:
 
 func _default_payload_for_current_context() -> Dictionary:
 	var nearby_npcs := _get_nearby_npcs(1, DIRECT_TALK_RADIUS * WORLD_VISUAL_SCALE)
-	if current_interactable != null and current_interactable.kind == "house":
-		if nearby_npcs.is_empty():
-			return _default_payload_for_interactable(current_interactable)
-		var nearest_npc_distance := float(nearby_npcs[0].get("distance", 99999.0))
-		var house_distance := player.position.distance_to(current_interactable.position)
-		if house_distance + 10.0 < nearest_npc_distance:
-			return _default_payload_for_interactable(current_interactable)
-	if nearby_npcs.is_empty():
-		if current_interactable != null:
-			return _default_payload_for_interactable(current_interactable)
-		return {}
-	var npc_id := str(nearby_npcs[0].get("id", ""))
-	if npc_id.is_empty():
-		if current_interactable != null:
-			return _default_payload_for_interactable(current_interactable)
-		return {}
-	return {
-		"action_type":"player_talk",
-		"district": _current_district_for_position(player.position),
-		"payload":{
-			"npc_id": npc_id,
-			"npc_name": str(nearby_npcs[0].get("name", "附近角色")),
-			"approach":"cautious",
-			"intent":"街头搭话",
-			"subregion_name": _current_subregion_for_position(player.position)
-		}
-	}
+	if not nearby_npcs.is_empty():
+		var npc_id := str(nearby_npcs[0].get("id", ""))
+		if not npc_id.is_empty():
+			return {
+				"action_type":"player_talk",
+				"district": _current_district_for_position(player.position),
+				"payload":{
+					"npc_id": npc_id,
+					"npc_name": str(nearby_npcs[0].get("name", "附近角色")),
+					"approach":"cautious",
+					"intent":"街头搭话",
+					"subregion_name": _current_subregion_for_position(player.position)
+				}
+			}
+	if current_interactable != null:
+		return _default_payload_for_interactable(current_interactable)
+	return {}
 
 
 func _default_payload_for_interactable(node: InteractableView) -> Dictionary:
@@ -1997,6 +1998,16 @@ func _on_api_response(tag: String, data: Dictionary) -> void:
 					dialogue["trade_quotes"] = active_dialogue_context.get("trade_quotes", [])
 				if str(dialogue.get("npc_name", "")).is_empty():
 					dialogue["npc_name"] = str(active_dialogue_context.get("npc_name", ""))
+			if str(dialogue.get("title", "")).is_empty():
+				dialogue["title"] = "你与 %s 交谈" % str(dialogue.get("npc_name", "附近角色"))
+			if str(dialogue.get("body", "")).is_empty():
+				var dialogue_lines: Array = dialogue.get("lines", [])
+				if dialogue_lines.size() >= 2:
+					dialogue["body"] = "[b]你[/b]：%s\n\n[b]%s[/b]：%s" % [
+						_sanitize_visible_text(str(dialogue_lines[0]), "……"),
+						str(dialogue.get("npc_name", "对方")),
+						_sanitize_visible_text(str(dialogue_lines[1]), "对方沉默了一会。")
+					]
 			dialogue["title"] = _sanitize_visible_text(str(dialogue.get("title", "")), "街头交谈")
 			dialogue["body"] = _sanitize_visible_text(str(dialogue.get("body", "")), "对方沉默了一会，又看了你一眼。")
 			_play_player_talk_feedback(dialogue)
@@ -3519,8 +3530,6 @@ func _modal_trade_payload(dialogue_context: Dictionary) -> Dictionary:
 func _fallback_trade_quotes(npc_card: Dictionary) -> Array:
 	var quotes: Array = []
 	var goods_rows: Array = GameState.snapshot.get("goods", [])
-	var inventory: Dictionary = npc_card.get("inventory", {})
-	var player_inventory: Dictionary = GameState.get_player().get("goods_inventory", {})
 	for spec in [
 		{"action": "buy_goods", "good": "面包", "qty": 1, "prefix": "买"},
 		{"action": "buy_goods", "good": "煤", "qty": 1, "prefix": "买"},
@@ -3530,18 +3539,21 @@ func _fallback_trade_quotes(npc_card: Dictionary) -> Array:
 		var good_row := _snapshot_good_row(goods_rows, good_name)
 		if good_row.is_empty():
 			continue
-		if str(spec.get("action", "")) == "buy_goods" and int(inventory.get(good_name, 0)) <= 0:
-			continue
-		if str(spec.get("action", "")) == "sell_goods" and int(player_inventory.get(good_name, 0)) <= 0:
-			continue
 		var unit_price := int(good_row.get("current_price", 0))
 		var quoted_price: int = max(1, unit_price + int(round(float(npc_card.get("economic_pressure", 0.0)) * 4.0)))
+		var action_type := str(spec.get("action", ""))
+		var prefix := str(spec.get("prefix", ""))
+		var button_text := "%s%s" % [prefix, good_name]
+		var description := "%s%s x%s，眼下开价 %s 铜币。" % [prefix, good_name, int(spec.get("qty", 1)), quoted_price]
+		if action_type == "sell_goods":
+			button_text = "问%s价" % good_name
+			description = "先问%s x%s 能卖到多少，眼下对方愿意按 %s 铜币收。" % [good_name, int(spec.get("qty", 1)), quoted_price]
 		quotes.append({
-			"action_type": str(spec.get("action", "")),
+			"action_type": action_type,
 			"good_name": good_name,
 			"quantity": int(spec.get("qty", 1)),
-			"button": "%s%s" % [str(spec.get("prefix", "")), good_name],
-			"description": "%s%s x%s，眼下开价 %s 铜币。" % [str(spec.get("prefix", "")), good_name, int(spec.get("qty", 1)), quoted_price],
+			"button": button_text,
+			"description": description,
 		})
 	return quotes
 

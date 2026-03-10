@@ -3036,8 +3036,11 @@ class WorldEngine:
         return None
 
     def _find_npc(self, npc_id: str) -> dict[str, Any] | None:
+        needle = str(npc_id).strip()
+        if not needle:
+            return None
         for npc in self.state["npcs"]:
-            if npc["id"] == npc_id:
+            if str(npc.get("id", "")) == needle or str(npc.get("name", "")).strip() == needle:
                 return npc
         return None
 
@@ -3777,6 +3780,8 @@ class WorldEngine:
                 {
                     "daily_calls": self._npc_daily_agent_budget(npc),
                     "calls_left": self._npc_daily_agent_budget(npc),
+                    "player_talk_daily": self._npc_player_talk_budget(npc),
+                    "player_talk_left": self._npc_player_talk_budget(npc),
                     "last_day": 1,
                     "last_reason": "",
                 },
@@ -3829,6 +3834,16 @@ class WorldEngine:
         if role in {"店主"}:
             return 6
         return 5
+
+    def _npc_player_talk_budget(self, npc: dict[str, Any]) -> int:
+        role = str(npc.get("role", ""))
+        if role in {"记者", "代理人", "银行经理"}:
+            return 26
+        if role in {"工会领袖", "投机者", "老板"}:
+            return 22
+        if role in {"店主"}:
+            return 20
+        return 18
 
     def _npc_tool_policy(self, npc: dict[str, Any]) -> list[str]:
         policy = ["只观察截图与状态", "不篡改规则层事实", "不直接改价格", "不输出思维过程", "必须只说中文"]
@@ -3940,6 +3955,8 @@ class WorldEngine:
             "budget": {
                 "daily_calls": int(budget.get("daily_calls", self._npc_daily_agent_budget(npc))),
                 "calls_left": int(budget.get("calls_left", self._npc_daily_agent_budget(npc))),
+                "player_talk_daily": int(budget.get("player_talk_daily", self._npc_player_talk_budget(npc))),
+                "player_talk_left": int(budget.get("player_talk_left", self._npc_player_talk_budget(npc))),
                 "last_day": int(budget.get("last_day", int(self.state.get("day", 1)))),
                 "last_reason": str(budget.get("last_reason", "")),
             },
@@ -3951,17 +3968,36 @@ class WorldEngine:
         if not isinstance(budget, dict):
             budget = {}
             npc["agent_budget"] = budget
+        daily_calls = self._npc_daily_agent_budget(npc)
+        player_talk_daily = self._npc_player_talk_budget(npc)
+        budget.setdefault("daily_calls", daily_calls)
+        budget.setdefault("calls_left", daily_calls)
+        budget.setdefault("player_talk_daily", player_talk_daily)
+        budget.setdefault("player_talk_left", player_talk_daily)
         day = int(self.state.get("day", 1))
         if int(budget.get("last_day", day)) != day:
-            daily_calls = self._npc_daily_agent_budget(npc)
             budget["daily_calls"] = daily_calls
             budget["calls_left"] = daily_calls
+            budget["player_talk_daily"] = player_talk_daily
+            budget["player_talk_left"] = player_talk_daily
             budget["last_day"] = day
             budget["last_reason"] = "daily_reset"
 
     def _consume_agent_budget(self, npc: dict[str, Any], reason: str, cost: int = 1) -> bool:
         self._refresh_agent_budget(npc)
         budget = npc.get("agent_budget", {})
+        if reason == "player_talk":
+            talk_left = int(budget.get("player_talk_left", self._npc_player_talk_budget(npc)))
+            if talk_left >= cost:
+                budget["player_talk_left"] = talk_left - cost
+                budget["last_reason"] = reason
+                return True
+            shared_left = int(budget.get("calls_left", self._npc_daily_agent_budget(npc)))
+            if shared_left < cost:
+                return False
+            budget["calls_left"] = shared_left - cost
+            budget["last_reason"] = "%s_shared" % reason
+            return True
         calls_left = int(budget.get("calls_left", self._npc_daily_agent_budget(npc)))
         if calls_left < cost:
             return False
@@ -4673,9 +4709,11 @@ class WorldEngine:
                     "player_memory": copy.deepcopy(self._npc_player_memory(npc)),
                     "agent_model": str(self.ark.model_id),
                     "agent_budget_left": int(npc.get("agent_budget", {}).get("calls_left", 0)),
+                    "agent_talk_budget_left": int(npc.get("agent_budget", {}).get("player_talk_left", 0)),
                     "agent_style": "%s / %s" % (self._npc_social_style(npc), self._npc_market_style(npc)),
                     "agent_agenda": self._npc_agent_agenda(npc),
                     "agent_prompt_preview": str(npc.get("agent_prompt", ""))[:96],
+                    "brief_history": brief_history,
                     "brief_history_summary": self._brief_history_summary(brief_history, ("line", "stance")),
                     "llm_refresh_cadence": int(npc.get("llm_refresh_cadence", 1)),
                     "last_llm_brief_pulse": int(npc.get("last_llm_brief_pulse", -1)),

@@ -600,6 +600,51 @@ class ArkClient:
             "headline_body": headline_body or note,
         }
 
+    @classmethod
+    def _dialogue_fallback_from_text(cls, content: str) -> dict[str, Any]:
+        cleaned = cls._sanitize_text(str(content))
+        if not cleaned:
+            return {}
+        lines = [line.strip("：:- ") for line in cleaned.splitlines() if line.strip()]
+        npc_line = ""
+        for line in lines:
+            if len(line) >= 6:
+                npc_line = line
+                break
+        if not npc_line:
+            npc_line = cleaned[:120]
+        return {
+            "lines": ["你先打量了对方一眼，还没正式开口。", npc_line],
+            "stance": "谨慎",
+            "truthfulness": 0.52,
+        }
+
+    def _normalize_dialogue_turn(self, parsed: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
+        lines = parsed.get("lines", [])
+        if not isinstance(lines, list):
+            lines = []
+        player_input = self._sanitize_text(str(payload.get("player_input", "")).strip())
+        player_line = player_input or (self._sanitize_text(str(lines[0])) if len(lines) > 0 else "")
+        if not player_line:
+            player_line = "你先打量了对方一眼，还没正式开口。"
+        npc_line = self._extract_dialogue_line(lines[1]) if len(lines) > 1 else ""
+        if not npc_line:
+            npc_line = self._extract_dialogue_line(parsed.get("reply", "") or parsed.get("npc_reply", "") or parsed.get("line", ""))
+        if not npc_line:
+            npc_line = self._extract_dialogue_line(parsed)
+        if not npc_line:
+            return {}
+        stance = self._sanitize_text(str(parsed.get("stance", "谨慎"))) or "谨慎"
+        revealed = parsed.get("revealed_topic_ids", [])
+        if not isinstance(revealed, list):
+            revealed = [revealed]
+        return {
+            "lines": [player_line, npc_line],
+            "stance": stance,
+            "truthfulness": self._clamp_float(parsed.get("truthfulness", 0.55), 0.0, 1.0),
+            "revealed_topic_ids": [str(item).strip() for item in revealed if str(item).strip()],
+        }
+
     def _normalize_npc_spin(self, parsed: dict[str, Any]) -> dict[str, Any]:
         lines = parsed.get("lines", [])
         if not isinstance(lines, list):

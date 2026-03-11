@@ -14,7 +14,7 @@ const WorldLayout = preload("res://scripts/world/WorldLayout.gd")
 const WORLD_RECT := WorldLayout.WORLD_RECT
 const WORLD_VISUAL_SCALE := 2.0
 const PLAYER_SPEED := 260.0
-const AI_PULSE_SECONDS := 8.0
+const AI_PULSE_SECONDS := 60.0
 const VISUAL_DAY_CYCLE_SECONDS := 600.0
 const VISUAL_START_CLOCK_MINUTES := 8 * 60
 const MUSIC_LIBRARY_PATH := "res://yinyue"
@@ -74,6 +74,7 @@ var backend_autostart_attempted := false
 var backend_process_id := -1
 var backend_service_ready := false
 var backend_health_pending := false
+var backend_world_state_pending := false
 var backend_last_start_msec := -60000
 var backend_last_healthcheck_msec := -60000
 var backend_error_streak := 0
@@ -185,7 +186,7 @@ func _ready() -> void:
 	UiRouter.modal_requested.connect(_on_modal_requested)
 	UiRouter.guide_updated.connect(_on_guide_updated)
 
-	poll_timer.wait_time = 1.0
+	poll_timer.wait_time = 1.6
 	poll_timer.timeout.connect(_poll_world_state)
 	add_child(poll_timer)
 	poll_timer.start()
@@ -2008,6 +2009,8 @@ func _npc_focus_direction(npc_id: String) -> Vector2:
 func _poll_world_state() -> void:
 	if backend_health_pending:
 		return
+	if backend_world_state_pending:
+		return
 	if not pending_dialogue_request.is_empty():
 		return
 	if modal_overlay.visible:
@@ -2016,6 +2019,7 @@ func _poll_world_state() -> void:
 	if not backend_service_ready or now - backend_last_healthcheck_msec >= BACKEND_HEALTHCHECK_MSEC:
 		_probe_backend_health()
 		return
+	backend_world_state_pending = true
 	ApiClient.get_json("/world/state", "world_state")
 
 
@@ -2327,6 +2331,12 @@ func _find_emotion_echo_candidates(excluded_ids: Array, midpoint: Vector2, distr
 func _on_api_response(tag: String, data: Dictionary) -> void:
 	_confirm_player_action_reaction(tag, data)
 	var dialogue_payload: Dictionary = {}
+	if tag != "probe_ai":
+		backend_service_ready = true
+	if tag == "player_talk" or tag == "trade_action" or tag == "world_state":
+		backend_error_streak = 0
+	if tag == "world_state":
+		backend_world_state_pending = false
 	if tag == "health":
 		backend_health_pending = false
 		backend_service_ready = str(data.get("status", "")) == "ok"
@@ -2379,6 +2389,10 @@ func _on_api_response(tag: String, data: Dictionary) -> void:
 				]
 		dialogue_now["title"] = _sanitize_visible_text(str(dialogue_now.get("title", "")), "街头交谈")
 		dialogue_now["render_body"] = _sanitize_visible_text(str(dialogue_now.get("render_body", "")), "对方沉默了一会，又看了你一眼。")
+		if str(dialogue_now.get("render_body", "")).strip_edges() == "……":
+			dialogue_now["render_body"] = "对方这轮没有说出完整的话，你可以直接再问一次。"
+		if str(dialogue_now.get("render_body", "")).find("[b]你[/b]：……") >= 0:
+			dialogue_now["render_body"] = str(dialogue_now.get("render_body", "")).replace("[b]你[/b]：……", "[b]你[/b]：你先打量了对方一眼，还没正式开口。")
 		dialogue_now["body"] = str(dialogue_now.get("render_body", ""))
 		active_dialogue_context = dialogue_now.duplicate(true)
 		status_label.text = "对方接上话了。"
@@ -2435,6 +2449,10 @@ func _on_api_response(tag: String, data: Dictionary) -> void:
 					]
 			dialogue["title"] = _sanitize_visible_text(str(dialogue.get("title", "")), "街头交谈")
 			dialogue["render_body"] = _sanitize_visible_text(str(dialogue.get("render_body", "")), "对方沉默了一会，又看了你一眼。")
+			if str(dialogue.get("render_body", "")).strip_edges() == "……":
+				dialogue["render_body"] = "对方这轮没有说出完整的话，你可以直接再问一次。"
+			if str(dialogue.get("render_body", "")).find("[b]你[/b]：……") >= 0:
+				dialogue["render_body"] = str(dialogue.get("render_body", "")).replace("[b]你[/b]：……", "[b]你[/b]：你先打量了对方一眼，还没正式开口。")
 			dialogue["body"] = str(dialogue.get("render_body", ""))
 			_play_player_talk_feedback(dialogue)
 			UiRouter.push_modal(
@@ -2514,6 +2532,44 @@ func _play_player_talk_feedback(dialogue: Dictionary) -> void:
 
 
 func _handle_api_error_v3(tag: String, status_code: int, message: String) -> void:
+	if tag == "health":
+		backend_health_pending = false
+	if tag == "world_state":
+		backend_world_state_pending = false
+	if not pending_player_reaction.is_empty() and str(pending_player_reaction.get("tag", "")) == tag:
+		pending_player_reaction = {}
+	if tag == "player_talk":
+		pending_dialogue_request = {}
+		modal_send_button.disabled = false
+		status_label.text = "这轮追问超时了，你可以直接再发一次。"
+		if not message.is_empty():
+			news_label.text = "[color=#6f1d1b]%s[/color]" % message
+		return
+	if tag == "world_state":
+		backend_error_streak += 1
+		status_label.text = "世界状态刷新延迟，稍后自动重试。"
+		if backend_error_streak >= 4 and not backend_health_pending:
+			_probe_backend_health()
+		return
+	if tag == "health":
+		backend_error_streak += 1
+		if backend_error_streak < 4:
+			status_label.text = "本地服务探活延迟，继续重试。"
+			return
+		backend_service_ready = false
+		status_label.text = "本地服务未响应，正在尝试重连。"
+		_attempt_service_autostart(true)
+		GameState.add_toast("本地服务连续多次未响应，正在尝试重连。")
+		return
+	backend_error_streak += 1
+	backend_service_ready = false
+	status_label.text = "请求 %s 失败 (%s)" % [tag, status_code]
+	if backend_error_streak >= 3 and not backend_health_pending:
+		_probe_backend_health()
+		GameState.add_toast("这轮请求失败，正在检查本地服务。")
+	if not message.is_empty():
+		news_label.text = "[color=#6f1d1b]%s[/color]" % message
+	return
 	if tag == "health":
 		backend_health_pending = false
 	if not pending_player_reaction.is_empty() and str(pending_player_reaction.get("tag", "")) == tag:

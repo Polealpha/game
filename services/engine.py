@@ -6960,6 +6960,16 @@ class WorldEngine:
             npc_line = f"{fallback_npc_name}沉默了一下。"
         return [player_line[:220], npc_line[:220]]
 
+    @staticmethod
+    def _dialogue_render_lines(lines: list[str], fallback_npc_name: str = "对方") -> list[str]:
+        player_line = str(lines[0]).strip() if len(lines) > 0 else ""
+        npc_line = str(lines[1]).strip() if len(lines) > 1 else ""
+        if not player_line:
+            player_line = "你先打量了对方一眼，还没正式开口。"
+        if not npc_line:
+            npc_line = f"{fallback_npc_name}这轮没有说出完整的话。"
+        return [player_line[:220], npc_line[:220]]
+
     def _dialogue_render_body(
         self,
         *,

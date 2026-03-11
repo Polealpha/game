@@ -70,7 +70,7 @@ class AIPulseRequest(BaseModel):
     scene_context: dict[str, Any] = Field(default_factory=dict)
 
 
-PULSE_INTERVAL_SECONDS = int(os.getenv("SHELL_MARKET_PULSE_SECONDS", "8"))
+PULSE_INTERVAL_SECONDS = int(os.getenv("SHELL_MARKET_PULSE_SECONDS", "60"))
 engine = WorldEngine(pulse_interval_seconds=PULSE_INTERVAL_SECONDS)
 
 

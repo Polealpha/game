@@ -1,7 +1,7 @@
 extends Node2D
 class_name InteractableView
 
-const REDRAW_INTERVAL := 0.08
+const REDRAW_INTERVAL := 0.2
 
 var interaction_id := ""
 var kind := ""

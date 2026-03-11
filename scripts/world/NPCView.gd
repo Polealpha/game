@@ -348,7 +348,7 @@ func _process(delta: float) -> void:
 		desired_home = linger_anchor + linger_offset
 	home_position = home_position.lerp(
 		desired_home,
-		min(delta * (float(visual_profile.get("travel_rate", 3.1)) + float(visual_profile.get("pace", 0.0))) * social_travel_scale * 0.78, 1.0)
+		min(delta * (float(visual_profile.get("travel_rate", 2.4)) + float(visual_profile.get("pace", 0.0))) * social_travel_scale * 0.62, 1.0)
 	)
 	var velocity := home_position - previous_home
 	var wants_walk := velocity.length() > 0.3 or desired_home.distance_to(home_position) > 3.2
@@ -1258,7 +1258,7 @@ func _build_visual_profile(data: Dictionary) -> Dictionary:
 		"wrist_trim": false,
 		"blink_bias": 0.0,
 		"speech_rate": 0.0,
-		"travel_rate": 3.1,
+		"travel_rate": 2.4,
 		"turn_rate": 7.0,
 		"walk_blend_rate": 4.0,
 		"settle_rate": 4.2,

@@ -142,25 +142,26 @@ class WorldEngineTest(unittest.TestCase):
         organizer = next(row for row in self.engine.state["npcs"] if row["role"] == "工会领袖")
         worker = next(row for row in self.engine.state["npcs"] if row["district"] == "工厂区" and row["role"] == "工人")
         self.assertEqual(boss["subregion_id"], "watermill_yard")
-        self.assertEqual(worker["subregion_id"], "stoneyard_workcamp")
+        self.assertEqual(worker["subregion_id"], str(worker.get("work_subregion_id", worker.get("subregion_id", ""))))
         self.assertEqual(organizer["subregion_id"], "stoneyard_workcamp")
         self.assertIn(boss["activity"], {"working", "watching"})
-        self.assertEqual(worker["activity"], "assembling")
+        self.assertEqual(worker["activity"], "working")
         self.assertEqual(organizer["activity"], "assembling")
         self.assertTrue(any(token in organizer["current_goal"] for token in ["工厂区工资风声", "工钱与班次", "去串联一圈"]))
 
-    def test_social_schedule_moves_reporter_to_gossip_hotspot_and_banker_to_inner_circle(self) -> None:
+    @unittest.skip("Specific reporter identity is no longer deterministic after quota-based social routing.")
+    def test_social_schedule_limits_exchange_media_to_one_watcher_and_keeps_banker_working(self) -> None:
         self.engine.state["district_signals"]["交易所"]["gossip"] = 0.76
         self.engine.state["district_signals"]["交易所"]["trade_heat"] = 0.44
-        self.engine.state["clock_minutes"] = 11 * 60
+        self.engine.state["clock_minutes"] = 12 * 60
         self.engine._apply_clock_state()
         self.engine._apply_npc_schedule()
         reporter = next(row for row in self.engine.state["npcs"] if row["role"] == "记者")
         banker = next(row for row in self.engine.state["npcs"] if row["title"] == "珊瑚银行掌门")
         self.assertEqual(reporter["subregion_id"], "church_graveyard")
         self.assertEqual(reporter["activity"], "watching")
-        self.assertEqual(banker["subregion_id"], "rune_tower")
-        self.assertIn(banker["activity"], {"working", "watching"})
+        self.assertEqual(banker["subregion_id"], str(banker.get("work_subregion_id", banker.get("subregion_id", ""))))
+        self.assertEqual(banker["activity"], "working")
         self.assertNotEqual(reporter["subregion_id"], banker["subregion_id"])
 
     def test_exchange_authority_roles_work_from_inner_tower(self) -> None:
@@ -173,6 +174,30 @@ class WorldEngineTest(unittest.TestCase):
         self.assertEqual(regulator["subregion_id"], "rune_tower")
         self.assertIn(mayor["activity"], {"working", "watching"})
         self.assertIn(regulator["activity"], {"working", "watching"})
+
+    def test_home_period_keeps_residents_at_home_even_if_gossip_is_hot(self) -> None:
+        resident = next(row for row in self.engine.state["npcs"] if row["district"] == "贫民街" and row["role"] == "临时工")
+        resident_district = str(resident["district"])
+        self.engine.state["district_signals"][resident_district]["gossip"] = 0.92
+        self.engine.state["district_signals"][resident_district]["labor_heat"] = 0.88
+        self.engine.state["clock_minutes"] = 22 * 60 + 10
+        self.engine._apply_clock_state()
+        self.engine._apply_npc_schedule()
+        resident = next(row for row in self.engine.state["npcs"] if row["id"] == resident["id"])
+        self.assertEqual(resident["activity"], "home")
+        self.assertEqual(resident["subregion_id"], str(resident.get("home_subregion_id", resident.get("subregion_id", ""))))
+
+    def test_social_override_caps_exchange_roamers_to_small_group(self) -> None:
+        self.engine.state["district_signals"]["交易所"]["gossip"] = 0.88
+        self.engine.state["district_signals"]["交易所"]["trade_heat"] = 0.82
+        self.engine.state["clock_minutes"] = 12 * 60
+        self.engine._apply_clock_state()
+        self.engine._apply_npc_schedule()
+        exchange_roamers = [
+            row for row in self.engine.state["npcs"]
+            if row["district"] == "交易所" and row["activity"] in {"watching", "assembling", "gathering"}
+        ]
+        self.assertLessEqual(len(exchange_roamers), 3)
 
     def test_social_target_prefers_trusted_contact_who_has_not_heard_hot_topic(self) -> None:
         self.engine._apply_intel_packet(
@@ -1504,6 +1529,44 @@ class WorldEngineTest(unittest.TestCase):
         self.assertTrue(all(not shot for shot in family_shots))
         self.assertTrue(all(not shot for shot in company_shots))
 
+    def test_scheduled_scene_pulse_stays_rule_based_and_drops_screenshot(self) -> None:
+        self.engine.ark._client = object()
+        pulse_calls: list[dict[str, object]] = []
+        social_llm_calls: list[dict[str, object]] = []
+
+        def fake_pulse_brief(payload: dict[str, object]) -> dict[str, object]:
+            pulse_calls.append(payload)
+            return {
+                "pulse_summary": "不该被调用",
+                "market_note": "不该被调用",
+                "scene_focus": "不该被调用",
+                "npc_updates": [],
+                "family_updates": [],
+                "company_updates": [],
+            }
+
+        def fake_dialogue_turn(payload: dict[str, object]) -> dict[str, object]:
+            social_llm_calls.append(payload)
+            return {"lines": ["……", "不该被调用"], "stance": "谨慎", "truthfulness": 0.5}
+
+        self.engine.ark.generate_pulse_brief = fake_pulse_brief  # type: ignore[method-assign]
+        self.engine.ark.generate_dialogue_turn = fake_dialogue_turn  # type: ignore[method-assign]
+        self.engine._full_scheduled_llm_mode = lambda: False  # type: ignore[method-assign]
+
+        self.engine.ai_pulse(
+            trigger="scheduled_scene",
+            scene_observation={
+                "current_district": "交易所",
+                "player_position": {"x": 100.0, "y": 100.0},
+                "scene_context": {"nearby_npcs": []},
+                "screenshot_b64": "should-not-pass",
+            },
+        )
+
+        self.assertEqual(pulse_calls, [])
+        self.assertEqual(social_llm_calls, [])
+        self.assertEqual(str(self.engine.state.get("scene_observation", {}).get("screenshot_b64", "")), "should-not-pass")
+
     def test_player_talk_uses_live_scene_and_spreads_to_bystanders(self) -> None:
         self.engine.ark._client = object()
         captured_dialogues: list[dict[str, object]] = []
@@ -1621,7 +1684,7 @@ class WorldEngineTest(unittest.TestCase):
             }
         )
         banker_state = self.engine._npc_favorability_state(banker)
-        self.assertIn(str(banker_state.get("speech_register", "")), {"deferential", "warm", "slick"})
+        self.assertIn(str(banker_state.get("speech_register", "")), {"deferential", "warm", "slick", "bought"})
         self.assertGreater(float(banker_state.get("disclosure_willingness", 0.0)), 0.55)
 
         organizer["player_relation"] = -6
@@ -1663,6 +1726,89 @@ class WorldEngineTest(unittest.TestCase):
         self.assertEqual(worker["activity"], "working")
         self.assertEqual(worker["subregion_id"], str(worker.get("work_subregion_id", worker.get("subregion_id", ""))))
 
+    def test_residences_are_distributed_and_exposed_on_npc_cards(self) -> None:
+        snapshot = self.engine.snapshot()
+        house_states = snapshot["house_states"]
+        self.assertGreaterEqual(len(house_states), 12)
+        for district in snapshot["districts"]:
+            district_name = district["name"]
+            homes = {
+                str(npc.get("home_building_id", npc.get("home_id", "")))
+                for npc in snapshot["npcs"]
+                if str(npc.get("district", "")) == district_name
+            }
+            self.assertGreaterEqual(len(homes), 2)
+        sample_card = snapshot["npc_cards"][0]
+        self.assertIn("home_building_id", sample_card)
+        self.assertIn("home_subregion_id", sample_card)
+        self.assertIn("home_mode", sample_card)
+        self.assertIn("home_slot", sample_card)
+        self.assertIn("schedule_anchor_type", sample_card)
+
+    def test_population_bias_summary_is_built_for_city_and_districts(self) -> None:
+        snapshot = self.engine.snapshot()
+        population_bias = snapshot["population_bias"]
+        self.assertIn("citywide", population_bias)
+        self.assertIn("districts", population_bias)
+        self.assertTrue(population_bias["citywide"]["social_band_distribution"])
+        self.assertIn("工厂区", population_bias["districts"])
+        self.assertIn("top_norms", population_bias["districts"]["工厂区"])
+
+    def test_player_talk_populates_render_fields_and_latency(self) -> None:
+        self.engine.ark.generate_dialogue_turn = lambda payload: {  # type: ignore[method-assign]
+            "lines": [str(payload.get("player_input", "")) or "……", "消息在扩散，但我只说一半。"],
+            "stance": "谨慎",
+            "truthfulness": 0.61,
+            "_meta_model": "stub-model",
+        }
+        result = self.engine.player_talk("npc_01", "贫民街", player_input="你知道谁在抛售吗？")
+        dialogue = result.world_state["last_dialogue"]
+        self.assertEqual(dialogue["render_lines"][0], "你知道谁在抛售吗？")
+        self.assertIn("消息在扩散，但我只说一半。", dialogue["render_body"])
+        self.assertIn("latency_ms", dialogue)
+        self.assertIn(dialogue["response_state"], {"llm", "fallback_rule"})
+        self.assertEqual(dialogue["model"], "stub-model")
+
+    def test_exchange_media_watchers_are_limited_to_one(self) -> None:
+        district = "\u4ea4\u6613\u6240"
+        banker_title = "\u73ca\u745a\u94f6\u884c\u638c\u95e8"
+        self.engine.state["district_signals"][district]["gossip"] = 0.76
+        self.engine.state["district_signals"][district]["trade_heat"] = 0.44
+        self.engine.state["clock_minutes"] = 12 * 60
+        self.engine._apply_clock_state()
+        self.engine._apply_npc_schedule()
+        watchers = [
+            row
+            for row in self.engine.state["npcs"]
+            if row["district"] == district
+            and row["activity"] == "watching"
+            and str(row.get("social_band", self.engine._npc_social_band(row))) == "media"
+        ]
+        banker = next(row for row in self.engine.state["npcs"] if row["title"] == banker_title)
+        self.assertEqual(len(watchers), 1)
+        self.assertEqual(watchers[0]["subregion_id"], "church_graveyard")
+        self.assertEqual(banker["subregion_id"], str(banker.get("work_subregion_id", banker.get("subregion_id", ""))))
+        self.assertEqual(banker["activity"], "working")
+
+    def test_exchange_social_hotspots_never_exceed_two_people(self) -> None:
+        district = "\u4ea4\u6613\u6240"
+        self.engine.state["district_signals"][district]["gossip"] = 0.88
+        self.engine.state["district_signals"][district]["trade_heat"] = 0.82
+        self.engine.state["clock_minutes"] = 12 * 60
+        self.engine._apply_clock_state()
+        self.engine._apply_npc_schedule()
+        roamers = [
+            row
+            for row in self.engine.state["npcs"]
+            if row["district"] == district and row["activity"] in {"watching", "assembling", "gathering"}
+        ]
+        self.assertLessEqual(len(roamers), 3)
+        hotspot_counts: dict[str, int] = {}
+        for row in roamers:
+            subregion_id = str(row.get("subregion_id", ""))
+            hotspot_counts[subregion_id] = hotspot_counts.get(subregion_id, 0) + 1
+        self.assertTrue(hotspot_counts)
+        self.assertTrue(all(count <= 2 for count in hotspot_counts.values()))
 
 if __name__ == "__main__":
     unittest.main()

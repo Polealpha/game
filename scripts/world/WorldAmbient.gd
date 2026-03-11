@@ -2,7 +2,7 @@ extends Node2D
 class_name WorldAmbient
 
 const WorldLayout = preload("res://scripts/world/WorldLayout.gd")
-const REDRAW_INTERVAL := 0.08
+const REDRAW_INTERVAL := 0.16
 const WORLD_RECT := WorldLayout.WORLD_RECT
 const DISTRICT_RECTS := WorldLayout.DISTRICT_RECTS
 const HOUSE_IDS := ["slum_house", "dock_house", "factory_house", "exchange_house"]

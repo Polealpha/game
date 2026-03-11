@@ -70,7 +70,7 @@ class AIPulseRequest(BaseModel):
     scene_context: dict[str, Any] = Field(default_factory=dict)
 
 
-PULSE_INTERVAL_SECONDS = int(os.getenv("SHELL_MARKET_PULSE_SECONDS", "60"))
+PULSE_INTERVAL_SECONDS = int(os.getenv("SHELL_MARKET_PULSE_SECONDS", "8"))
 engine = WorldEngine(pulse_interval_seconds=PULSE_INTERVAL_SECONDS)
 
 
@@ -78,7 +78,7 @@ async def pulse_loop() -> None:
     while True:
         await asyncio.sleep(engine.pulse_interval_seconds)
         with contextlib.suppress(Exception):
-            engine.ai_pulse(trigger="scheduled")
+            await asyncio.to_thread(engine.ai_pulse, trigger="scheduled")
 
 
 @asynccontextmanager
@@ -107,7 +107,7 @@ def health() -> dict[str, Any]:
 
 @app.get("/world/state")
 def world_state() -> dict[str, Any]:
-    return {"world_state": engine.snapshot(), "message": ""}
+    return {"world_state": engine.snapshot_cached(), "message": ""}
 
 
 @app.post("/world/action")

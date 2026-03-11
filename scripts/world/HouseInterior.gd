@@ -21,6 +21,7 @@ const CHARACTER_SHEET := preload("res://assets/vendor/superpowers/medieval-fanta
 const CALCIUM_INTERIOR_PATH := "res://assets/vendor/calciumtrice/medieval_tileset_interior.png"
 const LPC_WOODSHOP_PATH := "res://assets/vendor/lpc_woodshop/lpc-woodshop/woodshop.png"
 const LPC_LIGHTS_PATH := "res://assets/vendor/lpc_castle_lights.png"
+const STOCK_EXCHANGE_INTERIOR_PATH := "res://unnamed_4k_realesrgan.png"
 const ROOM_TEXTURE := preload("res://assets/vendor/tiny_wizard/art/room.png")
 const TW_NORMAL_CHEST := preload("res://assets/vendor/tiny_wizard/props/chests/normal_chest_closed.png")
 const TW_GOLD_CHEST := preload("res://assets/vendor/tiny_wizard/props/chests/gold_chest_closed.png")
@@ -56,6 +57,7 @@ var subtitle_label := Label.new()
 var calcium_interior: Texture2D
 var woodshop_texture: Texture2D
 var lights_texture: Texture2D
+var stock_exchange_interior: Texture2D
 var emote_sleep_texture: Texture2D
 var emote_sleeps_texture: Texture2D
 
@@ -78,6 +80,7 @@ func _ready() -> void:
 	calcium_interior = _load_runtime_texture(CALCIUM_INTERIOR_PATH)
 	woodshop_texture = _load_runtime_texture(LPC_WOODSHOP_PATH)
 	lights_texture = _load_runtime_texture(LPC_LIGHTS_PATH)
+	stock_exchange_interior = _load_runtime_texture(STOCK_EXCHANGE_INTERIOR_PATH)
 	emote_sleep_texture = _load_runtime_texture(EMOTE_SLEEP_PATH)
 	emote_sleeps_texture = _load_runtime_texture(EMOTE_SLEEPS_PATH)
 	add_child(world_tint)
@@ -126,6 +129,7 @@ func _exit_tree() -> void:
 	calcium_interior = null
 	woodshop_texture = null
 	lights_texture = null
+	stock_exchange_interior = null
 	emote_sleep_texture = null
 	emote_sleeps_texture = null
 
@@ -204,9 +208,13 @@ func get_current_district() -> String:
 	return str(house_data.get("district", "贫民街"))
 
 
+func _scene_house_id() -> String:
+	return str(house_data.get("id", ""))
+
+
 func get_current_house_payload() -> Dictionary:
 	return {
-		"house_id": str(house_data.get("id", "")),
+		"house_id": str(house_data.get("action_house_id", house_data.get("id", ""))),
 		"house_title": str(house_data.get("title", "")),
 	}
 
@@ -259,13 +267,15 @@ func _refresh_caption() -> void:
 
 
 func _default_life_note() -> String:
-	match str(house_data.get("id", "")):
+	match _scene_house_id():
 		"dock_house":
 			return "潮气贴在木梁上，绳结和锅具都还留着盐味。"
 		"factory_house":
 			return "墙角堆着旧工具和铁灰，炉边还有没擦净的手印。"
 		"exchange_house":
 			return "桌上的账本翻到半页，蜡油沿着铜台慢慢往下流。"
+		"stock_exchange":
+			return "落地窗外压着全城天际线，盘口灯墙和保密金库都在等下一轮敲钟。"
 		_:
 			return "补丁布帘挡着风，木板缝里还带着晚饭后的热气。"
 
@@ -275,6 +285,22 @@ func _rebuild_interactables() -> void:
 		if is_instance_valid(node):
 			node.queue_free()
 	interactables.clear()
+
+	if _scene_house_id() == "stock_exchange":
+		var exchange_items := [
+			{"id":"trading_floor","kind":"stocks","title":"交易席","district":get_current_district(),"subtitle":"盯住三支家族股票的盘口与成交带。","x":700.0,"y":452.0},
+			{"id":"intel_terminal","kind":"info","title":"信息终端","district":get_current_district(),"subtitle":"花钱打听市场传闻、政策风向和席位耳语。","x":1064.0,"y":186.0},
+			{"id":"broker_desk","kind":"desk","title":"经纪人办公桌","district":get_current_district(),"subtitle":"翻看账册、成交回执和你的资金记录。","x":546.0,"y":476.0},
+			{"id":"vault","kind":"storage","title":"保密金库","district":get_current_district(),"subtitle":"搜查封存的凭证、筹码和留给明天的库存。","x":424.0,"y":704.0},
+			{"id":"briefing_table","kind":"tasks","title":"晨会长桌","district":get_current_district(),"subtitle":"看看经纪行的委托、任务和临时悬赏。","x":1012.0,"y":672.0},
+			{"id":"exit_house","kind":"exit_house","title":"正门","district":get_current_district(),"subtitle":"回到交易所外街面。","x":678.0,"y":744.0}
+		]
+		for item in exchange_items:
+			var exchange_node := InteractableView.new()
+			exchange_node.configure(item)
+			interactable_layer.add_child(exchange_node)
+			interactables.append(exchange_node)
+		return
 
 	var items := [
 		{"id":"bed","kind":"bed","title":str(house_layout.get("bed_title", "木床")),"district":get_current_district(),"subtitle":str(house_layout.get("bed_subtitle", "躺一会，顺着屋里的热气缓缓神。")),"x":float(house_layout.get("bed_x", 282.0)),"y":float(house_layout.get("bed_y", 256.0))},
@@ -304,6 +330,9 @@ func _update_current_interactable() -> void:
 
 
 func _draw() -> void:
+	if _scene_house_id() == "stock_exchange":
+		_draw_stock_exchange_scene()
+		return
 	draw_rect(ROOM_RECT, house_theme.get("void", Color("1c130d")), true)
 	_draw_floor()
 	_draw_walls()
@@ -327,6 +356,31 @@ func _draw() -> void:
 	_draw_doorway()
 	_draw_light_pools()
 	_draw_resident_presence()
+
+
+func _draw_stock_exchange_scene() -> void:
+	draw_rect(ROOM_RECT, Color("0f1218"), true)
+	var frame_rect := Rect2(54, 84, 1212, 720)
+	draw_rect(frame_rect, Color("10151d"), true)
+	if stock_exchange_interior != null:
+		_draw_scaled_texture(stock_exchange_interior, frame_rect, Color(1, 1, 1, 0.98))
+	else:
+		draw_rect(frame_rect, Color("2b3442"), true)
+		draw_rect(Rect2(120, 118, 1080, 220), Color("415269"), true)
+		draw_rect(Rect2(120, 350, 1080, 392), Color("273240"), true)
+	draw_rect(frame_rect, Color(0, 0, 0, 0.18), false, 6.0)
+	draw_rect(Rect2(54, 84, 1212, 76), Color(0.03, 0.04, 0.06, 0.44), true)
+	draw_rect(Rect2(54, 740, 1212, 64), Color(0.03, 0.04, 0.06, 0.48), true)
+	draw_rect(Rect2(0, 0, ROOM_RECT.size.x, 86), Color("0b0e13"), true)
+	draw_rect(Rect2(138, 776, 912, 40), Color("1f232b"), true)
+	draw_rect(Rect2(156, 786, 876, 18), Color(1, 1, 1, 0.08), true)
+	draw_rect(Rect2(572, 732, 212, 58), Color("233041"), true)
+	draw_rect(Rect2(594, 744, 168, 10), Color(0.66, 0.8, 0.95, 0.55), true)
+	draw_rect(Rect2(594, 760, 168, 12), Color(0, 0, 0, 0.2), true)
+	draw_line(Vector2(678, 728), Vector2(678, 812), Color(1, 1, 1, 0.15), 2.0)
+	draw_rect(Rect2(112, 96, 320, 34), Color("11161d"), true)
+	draw_string(ThemeDB.fallback_font, Vector2(132, 121), "证券交易所内厅", HORIZONTAL_ALIGNMENT_LEFT, 260, 26, Color("f4e3bd"))
+	draw_string(ThemeDB.fallback_font, Vector2(844, 121), "行情室 / 情报墙 / 金库", HORIZONTAL_ALIGNMENT_LEFT, 340, 20, Color("d7cdb6"))
 
 func _draw_floor() -> void:
 	draw_rect(Rect2(76, 120, 1168, 696), house_theme.get("floor", Color("5c432d")), true)
@@ -2438,6 +2492,8 @@ func _theme_for_house(data: Dictionary) -> Dictionary:
 			return {"void":Color("16120f"),"floor":Color("514033"),"plank_overlay":Color(0.33,0.25,0.18,0.11),"wall_top":Color("60493d"),"wall_side":Color("58443a"),"wall_bottom":Color("30231b"),"post":Color("70584d"),"trim":Color("85664d"),"wood":Color("674b35"),"wood_dark":Color("503824"),"stone":Color("625b59"),"accent":Color("90513a"),"rug":Color("6b382e"),"rug_trim":Color("d9c08b"),"blanket":Color("8f5b45"),"sheet":Color("8e8a78"),"chair":Color("735640"),"beam":Color("3d2d23"),"light":Color(0.96,0.72,0.34,0.12),"window_frame":Color("2a2f35"),"cloth":Color("8f5d43"),"resident_cloak":Color("80543c"),"resident_shell":Color("555c34")}
 		"exchange_house":
 			return {"void":Color("18130d"),"floor":Color("614a35"),"plank_overlay":Color(0.46,0.32,0.21,0.08),"wall_top":Color("7b6044"),"wall_side":Color("654f3c"),"wall_bottom":Color("403022"),"post":Color("8e6b4f"),"trim":Color("9f7d5a"),"wood":Color("7f5a3a"),"wood_dark":Color("64472d"),"stone":Color("5a4f49"),"accent":Color("6a4f88"),"rug":Color("5b3f7e"),"rug_trim":Color("f1ddb0"),"blanket":Color("7c5aa4"),"sheet":Color("d5cfbe"),"chair":Color("886749"),"beam":Color("513a2a"),"light":Color(1.0,0.86,0.48,0.1),"window_frame":Color("233144"),"cloth":Color("7f60a0"),"resident_cloak":Color("7758a0"),"resident_shell":Color("4d5d34")}
+		"stock_exchange":
+			return {"void":Color("0f131a"),"floor":Color("1f252c"),"plank_overlay":Color(0.25,0.36,0.45,0.08),"wall_top":Color("1a2028"),"wall_side":Color("141920"),"wall_bottom":Color("0d1015"),"post":Color("2c333d"),"trim":Color("d8b982"),"wood":Color("443324"),"wood_dark":Color("2a1f16"),"stone":Color("20262d"),"accent":Color("6bb6d9"),"rug":Color("27445e"),"rug_trim":Color("f1ddb0"),"blanket":Color("4d687d"),"sheet":Color("d3d7dc"),"chair":Color("4c3a30"),"beam":Color("1c232a"),"light":Color(0.72,0.86,1.0,0.14),"window_frame":Color("1f2935"),"cloth":Color("41586b"),"resident_cloak":Color("43596c"),"resident_shell":Color("37402d")}
 		_:
 			return {"void":Color("1c130d"),"floor":Color("5c432d"),"plank_overlay":Color(0.43,0.3,0.2,0.09),"wall_top":Color("725238"),"wall_side":Color("6a4a32"),"wall_bottom":Color("473121"),"post":Color("825f43"),"trim":Color("8f6a48"),"wood":Color("6b472b"),"wood_dark":Color("654529"),"stone":Color("655141"),"accent":Color("8f2f33"),"rug":Color("8f3b2e"),"rug_trim":Color("f1d79f"),"blanket":Color("8f3f35"),"sheet":Color("8d8a74"),"chair":Color("7b5738"),"beam":Color("442d1d"),"light":Color(1.0,0.83,0.45,0.1),"window_frame":Color("2e352b"),"cloth":Color("8c604a"),"resident_cloak":Color("7b5337"),"resident_shell":Color("50612e")}
 
@@ -2590,6 +2646,38 @@ func _layout_for_house(data: Dictionary) -> Dictionary:
 				"storage_subtitle": "礼盒、酒瓶、备用银烛和契纸全锁在柜门后面。",
 				"desk_title": "账房桌",
 				"desk_subtitle": "账本、消息纸片和利差都在这张桌上被算成一夜。"
+			}
+		"stock_exchange":
+			return {
+				"entry_x": 678.0,
+				"entry_y": 744.0,
+				"bed_x": 320.0,
+				"bed_y": 702.0,
+				"kitchen_x": 180.0,
+				"kitchen_y": 520.0,
+				"storage_x": 424.0,
+				"storage_y": 704.0,
+				"desk_x": 546.0,
+				"desk_y": 476.0,
+				"route_nodes": {
+					"entry": Vector2(678.0, 716.0),
+					"storage": Vector2(424.0, 704.0),
+					"cabinet": Vector2(424.0, 704.0),
+					"desk": Vector2(546.0, 476.0),
+					"table": Vector2(1012.0, 672.0),
+					"kitchen": Vector2(1064.0, 186.0),
+					"bedside": Vector2(320.0, 702.0),
+					"mending": Vector2(700.0, 452.0),
+					"warming": Vector2(700.0, 452.0)
+				},
+				"bed_title": "会客沙发",
+				"bed_subtitle": "靠着玻璃幕墙喘口气，盯着城市灯火和你的账面波动。",
+				"kitchen_title": "酒水吧台",
+				"kitchen_subtitle": "咖啡、酒和临时会客都在角落里周转。",
+				"storage_title": "保密金库",
+				"storage_subtitle": "沉底的仓位凭证、金条和封存文件都压在这里。",
+				"desk_title": "经纪人办公桌",
+				"desk_subtitle": "把委托、仓位和资金流水重新理清。"
 			}
 		_:
 			return {

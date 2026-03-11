@@ -202,12 +202,14 @@ class WorldEngine:
         self.npc_prompt_defs = self._load_json("npc_prompt_profiles.json")
         self.family_defs = self._load_json("families.json")
         self.company_defs = self._load_json("companies.json")
+        self.residence_defs = self._load_json("residences.json")
         self.macro_defaults = self._load_json("macro.json")
         self.districts_defs = self._load_json("districts.json")
         self.dialogue_templates = self._load_json("dialogue_templates.json")
         self.demo_flow = self._load_json("demo_flow.json")
         self.task_defs = self._load_json("tasks.json")
         self.state: dict[str, Any] = {}
+        self._snapshot_cache: dict[str, Any] = {}
         self.reset()
 
     def reset(self) -> None:
@@ -250,6 +252,7 @@ class WorldEngine:
             subregions = self._flatten_subregions(districts)
             subregion_lookup = {row["id"]: row for row in subregions}
             npcs = copy.deepcopy(self.npc_defs)
+            residence_occupancy: dict[str, int] = {}
             for index, npc in enumerate(npcs):
                 npc["prompt_profile"] = copy.deepcopy(self.npc_prompt_defs.get(str(npc.get("id", "")), {}))
                 npc["social_band"] = self._npc_social_band(npc)
@@ -271,21 +274,24 @@ class WorldEngine:
                 preferred_work_subregion = self._preferred_work_subregion(npc)
                 work_subregion_id = str(npc.get("work_subregion_id", preferred_work_subregion or npc["subregion_id"]))
                 work_subregion_meta = subregion_lookup.get(work_subregion_id, subregion_meta)
-                work_anchor_x, work_anchor_y = self._subregion_anchor(
-                    work_subregion_id,
-                    float(npc.get("x", 0.0)),
-                    float(npc.get("y", 0.0)),
-                )
-                work_slot_x, work_slot_y = self._npc_slot_offset(npc, "work")
+                work_anchor_x, work_anchor_y, work_anchor_slot = self._work_anchor_for_npc(npc, work_subregion_id)
                 npc["work_subregion_id"] = work_subregion_id
                 npc["work_subregion_name"] = str(npc.get("work_subregion_name", work_subregion_meta.get("name", npc["subregion_name"])))
-                npc["work_x"] = round(work_anchor_x + work_slot_x, 1)
-                npc["work_y"] = round(work_anchor_y + work_slot_y, 1)
-                house_meta = self._house_for_district(str(npc.get("district", "")))
-                npc["home_id"] = house_meta["id"]
-                npc["home_label"] = house_meta["title"]
-                npc["home_class"] = house_meta["class"]
-                home_x, home_y = self._derive_home_anchor(npc, index)
+                npc["work_anchor_slot"] = work_anchor_slot
+                npc["work_x"] = work_anchor_x
+                npc["work_y"] = work_anchor_y
+                residence = self._residence_for_npc(npc, index, residence_occupancy, subregion_lookup)
+                npc["home_building_id"] = str(residence.get("id", ""))
+                npc["home_building_title"] = str(residence.get("title", "屋子"))
+                npc["home_subregion_id"] = str(residence.get("subregion_id", npc["subregion_id"]))
+                npc["home_subregion_name"] = str(subregion_lookup.get(npc["home_subregion_id"], {}).get("name", npc["subregion_name"]))
+                npc["home_mode"] = str(npc.get("home_mode", "doorstep"))
+                npc["home_slot"] = int(residence.get("assigned_slot", 0))
+                npc["home_id"] = npc["home_building_id"]
+                npc["home_label"] = npc["home_building_title"]
+                npc["home_class"] = str(residence.get("class", "low"))
+                home_x, home_y = self._residence_anchor(residence, npc["home_slot"], "door")
+                npc["home_indoor_x"], npc["home_indoor_y"] = self._residence_anchor(residence, npc["home_slot"], "indoor")
                 npc["home_x"] = home_x
                 npc["home_y"] = home_y
                 npc["activity"] = "working"
@@ -432,6 +438,12 @@ class WorldEngine:
             self._refresh_derived_views()
             return copy.deepcopy(self.state)
 
+    def snapshot_cached(self) -> dict[str, Any]:
+        cached = copy.deepcopy(self._snapshot_cache)
+        if cached:
+            return cached
+        return self.snapshot()
+
     def action(self, action_type: str, district: str, payload: dict[str, Any] | None = None) -> ActionResult:
         payload = payload or {}
         with self.lock:
@@ -502,7 +514,7 @@ class WorldEngine:
     def ai_pulse(self, trigger: str = "scheduled", scene_observation: dict[str, Any] | None = None) -> ActionResult:
         with self.lock:
             self._advance_realtime_clock()
-            self._advance_clock(28)
+            self._advance_clock(6)
             self._run_livelihood_tick(trigger)
             self._settle_company_operations(trigger)
             self._apply_institution_actions(trigger)
@@ -510,7 +522,7 @@ class WorldEngine:
                 self._record_scene_observation(scene_observation)
             self.state["demo_metrics"]["ai_pulses"] = int(self.state["demo_metrics"].get("ai_pulses", 0)) + 1
             self._generate_ai_pulse(trigger=trigger)
-            var_allow_social_llm = not (trigger == "scheduled" and self._use_lightweight_scheduled_llm())
+            var_allow_social_llm = not self._is_background_scene_pulse(trigger)
             self._run_agent_social_turns(scene_observation or {}, allow_llm=var_allow_social_llm)
             self._apply_intraday_market_move(reason="ai_pulse", decay=0.72)
             self._decay_district_signals()
@@ -541,6 +553,7 @@ class WorldEngine:
         dialogue = None
         llm_payload: dict[str, Any] | None = None
         live_observation: dict[str, Any] = {}
+        latency_ms = 0
         with self.lock:
             npc = self._find_npc(npc_id)
             if not npc:
@@ -600,7 +613,9 @@ class WorldEngine:
                     },
                 }
         if llm_payload is not None:
+            started_at = time.perf_counter()
             dialogue = self.ark.generate_dialogue_turn(llm_payload)
+            latency_ms = max(1, int((time.perf_counter() - started_at) * 1000))
         with self.lock:
             npc = self._find_npc(npc_id)
             if not npc:
@@ -624,6 +639,7 @@ class WorldEngine:
                 lines = [player_input, fallback_lines[1]] if player_input else fallback_lines
             fallback_reply = self._rule_player_talk_lines(npc, topic, approach, npc_openness, intent)[1]
             lines[1] = self._normalize_spoken_line(str(npc.get("name", "")), lines[1], fallback_reply)
+            render_lines = self._dialogue_render_lines(lines, str(npc.get("name", "对方")))
             if dialogue:
                 self._remember_agent_output(npc, "player_talk", lines[1])
 
@@ -720,6 +736,20 @@ class WorldEngine:
             self.state["last_dialogue"]["source"] = "llm" if dialogue else "rule"
             self.state["last_dialogue"]["model"] = str(dialogue.get("_meta_model", self.ark.model_id)) if dialogue else "rule"
             self.state["last_dialogue"]["trade_quotes"] = trade_quotes
+            self.state["last_dialogue"]["response_state"] = "llm" if dialogue else "fallback_rule"
+            self.state["last_dialogue"]["latency_ms"] = latency_ms
+            self.state["last_dialogue"]["title"] = f"你与 {npc['name']} 交谈"
+            self.state["last_dialogue"]["render_lines"] = render_lines
+            self.state["last_dialogue"]["render_body"] = self._dialogue_render_body(
+                npc_name=str(npc.get("name", "对方")),
+                topic_label=str(topic.get("label", "街头风向")),
+                approach=approach,
+                render_lines=render_lines,
+                intel_note=intel["line"] if effective_strength > 0.12 else "这次没问到硬情报，只摸到了态度。",
+                world_effects=world_effects,
+                truth_profile=truth_profile,
+            )
+            self.state["last_dialogue"]["body"] = self.state["last_dialogue"]["render_body"]
             self._refresh_ambient_speeches()
             self._apply_intraday_market_move(reason="player_talk", decay=0.78)
             self._refresh_derived_views()
@@ -965,7 +995,7 @@ class WorldEngine:
         used: set[str] = set()
         subregion_turns: dict[str, int] = {}
         turns = 0
-        max_turns = min(4, max(2, len(npcs) // 6 + 1))
+        max_turns = min(2, max(1, len(npcs) // 10 + 1))
         for _, _, speaker_id, listener_id, subregion_key in rows:
             if speaker_id in used or listener_id in used:
                 continue
@@ -1010,6 +1040,117 @@ class WorldEngine:
                 row["district_name"] = district_name
                 rows.append(row)
         return rows
+
+    def _residence_rows(self) -> list[dict[str, Any]]:
+        return [copy.deepcopy(row) for row in self.residence_defs if isinstance(row, dict)]
+
+    def _residences_for_district(self, district_name: str) -> list[dict[str, Any]]:
+        rows = [row for row in self._residence_rows() if str(row.get("district", "")) == district_name]
+        if rows:
+            return rows
+        legacy = self._house_for_district(district_name)
+        return [legacy] if legacy else []
+
+    def _residence_for_npc(
+        self,
+        npc: dict[str, Any],
+        index: int,
+        occupancy: dict[str, int],
+        subregion_lookup: dict[str, dict[str, Any]],
+    ) -> dict[str, Any]:
+        district_name = str(npc.get("district", ""))
+        rows = self._residences_for_district(district_name)
+        if not rows:
+            return {}
+        preferred_subregion = str(
+            npc.get("home_subregion_id", "")
+            or npc.get("work_subregion_id", "")
+            or npc.get("subregion_id", "")
+        )
+        ranked: list[tuple[float, dict[str, Any]]] = []
+        for row in rows:
+            residence_id = str(row.get("id", ""))
+            capacity = max(1, int(row.get("capacity", 1)))
+            used = int(occupancy.get(residence_id, 0))
+            same_subregion = 1.0 if str(row.get("subregion_id", "")) == preferred_subregion else 0.0
+            fill_ratio = used / float(capacity)
+            distance_bias = 0.0
+            if preferred_subregion:
+                preferred_meta = subregion_lookup.get(preferred_subregion, {})
+                target_meta = subregion_lookup.get(str(row.get("subregion_id", "")), {})
+                if preferred_meta and target_meta:
+                    px = float(preferred_meta.get("center", {}).get("x", preferred_meta.get("x", 0.0))) if isinstance(preferred_meta.get("center"), dict) else 0.0
+                    py = float(preferred_meta.get("center", {}).get("y", preferred_meta.get("y", 0.0))) if isinstance(preferred_meta.get("center"), dict) else 0.0
+                    tx = float(target_meta.get("center", {}).get("x", target_meta.get("x", 0.0))) if isinstance(target_meta.get("center"), dict) else 0.0
+                    ty = float(target_meta.get("center", {}).get("y", target_meta.get("y", 0.0))) if isinstance(target_meta.get("center"), dict) else 0.0
+                    distance_bias = math.dist((px, py), (tx, ty)) / 2400.0
+            score = same_subregion * 2.0 - fill_ratio * 1.2 - distance_bias - used * 0.04
+            score += ((index % 5) * 0.01)
+            ranked.append((score, row))
+        ranked.sort(key=lambda item: item[0], reverse=True)
+        chosen = copy.deepcopy(ranked[0][1])
+        chosen_id = str(chosen.get("id", ""))
+        occupancy[chosen_id] = int(occupancy.get(chosen_id, 0)) + 1
+        chosen["assigned_slot"] = max(0, occupancy[chosen_id] - 1)
+        return chosen
+
+    def _residence_slot_offsets(self, residence_id: str) -> list[tuple[float, float]]:
+        custom = {
+            "slum_house": [(-18.0, 18.0), (14.0, 20.0), (-26.0, 42.0), (24.0, 40.0)],
+            "yard_shack": [(-12.0, 12.0), (14.0, 14.0), (0.0, 30.0)],
+            "trail_loft": [(-18.0, 12.0), (16.0, 14.0), (-28.0, 34.0), (24.0, 36.0)],
+            "dock_house": [(-18.0, 16.0), (16.0, 18.0), (0.0, 34.0)],
+            "canal_flat": [(-12.0, 12.0), (12.0, 12.0)],
+            "wharf_bunk": [(-22.0, 16.0), (18.0, 18.0), (-28.0, 36.0), (24.0, 38.0)],
+            "factory_house": [(-20.0, 14.0), (16.0, 16.0), (0.0, 34.0)],
+            "mill_row": [(-22.0, 14.0), (18.0, 16.0), (-30.0, 38.0), (26.0, 40.0)],
+            "quarry_row": [(-24.0, 14.0), (20.0, 16.0), (-32.0, 38.0), (28.0, 40.0)],
+            "exchange_house": [(-16.0, 16.0), (16.0, 16.0), (-20.0, 36.0), (20.0, 36.0)],
+            "market_row": [(-14.0, 14.0), (14.0, 14.0), (0.0, 32.0)],
+            "chapel_flat": [(-14.0, 14.0), (14.0, 14.0), (0.0, 30.0)],
+        }
+        return custom.get(residence_id, [(-12.0, 12.0), (12.0, 12.0), (0.0, 28.0)])
+
+    def _residence_anchor(self, residence: dict[str, Any], slot: int = 0, mode: str = "door") -> tuple[float, float]:
+        base_x = float(residence.get("door_x", residence.get("anchor_x", 0.0)))
+        base_y = float(residence.get("door_y", residence.get("anchor_y", 0.0)))
+        if mode == "indoor":
+            base_x = float(residence.get("indoor_x", base_x))
+            base_y = float(residence.get("indoor_y", base_y))
+        offsets = self._residence_slot_offsets(str(residence.get("id", "")))
+        offset_x, offset_y = offsets[max(slot, 0) % len(offsets)]
+        return round(base_x + offset_x, 1), round(base_y + offset_y, 1)
+
+    def _residence_patrol_points(self, residence_id: str) -> list[tuple[float, float]]:
+        meta = next((row for row in self._residence_rows() if str(row.get("id", "")) == residence_id), None)
+        if not meta:
+            return HOUSE_PATROL_POINTS.get(residence_id, [])
+        base_x = float(meta.get("door_x", meta.get("anchor_x", 0.0)))
+        base_y = float(meta.get("door_y", meta.get("anchor_y", 0.0)))
+        points = []
+        for offset_x, offset_y in self._residence_slot_offsets(residence_id):
+            points.append((round(base_x + offset_x, 1), round(base_y + offset_y, 1)))
+        points.append((round(base_x, 1), round(base_y - 12.0, 1)))
+        return points
+
+    def _work_anchor_for_npc(self, npc: dict[str, Any], work_subregion_id: str) -> tuple[float, float, int]:
+        route_points = SUBREGION_ROUTE_POINTS.get(work_subregion_id, [])
+        if not route_points:
+            anchor_x, anchor_y = self._subregion_anchor(
+                work_subregion_id,
+                float(npc.get("x", 0.0)),
+                float(npc.get("y", 0.0)),
+            )
+            return round(anchor_x, 1), round(anchor_y, 1), 0
+        raw_id = str(npc.get("id", "npc_0")).split("_")[-1]
+        try:
+            seed = max(1, int(raw_id))
+        except ValueError:
+            seed = max(1, (sum(ord(ch) for ch in str(npc.get("id", ""))) % 37) + 1)
+        slot = (seed - 1) % len(route_points)
+        base_x, base_y = route_points[slot]
+        work_slot_x, work_slot_y = self._npc_slot_offset(npc, "work")
+        return round(base_x + work_slot_x * 0.45, 1), round(base_y + work_slot_y * 0.45, 1), slot
 
     def _subregion_anchor(self, subregion_id: str, fallback_x: float, fallback_y: float) -> tuple[float, float]:
         points = SUBREGION_ROUTE_POINTS.get(str(subregion_id), [])
@@ -1231,8 +1372,8 @@ class WorldEngine:
             radius_x = 10.0
             radius_y = 6.0
         elif mode == "social":
-            radius_x = 22.0
-            radius_y = 14.0
+            radius_x = 34.0
+            radius_y = 22.0
         elif mode == "collective":
             radius_x = 16.0
             radius_y = 10.0
@@ -1257,7 +1398,7 @@ class WorldEngine:
         pressure: dict[str, Any],
     ) -> bool:
         if base_activity != "working":
-            return True
+            return False
         band = str(npc.get("social_band", self._npc_social_band(npc)))
         total_heat = float(pressure.get("total_heat", 0.0))
         labor_heat = max(float(pressure.get("labor_heat", 0.0)), float(pressure.get("labor_topic_heat", 0.0)))
@@ -1273,6 +1414,122 @@ class WorldEngine:
         if band in {"labor", "precariat", "trade", "resident"}:
             return lunch_window or evening_window or morning_window or total_heat >= 0.76 or labor_heat >= 0.8
         return False
+
+    @staticmethod
+    def _social_override_quota(target_band: str) -> int:
+        if target_band == "media":
+            return 1
+        if target_band in {"organizer", "trade"}:
+            return 2
+        return 0
+
+    @staticmethod
+    def _social_override_subregion_cap(target_subregion_id: str) -> int:
+        if not str(target_subregion_id).strip():
+            return 0
+        return 2
+
+    def _scheduled_base_activity(self, npc: dict[str, Any], minutes: int) -> str:
+        depart_start, work_start, work_end, settle_home, _sleep_start = self._schedule_window_for_npc(npc)
+        if work_start <= minutes < work_end:
+            return "working"
+        if depart_start <= minutes < work_start:
+            return "commuting"
+        if work_end <= minutes < settle_home:
+            return "returning"
+        return "home"
+
+    def _social_override_interest(
+        self,
+        npc: dict[str, Any],
+        target_band: str,
+        pressure: dict[str, Any],
+    ) -> float:
+        band = str(npc.get("social_band", self._npc_social_band(npc)))
+        role = str(npc.get("role", ""))
+        trust = float(npc.get("player_trust", 0.0)) / 100.0
+        debt = min(1.0, float(npc.get("debt", 0.0)) / 100.0)
+        hunger = min(1.0, float(npc.get("hunger", 0.0)) / 100.0)
+        anxiety = min(1.0, float(npc.get("anxiety", 0.0)) / 100.0)
+        heard_topics = len(list(npc.get("heard_topic_ids", []))[:6]) * 0.02
+        score = trust * 0.05 + debt * 0.12 + hunger * 0.12 + anxiety * 0.08 + heard_topics
+        if target_band == "media":
+            score += 0.5 if band == "media" else 0.0
+            score += 0.18 if role == "记者" else 0.0
+            score += max(float(pressure.get("gossip", 0.0)), float(pressure.get("finance_topic_heat", 0.0))) * 0.4
+        elif target_band == "organizer":
+            score += 0.55 if band == "organizer" else 0.0
+            score += 0.18 if role == "工会领袖" else 0.0
+            score += max(float(pressure.get("labor_heat", 0.0)), float(pressure.get("norm_pressure", 0.0))) * 0.45
+        elif target_band == "trade":
+            score += 0.45 if band == "trade" else 0.0
+            score += 0.14 if role in {"店主", "老板"} else 0.0
+            score += max(float(pressure.get("trade_heat", 0.0)), float(pressure.get("gossip", 0.0))) * 0.34
+        return round(score, 4)
+
+    def _social_target_band_for_npc(
+        self,
+        npc: dict[str, Any],
+        pressure: dict[str, Any],
+    ) -> tuple[str, str, str]:
+        band = str(npc.get("social_band", self._npc_social_band(npc)))
+        labor_push = max(float(pressure["labor_heat"]), float(pressure["labor_topic_heat"]), float(pressure["norm_pressure"]) * 0.7)
+        gossip_push = max(float(pressure["gossip"]), float(pressure["gossip_topic_heat"]))
+        finance_push = max(float(pressure["trade_heat"]), float(pressure["finance_topic_heat"]), float(pressure["liquidity"]) * 0.55)
+        if band == "media" and max(labor_push, gossip_push, finance_push) >= 0.34:
+            return "media", "watching", "broadcast"
+        if band == "organizer" and (labor_push >= 0.44 or gossip_push >= 0.46):
+            return "organizer", "assembling", "organize"
+        if band == "trade" and max(finance_push, gossip_push) >= 0.38:
+            return "trade", "gathering", "broadcast" if gossip_push >= finance_push else "steady"
+        return "", "", ""
+
+    def _social_override_allowed(
+        self,
+        npc: dict[str, Any],
+        target_band: str,
+        target_subregion_id: str,
+        minutes: int,
+        pressure: dict[str, Any],
+        base_activity: str,
+    ) -> bool:
+        quota = self._social_override_quota(target_band)
+        subregion_cap = self._social_override_subregion_cap(target_subregion_id)
+        if quota <= 0 or subregion_cap <= 0 or base_activity != "working":
+            return False
+        district_name = str(npc.get("district", ""))
+        band_candidates: list[dict[str, Any]] = []
+        subregion_candidates: list[tuple[dict[str, Any], str]] = []
+        for other in self.state.get("npcs", []):
+            if str(other.get("district", "")) != district_name:
+                continue
+            other_base_activity = self._scheduled_base_activity(other, minutes)
+            if not self._social_window_open(other, minutes, other_base_activity, pressure):
+                continue
+            other_target_band, _other_activity, _other_purpose = self._social_target_band_for_npc(other, pressure)
+            if not other_target_band:
+                continue
+            other_target_subregion_id = str(SOCIAL_BAND_SUBREGIONS.get(district_name, {}).get(other_target_band, ""))
+            if other_target_band == target_band:
+                band_candidates.append(other)
+            if other_target_subregion_id == target_subregion_id:
+                subregion_candidates.append((other, other_target_band))
+        band_candidates.sort(
+            key=lambda row: (
+                -self._social_override_interest(row, target_band, pressure),
+                str(row.get("id", "")),
+            )
+        )
+        subregion_candidates.sort(
+            key=lambda item: (
+                -self._social_override_interest(item[0], item[1], pressure),
+                str(item[0].get("id", "")),
+            )
+        )
+        band_allowed_ids = {str(row.get("id", "")) for row in band_candidates[:quota]}
+        subregion_allowed_ids = {str(row.get("id", "")) for row, _band in subregion_candidates[:subregion_cap]}
+        npc_id = str(npc.get("id", ""))
+        return npc_id in band_allowed_ids and npc_id in subregion_allowed_ids
 
     def _npc_social_pair_score(
         self,
@@ -1361,70 +1618,18 @@ class WorldEngine:
         district_name = str(npc.get("district", ""))
         band = str(npc.get("social_band", self._npc_social_band(npc)))
         pressure = self._district_social_pressure(district_name)
-        labor_push = max(float(pressure["labor_heat"]), float(pressure["labor_topic_heat"]), float(pressure["norm_pressure"]) * 0.7)
-        gossip_push = max(float(pressure["gossip"]), float(pressure["gossip_topic_heat"]))
-        finance_push = max(float(pressure["trade_heat"]), float(pressure["finance_topic_heat"]), float(pressure["liquidity"]) * 0.55)
-        fear_push = float(pressure["fear"])
         topic_label = str(pressure.get("topic_label", ""))
         norm_text = str(pressure.get("norm_text", ""))
-        if base_activity == "home" and max(labor_push, gossip_push, finance_push, fear_push) < 0.42:
-            return {}
         if not self._social_window_open(npc, minutes, base_activity, pressure):
             return {}
 
-        target_band = ""
-        activity = base_activity
-        purpose = "steady"
-
-        if band in {"elite", "authority", "manager"}:
-            if labor_push >= 0.38 or fear_push >= 0.34 or gossip_push >= 0.4:
-                target_band = "authority" if band == "authority" else "elite" if band == "elite" else "manager"
-                activity = "watching" if band == "authority" else "working"
-                purpose = "watch"
-        elif band == "finance":
-            if finance_push >= 0.26 or gossip_push >= 0.34:
-                target_band = "finance"
-                activity = "watching"
-                purpose = "watch"
-        elif band == "media":
-            if max(labor_push, gossip_push, finance_push) >= 0.24:
-                target_band = "media"
-                activity = "watching"
-                purpose = "broadcast"
-        elif band == "organizer":
-            if labor_push >= 0.22 or gossip_push >= 0.3:
-                target_band = "organizer"
-                activity = "assembling"
-                purpose = "organize"
-        elif band == "labor":
-            if labor_push >= 0.28:
-                target_band = "labor"
-                activity = "assembling"
-                purpose = "organize"
-        elif band == "precariat":
-            if labor_push >= 0.34 or gossip_push >= 0.38:
-                target_band = "organizer" if labor_push >= fear_push else "resident"
-                activity = "assembling" if target_band == "organizer" else "home"
-                purpose = "organize" if target_band == "organizer" else "steady"
-        elif band == "trade":
-            if max(finance_push, gossip_push) >= 0.24:
-                target_band = "trade"
-                activity = "gathering"
-                purpose = "broadcast" if gossip_push >= finance_push else "steady"
-        elif band == "resident":
-            if fear_push >= 0.42:
-                target_band = "resident"
-                activity = "home"
-                purpose = "steady"
-            elif gossip_push >= 0.34:
-                target_band = "trade"
-                activity = "gathering"
-                purpose = "broadcast"
-
+        target_band, activity, purpose = self._social_target_band_for_npc(npc, pressure)
         if not target_band:
             return {}
         target_subregion_id = str(SOCIAL_BAND_SUBREGIONS.get(district_name, {}).get(target_band, ""))
         if not target_subregion_id:
+            return {}
+        if not self._social_override_allowed(npc, target_band, target_subregion_id, minutes, pressure, base_activity):
             return {}
         anchor_x, anchor_y = self._subregion_anchor(
             target_subregion_id,
@@ -2676,11 +2881,9 @@ class WorldEngine:
             if allow_boot_spread:
                 self._apply_local_hearing(npc)
                 self._check_local_escalation(npc)
-        pulse_count = int(self.state.get("demo_metrics", {}).get("ai_pulses", 0))
         use_live_llm = (
-            trigger != "scheduled"
+            not self._is_background_scene_pulse(trigger)
             or self._full_scheduled_llm_mode()
-            or pulse_count % 5 == 0
         )
         if use_live_llm:
             self._apply_llm_pulse_brief(trigger)
@@ -2907,6 +3110,10 @@ class WorldEngine:
             llm_observation["screenshot_b64"] = ""
         return llm_observation
 
+    @staticmethod
+    def _is_background_scene_pulse(trigger: str) -> bool:
+        return str(trigger or "") in {"scheduled", "scheduled_scene", "manual_scene"}
+
     def _full_scheduled_llm_mode(self) -> bool:
         return "unittest" in sys.modules or os.getenv("SHELL_MARKET_FULL_SCHEDULED_LLM", "0") == "1"
 
@@ -2961,7 +3168,7 @@ class WorldEngine:
         active_topics = copy.deepcopy(self.state.get("active_topics", []))
         active_norms = copy.deepcopy(self.state.get("active_norms", []))
         active_collective_actions = copy.deepcopy(self.state.get("active_collective_actions", []))
-        include_image = trigger != "scheduled" or self._full_scheduled_llm_mode()
+        include_image = (not self._is_background_scene_pulse(trigger)) or self._full_scheduled_llm_mode()
         return {
             "trigger": trigger,
             "day": self.state.get("day", 1),
@@ -3952,6 +4159,7 @@ class WorldEngine:
         self._update_player_class()
         collective_profile = copy.deepcopy(self._refresh_player_collective_profile())
         self.state["player_collective_profile"] = collective_profile
+        self.state["population_bias"] = self._build_population_bias()
         self._rebuild_company_states()
         self._rebuild_family_moves()
         self._rebuild_npc_truth_profile()
@@ -4102,6 +4310,72 @@ class WorldEngine:
             "ai_focus": str(self.state.get("llm_pulse_summary", "")),
             "market_note": str(self.state.get("llm_market_note", "")),
             "market_tape": str(latest_trade.get("anonymous_label", "")),
+        }
+        self._snapshot_cache = copy.deepcopy(self.state)
+
+    def _build_population_bias(self) -> dict[str, Any]:
+        districts: dict[str, dict[str, Any]] = {}
+        band_counts: dict[str, int] = {}
+        for district in self.state.get("districts", []):
+            name = str(district.get("name", ""))
+            signal = dict(self.state.get("district_signals", {}).get(name, {}))
+            district_norms = self._active_norms_view(limit=4, district_name=name)
+            district_collectives = self._active_collective_actions_view(limit=4, district_name=name)
+            districts[name] = {
+                "district": name,
+                "gossip_bias": round(float(signal.get("gossip", 0.0)), 3),
+                "labor_bias": round(float(signal.get("labor_heat", 0.0)), 3),
+                "finance_bias": round(float(signal.get("trade_heat", 0.0)), 3),
+                "fear_bias": round(float(signal.get("fear", 0.0)), 3),
+                "top_norms": [
+                    {
+                        "id": str(row.get("id", "")),
+                        "text": str(row.get("text", "")),
+                        "support": round(float(row.get("support", 0.0)), 3),
+                        "strength": round(float(row.get("strength", 0.0)), 3),
+                    }
+                    for row in district_norms[:3]
+                ],
+                "top_collectives": [
+                    {
+                        "id": str(row.get("id", "")),
+                        "label": str(row.get("label", "")),
+                        "stage": str(row.get("stage", "")),
+                        "support": round(float(row.get("support", 0.0)), 3),
+                        "commitment": round(float(row.get("commitment", 0.0)), 3),
+                    }
+                    for row in district_collectives[:3]
+                ],
+                "social_bands": {},
+            }
+        for npc in self.state.get("npcs", []):
+            band = str(npc.get("social_band", self._npc_social_band(npc)))
+            district_name = str(npc.get("district", ""))
+            band_counts[band] = int(band_counts.get(band, 0)) + 1
+            district_row = districts.setdefault(
+                district_name,
+                {
+                    "district": district_name,
+                    "gossip_bias": 0.0,
+                    "labor_bias": 0.0,
+                    "finance_bias": 0.0,
+                    "fear_bias": 0.0,
+                    "top_norms": [],
+                    "top_collectives": [],
+                    "social_bands": {},
+                },
+            )
+            band_map = district_row.setdefault("social_bands", {})
+            band_map[band] = int(band_map.get(band, 0)) + 1
+        city_norms = self._active_norms_view(limit=6)
+        city_collectives = self._active_collective_actions_view(limit=6)
+        return {
+            "citywide": {
+                "dominant_norms": [str(row.get("text", "")) for row in city_norms[:4] if str(row.get("text", "")).strip()],
+                "dominant_collectives": [str(row.get("label", "")) for row in city_collectives[:4] if str(row.get("label", "")).strip()],
+                "social_band_distribution": band_counts,
+            },
+            "districts": districts,
         }
 
     def _pick_event_for_day(self) -> dict[str, Any]:
@@ -6415,13 +6689,21 @@ class WorldEngine:
             intel_strength = 0.35 if sensitivity > 0 and relation < 5 else 0.72
             intel_strength -= min(0.18, float(memory.get("pressure_from_player", 0.0)) * 0.03)
             intel_strength -= float(favorability.get("resentment", 0.0)) * 0.08
-            openness = "guarded" if sensitivity > 0 or str(favorability.get("speech_register", "")) in {"guarded", "hostile", "sullen"} else "skeptical"
+            register = str(favorability.get("speech_register", ""))
+            if register in {"owned", "bought"} and float(favorability.get("resentment", 0.0)) < 0.48:
+                openness = "skeptical"
+            else:
+                openness = "guarded" if sensitivity > 0 or register in {"guarded", "hostile", "sullen"} else "skeptical"
         else:
             trust_delta = 1
             intel_strength = 0.88 if relation >= -1 else 0.72
             intel_strength += min(0.08, int(memory.get("intel_bought", 0)) * 0.015)
             intel_strength += float(favorability.get("disclosure_willingness", 0.0)) * 0.06
-            openness = "skeptical" if sensitivity > 0 or str(favorability.get("speech_register", "")) == "guarded" else "open"
+            register = str(favorability.get("speech_register", ""))
+            if register in {"owned", "bought", "patronized"} and float(favorability.get("resentment", 0.0)) < 0.52:
+                openness = "open"
+            else:
+                openness = "skeptical" if sensitivity > 0 or register == "guarded" else "open"
         return trust_delta, intel_strength, openness
 
     def _npc_player_memory(self, npc: dict[str, Any]) -> dict[str, Any]:
@@ -6668,6 +6950,49 @@ class WorldEngine:
                 return value
         return ""
 
+    @staticmethod
+    def _dialogue_render_lines(lines: list[str], fallback_npc_name: str = "对方") -> list[str]:
+        player_line = str(lines[0]).strip() if len(lines) > 0 else ""
+        npc_line = str(lines[1]).strip() if len(lines) > 1 else ""
+        if not player_line:
+            player_line = "……"
+        if not npc_line:
+            npc_line = f"{fallback_npc_name}沉默了一下。"
+        return [player_line[:220], npc_line[:220]]
+
+    def _dialogue_render_body(
+        self,
+        *,
+        npc_name: str,
+        topic_label: str,
+        approach: str,
+        render_lines: list[str],
+        intel_note: str,
+        world_effects: str,
+        truth_profile: dict[str, Any],
+    ) -> str:
+        confidence_pct = int(round(float(truth_profile.get("confidence", 0.5)) * 100))
+        truthfulness_pct = int(round(float(truth_profile.get("truthfulness", 0.5)) * 100))
+        return (
+            f"[b]话题[/b]：{topic_label}  [b]方式[/b]：{self._approach_label(approach)}\n\n"
+            f"[b]你[/b]：{render_lines[0]}\n\n"
+            f"[b]{npc_name}[/b]：{render_lines[1]}\n\n"
+            f"[color=#6b4f2a][b]你实际拿到[/b][/color]\n{intel_note}\n"
+            f"可信度 {confidence_pct}%  真话率 {truthfulness_pct}%\n\n"
+            f"[color=#6b4f2a][b]世界变化[/b][/color]\n{world_effects}"
+        )
+
+    def _npc_reflection_summary(self, npc: dict[str, Any], topic: dict[str, Any] | None = None) -> str:
+        recent = self._npc_recent_experiences(npc, topic, limit=6)
+        if not recent:
+            return "今天暂时没有形成新的强记忆，先按本职工作和利益行动。"
+        summaries = [str(row.get("summary", "")).strip() for row in recent if str(row.get("summary", "")).strip()]
+        if not summaries:
+            return "今天暂时没有形成新的强记忆，先按本职工作和利益行动。"
+        focus = "；".join(summaries[:3])
+        role = str(npc.get("role", "角色"))
+        return f"作为{role}，你刚经历的关键事情是：{focus}。下一步优先兼顾生计、安全和当前议题。"
+
     def _npc_memory_summary(self, npc: dict[str, Any]) -> str:
         memory = self._npc_player_memory(npc)
         rows = npc.get("relationship_memory", [])
@@ -6786,19 +7111,39 @@ class WorldEngine:
         talk_signal = min(1.2, talk_count * 0.08 + int(memory.get("trust_streak", 0)) * 0.06)
         attitude_penalty = min(1.8, hardball_count * 0.16 + pressure * 0.34)
         collective_bias = self._player_collective_bias_for_npc(npc)
+        cash_dependency = max(
+            0.0,
+            min(
+                1.0,
+                gift_signal * 0.52
+                + (0.34 if bought_over else 0.0)
+                + (0.52 if follows_player else 0.0)
+                + max(0.0, relation) * 0.02,
+            ),
+        )
         warmth = max(0.0, min(1.0, trust * 0.52 + relation * 0.03 + friendly_count * 0.07 + talk_signal * weights["friendliness_bonus"] - attitude_penalty * 0.38 + collective_bias))
-        respect = max(0.0, min(1.0, wealth_signal * weights["wealth_respect"] + gift_signal * 0.36 + trust * 0.28 + max(0.0, relation) * 0.02))
-        resentment = max(0.0, min(1.0, attitude_penalty * weights["attitude_penalty"] + wealth_signal * weights["wealth_resentment"] - friendly_count * 0.05 - trust * 0.16 - gift_signal * 0.08 - collective_bias))
+        respect = max(0.0, min(1.0, wealth_signal * weights["wealth_respect"] + gift_signal * 0.36 + trust * 0.28 + max(0.0, relation) * 0.02 + cash_dependency * 0.12))
+        resentment = max(0.0, min(1.0, attitude_penalty * weights["attitude_penalty"] + wealth_signal * weights["wealth_resentment"] - friendly_count * 0.05 - trust * 0.16 - gift_signal * 0.1 - collective_bias - cash_dependency * 0.08))
         fear = max(0.0, min(1.0, pressure * weights["pressure_fear"] + wealth_signal * 0.12 + (0.18 if bought_over else 0.0) - trust * 0.08))
         greed_pull = max(0.0, min(1.0, wealth_signal * weights["greed_weight"] + gift_signal * 0.42 + (0.22 if bought_over else 0.0) + (0.28 if follows_player else 0.0)))
-        faction_alignment = max(-1.0, min(1.0, collective_bias + relation * 0.03 + trust * 0.22 - resentment * 0.4))
-        disclosure = max(0.0, min(1.0, trust * 0.34 + warmth * 0.22 + greed_pull * weights["disclosure_bonus"] + respect * 0.12 - resentment * 0.26 - fear * 0.1 + (0.18 if bought_over else 0.0) + (0.24 if follows_player else 0.0)))
-        if follows_player and resentment < 0.34:
-            register = "deferential"
+        faction_alignment = max(-1.0, min(1.0, collective_bias + relation * 0.03 + trust * 0.22 + cash_dependency * 0.18 - resentment * 0.4))
+        disclosure = max(0.0, min(1.0, trust * 0.34 + warmth * 0.22 + greed_pull * weights["disclosure_bonus"] + respect * 0.12 + cash_dependency * 0.24 - resentment * 0.26 - fear * 0.1 + (0.18 if bought_over else 0.0) + (0.24 if follows_player else 0.0)))
+        if follows_player and attitude_penalty >= 1.16 and resentment >= 0.44 and fear < 0.52:
+            register = "hostile"
+        elif follows_player and attitude_penalty >= 0.82 and resentment >= 0.34:
+            register = "sullen"
         elif resentment >= 0.72 and fear < 0.44:
             register = "hostile"
         elif resentment >= 0.52 and fear >= 0.28:
             register = "sullen"
+        elif follows_player and resentment < 0.56:
+            register = "owned"
+        elif bought_over and resentment < 0.62:
+            register = "bought"
+        elif respect >= 0.62 and greed_pull >= 0.52 and resentment < 0.34:
+            register = "patronized"
+        elif follows_player and resentment < 0.34:
+            register = "deferential"
         elif warmth >= 0.64 and respect >= 0.42:
             register = "warm"
         elif fear >= 0.48 or disclosure < 0.28:
@@ -6809,6 +7154,9 @@ class WorldEngine:
             register = "neutral"
         intel_discount = max(0.62, min(1.22, 1.0 - disclosure * 0.18 - greed_pull * 0.09 + resentment * 0.08))
         label_map = {
+            "owned": "算你的人",
+            "bought": "被你收买",
+            "patronized": "拿你当金主",
             "deferential": "拿你当金主",
             "warm": "越说越热络",
             "slick": "嘴甜但在算账",
@@ -6830,6 +7178,8 @@ class WorldEngine:
             "intel_discount": round(intel_discount, 3),
             "wealth_signal": round(wealth_signal, 3),
             "gift_signal": round(gift_signal, 3),
+            "cash_dependency": round(cash_dependency, 3),
+            "patronage_status": self._npc_patronage_status(npc),
         }
 
     def _npc_people_and_relations(self, npc: dict[str, Any], limit: int = 8) -> list[dict[str, Any]]:
@@ -6900,6 +7250,7 @@ class WorldEngine:
         macro = self.state.get("macro", {})
         lead_topic = next(iter(self._active_public_topics(limit=2, district_name=district_name)), {})
         lead_collective = next(iter(self._active_collective_actions_view(limit=2, district_name=district_name)), {})
+        district_bias = dict(self.state.get("population_bias", {}).get("districts", {}).get(district_name, {}))
         return {
             "district": district_name,
             "prices": {str(good.get("name", "")): int(good.get("current_price", 0)) for good in self.state.get("goods", [])},
@@ -6909,6 +7260,8 @@ class WorldEngine:
             "worker_unrest": int(macro.get("worker_unrest", 50)),
             "top_topic": str(lead_topic.get("label", "")),
             "top_collective": str(lead_collective.get("label", "")),
+            "active_norms": self._active_norms_view(limit=3, district_name=district_name),
+            "population_bias": district_bias,
         }
 
     def _npc_allowed_actions(self, npc: dict[str, Any], topic: dict[str, Any] | None = None) -> list[str]:
@@ -6950,8 +7303,18 @@ class WorldEngine:
                 "work_status": str(npc.get("activity", "")),
                 "stock_positions": copy.deepcopy(npc.get("stock_positions", {})),
                 "favorability_state": favorability,
+                "housing": {
+                    "home_building_id": str(npc.get("home_building_id", npc.get("home_id", ""))),
+                    "home_subregion_id": str(npc.get("home_subregion_id", "")),
+                    "home_mode": str(npc.get("home_mode", "doorstep")),
+                    "schedule_anchor_type": str(npc.get("schedule_anchor_type", "")),
+                },
             },
-            "recent_experiences": self._npc_recent_experiences(npc, topic, limit=10),
+            "recent_experiences": {
+                "recent_events": self._npc_recent_experiences(npc, topic, limit=10),
+                "salient_memories": self._local_memory_view(npc, topic_id=str((topic or {}).get("id", "")), limit=4),
+                "reflection_summary": self._npc_reflection_summary(npc, topic),
+            },
             "people_and_relations": self._npc_people_and_relations(npc, limit=8),
             "city_summary": self._npc_city_summary(npc),
             "allowed_actions": self._npc_allowed_actions(npc, topic),
@@ -7314,13 +7677,19 @@ class WorldEngine:
     ) -> list[str]:
         favorability = self._npc_favorability_state(npc)
         register = str(favorability.get("speech_register", "neutral"))
-        salutation = "哥" if register in {"deferential", "slick"} and float(favorability.get("respect", 0.0)) >= 0.56 else "你"
+        salutation = "哥" if register in {"deferential", "slick", "patronized", "owned"} and float(favorability.get("respect", 0.0)) >= 0.56 else "你"
         player_line = {
             "cautious": f"我只想问一句，{topic.get('label', npc['district'])} 最近是不是在变？",
             "friendly": f"我不是来压你话的，就想听听你怎么看 {topic.get('label', npc['district'])}。",
             "hardball": f"别绕了，{topic.get('label', npc['district'])} 到底是谁在做局？",
         }.get(approach, f"最近 {topic.get('label', npc['district'])} 的风向到底怎么走？")
-        if register == "hostile":
+        if register == "owned":
+            reply = f"{npc['name']}：{salutation}，你这边的话我记着。明话我直接给你：{topic.get('summary', '这阵风已经写进盘口和人心里了。')}"
+        elif register == "bought":
+            reply = f"{npc['name']}：钱我既然收了，就不跟你兜圈子。{topic.get('summary', '这条风声已经能拿来落仓位了。')}"
+        elif register == "patronized":
+            reply = f"{npc['name']}：{salutation}，这层盘面我先替你掀开一角。{topic.get('summary', '这阵风已经往价格上写了。')}"
+        elif register == "hostile":
             reply = f"{npc['name']}：你口气收一收。{topic.get('label', npc['district'])} 这事不是你想逼就逼得出来的。"
         elif register == "sullen":
             reply = f"{npc['name']}：话我不是不能说，但你别真把人当能随手拿捏的壳。"
@@ -7620,6 +7989,8 @@ class WorldEngine:
             else:
                 target = self._schedule_patrol_anchor(npc, home_anchor, "home", minutes)
                 activity = "home"
+                npc["subregion_id"] = str(npc.get("home_subregion_id", npc.get("subregion_id", "")))
+                npc["subregion_name"] = str(npc.get("home_subregion_name", npc.get("subregion_name", "")))
                 if minutes >= sleep_start or minutes < max(depart_start - 40, 0):
                     home_state = "sleeping"
                 elif settle_home <= minutes < sleep_start:
@@ -7691,7 +8062,7 @@ class WorldEngine:
     ) -> dict[str, float]:
         slot_x, slot_y = self._npc_slot_offset(npc, mode)
         if mode == "home":
-            route_points = HOUSE_PATROL_POINTS.get(str(npc.get("home_id", "")), [])
+            route_points = self._residence_patrol_points(str(npc.get("home_id", "")))
         else:
             route_points = SUBREGION_ROUTE_POINTS.get(str(npc.get("work_subregion_id", npc.get("subregion_id", ""))), [])
         if not route_points:
@@ -7726,15 +8097,11 @@ class WorldEngine:
         return max(24, base - 6)
 
     def _derive_home_anchor(self, npc: dict[str, Any], index: int) -> tuple[float, float]:
-        work_x = float(npc.get("x", 0.0))
-        work_y = float(npc.get("y", 0.0))
-        if work_x < 800 and work_y < 500:
-            return 120.0 + (index % 5) * 118.0, 160.0 + (index % 3) * 54.0
-        if work_x >= 800 and work_y < 500:
-            return 940.0 + (index % 4) * 130.0, 182.0 + (index % 3) * 48.0
-        if work_x < 800 and work_y >= 500:
-            return 118.0 + (index % 4) * 126.0, 596.0 + (index % 4) * 56.0
-        return 936.0 + (index % 5) * 102.0, 622.0 + (index % 3) * 64.0
+        residence = next(
+            (row for row in self._residence_rows() if str(row.get("id", "")) == str(npc.get("home_id", ""))),
+            {},
+        )
+        return self._residence_anchor(residence, int(npc.get("home_slot", index)), "door")
 
     def _schedule_role_for_npc(self, npc: dict[str, Any]) -> str:
         band = str(npc.get("social_band", self._npc_social_band(npc)))
@@ -7746,25 +8113,16 @@ class WorldEngine:
         return "worker"
 
     def _derive_home_anchor(self, npc: dict[str, Any], index: int) -> tuple[float, float]:
-        offsets = {
-            "slum_house": [(-16.0, 28.0), (16.0, 30.0), (-34.0, 60.0), (28.0, 58.0), (48.0, 10.0)],
-            "dock_house": [(-18.0, 20.0), (18.0, 22.0), (-32.0, 48.0), (34.0, 50.0), (8.0, -12.0)],
-            "factory_house": [(-22.0, 16.0), (18.0, 18.0), (-36.0, 44.0), (34.0, 46.0), (6.0, -10.0)],
-            "exchange_house": [(-18.0, 22.0), (18.0, 22.0), (-34.0, 48.0), (34.0, 46.0), (4.0, -12.0)],
-        }
-        anchors = {
-            "slum_house": (610.0, 560.0),
-            "dock_house": (860.0, 720.0),
-            "factory_house": (2240.0, 1120.0),
-            "exchange_house": (1370.0, 610.0),
-        }
-        home_id = str(npc.get("home_id", "slum_house"))
-        base_x, base_y = anchors.get(home_id, anchors["slum_house"])
-        home_offsets = offsets.get(home_id, offsets["slum_house"])
-        offset_x, offset_y = home_offsets[max(index, 0) % len(home_offsets)]
-        return base_x + offset_x, base_y + offset_y
+        residence = next(
+            (row for row in self._residence_rows() if str(row.get("id", "")) == str(npc.get("home_id", ""))),
+            {},
+        )
+        return self._residence_anchor(residence, int(npc.get("home_slot", index)), "door")
 
     def _house_for_district(self, district_name: str) -> dict[str, str]:
+        residences = self._residences_for_district(district_name)
+        if residences:
+            return copy.deepcopy(residences[0])
         return copy.deepcopy(HOUSE_DEFS.get(district_name, HOUSE_DEFS["贫民街"]))
 
     def _schedule_window_for_npc(self, npc: dict[str, Any]) -> tuple[int, int, int, int, int]:
@@ -7954,12 +8312,20 @@ class WorldEngine:
             "warming": 2,
             "away": 0,
         }
-        for district_name, meta in HOUSE_DEFS.items():
-            house_states[meta["id"]] = {
-                "id": meta["id"],
-                "title": meta["title"],
+        residence_rows = self._residence_rows()
+        if not residence_rows:
+            residence_rows = [dict(meta) for meta in HOUSE_DEFS.values()]
+        for meta in residence_rows:
+            house_id = str(meta.get("id", ""))
+            if not house_id:
+                continue
+            district_name = str(meta.get("district", ""))
+            house_states[house_id] = {
+                "id": house_id,
+                "title": str(meta.get("title", house_id)),
                 "district": district_name,
-                "household_class": meta["class"],
+                "subregion_id": str(meta.get("subregion_id", "")),
+                "household_class": str(meta.get("class", "")),
                 "scene_id": meta.get("scene_id", ""),
                 "entry_spawn_id": meta.get("entry_spawn_id", ""),
                 "scene_anchor": {
@@ -8339,7 +8705,8 @@ class WorldEngine:
         elif topic_kind in {"labor", "public"}:
             price = int(round(price * 1.2))
         trust_discount = max(0.72, 1.0 - float(npc.get("player_trust", 0.0)) / 220.0)
-        register_markup = 1.12 if str(favorability.get("speech_register", "")) in {"hostile", "guarded"} else 0.92 if str(favorability.get("speech_register", "")) in {"warm", "deferential"} else 1.0
+        register = str(favorability.get("speech_register", ""))
+        register_markup = 1.12 if register in {"hostile", "guarded"} else 0.84 if register == "owned" else 0.88 if register in {"bought", "patronized", "warm", "deferential"} else 1.0
         return max(80, int(round(price * trust_discount * float(favorability.get("intel_discount", 1.0)) * register_markup)))
 
     def _npc_patronage_status(self, npc: dict[str, Any]) -> str:
@@ -9319,6 +9686,13 @@ class WorldEngine:
                     "district": str(npc.get("district", "")),
                     "subregion_id": str(npc.get("subregion_id", "")),
                     "subregion_name": str(npc.get("subregion_name", "")),
+                    "home_building_id": str(npc.get("home_building_id", npc.get("home_id", ""))),
+                    "home_building_title": str(npc.get("home_building_title", npc.get("home_label", ""))),
+                    "home_subregion_id": str(npc.get("home_subregion_id", "")),
+                    "home_subregion_name": str(npc.get("home_subregion_name", "")),
+                    "home_mode": str(npc.get("home_mode", "doorstep")),
+                    "home_slot": int(npc.get("home_slot", 0)),
+                    "schedule_anchor_type": str(npc.get("schedule_anchor_type", "")),
                     "role": str(npc.get("role", "")),
                     "x": round(float(npc.get("x", 0.0)), 1),
                     "y": round(float(npc.get("y", 0.0)), 1),

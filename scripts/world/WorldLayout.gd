@@ -84,7 +84,7 @@ const HOUSE_DOORS := {
 	"slum_house": Vector2(610, 560),
 	"dock_house": Vector2(860, 720),
 	"factory_house": Vector2(2240, 1120),
-	"exchange_house": Vector2(1370, 610),
+	"exchange_house": Vector2(1370, 690),
 }
 
 const SUBREGIONS := [
@@ -186,7 +186,7 @@ const INTERACTABLES := [
 	{"id": "exchange_board", "kind": "stocks", "title": "交易牌价", "district": "交易所", "subtitle": "买卖股票，盯住资本风向", "subregion_id": "clocktower_market", "x": 2190, "y": 220},
 	{"id": "market_whisper", "kind": "info", "title": "市场风报", "district": "交易所", "subtitle": "付费获得宏观传言和盘口消息", "subregion_id": "church_graveyard", "x": 2060, "y": 640},
 	{"id": "family_registry", "kind": "tasks", "title": "会客前厅", "district": "交易所", "subtitle": "查关系、接差事、领委托", "subregion_id": "rune_tower", "x": 1120, "y": 620},
-	{"id": "exchange_house", "kind": "house", "title": "账房公寓", "district": "交易所", "subtitle": "烛台、账桌和锁柜都在屋里", "subregion_id": "rune_tower", "x": 1370, "y": 610},
+	{"id": "exchange_house", "kind": "house", "title": "证券交易所", "district": "交易所", "subtitle": "从正门进入券商大厅、交易席和保密金库", "subregion_id": "rune_tower", "x": 1370, "y": 690},
 	{"id": "day_bell", "kind": "end_day", "title": "钟楼日钟", "district": "交易所", "subtitle": "推动到下一天，结算世界变化", "subregion_id": "clocktower_market", "x": 2820, "y": 140},
 	{"id": "chapel_notice", "kind": "info", "title": "广场耳语", "district": "交易所", "subtitle": "喷泉旁总有人低声交换风向", "subregion_id": "church_graveyard", "x": 2040, "y": 520},
 ]

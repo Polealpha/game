@@ -23,7 +23,7 @@ func post_json(path: String, payload: Dictionary, tag: String) -> void:
 func _request_json(method: int, path: String, payload: Dictionary, tag: String) -> void:
 	var request := HTTPRequest.new()
 	if tag == "player_talk":
-		request.timeout = 35.0
+		request.timeout = 18.0
 	elif tag == "health" or tag == "world_state":
 		request.timeout = 20.0
 	else:

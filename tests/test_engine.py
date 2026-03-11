@@ -14,7 +14,9 @@ class WorldEngineTest(unittest.TestCase):
         self.assertEqual(snapshot["day"], 1)
         self.assertEqual(len(snapshot["goods"]), 3)
         self.assertEqual(len(snapshot["stocks"]), 3)
-        self.assertEqual(len(snapshot["npcs"]), 20)
+        self.assertEqual(len(snapshot["npcs"]), 36)
+        self.assertEqual(snapshot["player"]["cash"], 1_000_000)
+        self.assertEqual(max(int(npc.get("cash", 0)) for npc in snapshot["npcs"]), 500_000)
         self.assertTrue(snapshot["global_news"])
         self.assertTrue(snapshot["ambient_speeches"])
         self.assertTrue(snapshot["company_states"])
@@ -22,6 +24,276 @@ class WorldEngineTest(unittest.TestCase):
         self.assertTrue(snapshot["npc_truth_profile"])
         self.assertTrue(snapshot["npc_cards"])
         self.assertIn("institution_actions", snapshot)
+
+    def test_boot_does_not_preheat_citywide_gossip(self) -> None:
+        snapshot = self.engine.snapshot()
+        self.assertTrue(all(float(row.get("gossip", 0.0)) == 0.0 for row in snapshot["district_signals"].values()))
+        self.assertFalse(snapshot["active_topics"])
+        self.assertLessEqual(sum(1 for npc in snapshot["npcs"] if npc["activity"] in {"assembling", "gathering"}), 1)
+
+    def test_persona_prompt_profiles_are_loaded_into_npcs(self) -> None:
+        snapshot = self.engine.snapshot()
+        npc_01 = next(row for row in snapshot["npcs"] if row["id"] == "npc_01")
+        npc_36 = next(row for row in snapshot["npcs"] if row["id"] == "npc_36")
+        self.assertIn("prompt_profile", npc_01)
+        self.assertIn("防止珊瑚银行渗透家底", npc_01["agent_prompt"])
+        self.assertIn("把零散不满结构化成可持续的组织", npc_36["agent_prompt"])
+
+    def test_npc_agent_prompt_no_longer_assumes_player_is_turtle(self) -> None:
+        prompt = next(row for row in self.engine.snapshot()["npcs"] if row["id"] == "npc_01")["agent_prompt"]
+        self.assertIn("玩家只是外来玩家或来访者", prompt)
+        self.assertNotIn("那只乌龟", prompt)
+
+    def test_player_talk_sends_recent_conversation_history_to_llm(self) -> None:
+        seen_payloads: list[dict[str, object]] = []
+
+        def fake_dialogue(payload: dict[str, object]) -> dict[str, object]:
+            seen_payloads.append(payload)
+            return {"lines": [str(payload.get("player_input", "")) or "……", "我记着你刚才问过这事。"], "stance": "谨慎", "truthfulness": 0.6}
+
+        self.engine.ark.generate_dialogue_turn = fake_dialogue  # type: ignore[method-assign]
+        self.engine.player_talk("npc_01", "贫民街", player_input="先说说粮价。")
+        self.engine.player_talk("npc_01", "贫民街", player_input="我刚才问的那事，你改口没有？")
+        self.assertGreaterEqual(len(seen_payloads), 2)
+        second_payload = seen_payloads[-1]
+        relationship_memory = dict(second_payload.get("relationship_memory", {}))
+        history = list(relationship_memory.get("conversation_history", []))
+        self.assertTrue(history)
+        self.assertIn("先说说粮价", str(history[0].get("speaker_line", "")))
+
+    def test_player_talk_builds_local_memory_bank_for_npc(self) -> None:
+        self.engine.ark.generate_dialogue_turn = lambda payload: {"lines": [str(payload.get("player_input", "")) or "……", "这话我先记在心里。"], "stance": "谨慎", "truthfulness": 0.58}  # type: ignore[method-assign]
+        self.engine.player_talk("npc_01", "贫民街", player_input="你先记住我今天问过库存。")
+        npc = next(row for row in self.engine.state["npcs"] if row["id"] == "npc_01")
+        self.assertTrue(npc["dialogue_history"])
+        self.assertTrue(npc["local_memory_bank"])
+        self.assertEqual(npc["dialogue_history"][0]["counterpart_id"], "player")
+        self.assertIn("库存", npc["local_memory_bank"][0]["summary"])
+
+    def test_gift_money_transfers_real_cash_and_can_flip_ordinary_npc(self) -> None:
+        npc = next(row for row in self.engine.state["npcs"] if row["id"] == "npc_03")
+        player_cash_before = int(self.engine.state["player"]["cash"])
+        npc_cash_before = int(npc["cash"])
+        result = self.engine.action("gift_money", "贫民街", {"npc_id": "npc_03", "amount": 10_000})
+        npc_after = next(row for row in result.world_state["npcs"] if row["id"] == "npc_03")
+        self.assertEqual(result.world_state["player"]["cash"], player_cash_before - 10_000)
+        self.assertEqual(int(npc_after["cash"]), npc_cash_before + 10_000)
+        self.assertTrue(npc_after["player_memory"]["bought_over"])
+        self.assertEqual(next(card for card in result.world_state["npc_cards"] if card["id"] == "npc_03")["relation_status"], "被你收买")
+
+    def test_buy_intel_unlocks_after_money_and_moves_real_cash(self) -> None:
+        blocked = self.engine.action("buy_intel", "贫民街", {"npc_id": "npc_03", "amount": 0})
+        self.assertIn("不肯", blocked.message)
+        self.engine.action("gift_money", "贫民街", {"npc_id": "npc_03", "amount": 10_000})
+        player_cash_before = int(self.engine.state["player"]["cash"])
+        npc_cash_before = int(next(row for row in self.engine.state["npcs"] if row["id"] == "npc_03")["cash"])
+        result = self.engine.action("buy_intel", "贫民街", {"npc_id": "npc_03", "amount": 0})
+        npc_after = next(row for row in result.world_state["npcs"] if row["id"] == "npc_03")
+        self.assertLess(int(result.world_state["player"]["cash"]), player_cash_before)
+        self.assertGreater(int(npc_after["cash"]), npc_cash_before)
+        self.assertTrue(result.world_state["rumor_log"])
+        self.assertGreater(int(npc_after["player_memory"]["intel_spend_total"]), 0)
+
+    def test_large_gift_can_make_npc_follow_player(self) -> None:
+        result = self.engine.action("gift_money", "贫民街", {"npc_id": "npc_03", "amount": 20_000})
+        npc_after = next(row for row in result.world_state["npcs"] if row["id"] == "npc_03")
+        self.assertTrue(npc_after["player_memory"]["follows_player"])
+        self.assertEqual(next(card for card in result.world_state["npc_cards"] if card["id"] == "npc_03")["relation_status"], "跟着你")
+
+    def test_social_pair_score_blocks_elite_worker_casual_contact(self) -> None:
+        boss = next(row for row in self.engine.state["npcs"] if row["title"] == "龟甲船坞掌门")
+        worker = next(
+            row
+            for row in self.engine.state["npcs"]
+            if row["district"] == "工厂区" and row["role"] in {"工人", "临时工"} and row["id"] != boss["id"]
+        )
+        worker["subregion_id"] = boss["subregion_id"]
+        score = self.engine._npc_social_pair_score(boss, worker, 36.0, 0.12)
+        self.assertIsNone(score)
+
+    def test_social_schedule_splits_factory_boss_worker_and_organizer_under_unrest(self) -> None:
+        self.engine._apply_intel_packet(
+            {
+                "id": "factory_unrest_probe",
+                "district": "工厂区",
+                "source": "test rumor",
+                "title": "工厂区工资风声",
+                "line": "工厂区里都在传降薪和慢工，工棚口已经有人开始互相串联。",
+                "body": "工厂区里都在传降薪和慢工，工棚口已经有人开始互相串联。",
+                "tags": ["工厂", "工资", "传闻"],
+                "scope": "district",
+                "topic_kind": "labor",
+                "goods_delta": {"煤": 0.04},
+                "stocks_delta": {"龟甲船运": -0.03},
+                "macro_delta": {"worker_unrest": 1.2},
+                "family_delta": {"龟甲船坞": -0.04},
+            },
+            to_player=False,
+            promote_news=False,
+            intensity=1.0,
+        )
+        self.engine.state["district_signals"]["工厂区"]["labor_heat"] = 0.82
+        self.engine.state["district_signals"]["工厂区"]["gossip"] = 0.48
+        self.engine.state["clock_minutes"] = 10 * 60 + 15
+        self.engine._apply_clock_state()
+        self.engine._refresh_derived_views()
+        self.engine._apply_npc_schedule()
+        boss = next(row for row in self.engine.state["npcs"] if row["title"] == "龟甲船坞掌门")
+        organizer = next(row for row in self.engine.state["npcs"] if row["role"] == "工会领袖")
+        worker = next(row for row in self.engine.state["npcs"] if row["district"] == "工厂区" and row["role"] == "工人")
+        self.assertEqual(boss["subregion_id"], "watermill_yard")
+        self.assertEqual(worker["subregion_id"], "stoneyard_workcamp")
+        self.assertEqual(organizer["subregion_id"], "stoneyard_workcamp")
+        self.assertIn(boss["activity"], {"working", "watching"})
+        self.assertEqual(worker["activity"], "assembling")
+        self.assertEqual(organizer["activity"], "assembling")
+        self.assertTrue(any(token in organizer["current_goal"] for token in ["工厂区工资风声", "工钱与班次", "去串联一圈"]))
+
+    def test_social_schedule_moves_reporter_to_gossip_hotspot_and_banker_to_inner_circle(self) -> None:
+        self.engine.state["district_signals"]["交易所"]["gossip"] = 0.76
+        self.engine.state["district_signals"]["交易所"]["trade_heat"] = 0.44
+        self.engine.state["clock_minutes"] = 11 * 60
+        self.engine._apply_clock_state()
+        self.engine._apply_npc_schedule()
+        reporter = next(row for row in self.engine.state["npcs"] if row["role"] == "记者")
+        banker = next(row for row in self.engine.state["npcs"] if row["title"] == "珊瑚银行掌门")
+        self.assertEqual(reporter["subregion_id"], "church_graveyard")
+        self.assertEqual(reporter["activity"], "watching")
+        self.assertEqual(banker["subregion_id"], "rune_tower")
+        self.assertIn(banker["activity"], {"working", "watching"})
+        self.assertNotEqual(reporter["subregion_id"], banker["subregion_id"])
+
+    def test_exchange_authority_roles_work_from_inner_tower(self) -> None:
+        self.engine.state["clock_minutes"] = 10 * 60
+        self.engine._apply_clock_state()
+        self.engine._apply_npc_schedule()
+        mayor = next(row for row in self.engine.state["npcs"] if row["id"] == "npc_11")
+        regulator = next(row for row in self.engine.state["npcs"] if row["id"] == "npc_10")
+        self.assertEqual(mayor["subregion_id"], "rune_tower")
+        self.assertEqual(regulator["subregion_id"], "rune_tower")
+        self.assertIn(mayor["activity"], {"working", "watching"})
+        self.assertIn(regulator["activity"], {"working", "watching"})
+
+    def test_social_target_prefers_trusted_contact_who_has_not_heard_hot_topic(self) -> None:
+        self.engine._apply_intel_packet(
+            {
+                "id": "rumor_targeting_probe",
+                "district": "宸ュ巶鍖?",
+                "source": "test rumor",
+                "title": "factory targeting rumor",
+                "line": "Someone is pushing a wage rumor through the yard.",
+                "body": "Someone is pushing a wage rumor through the yard.",
+                "tags": ["rumor", "factory", "wage"],
+                "scope": "district",
+                "topic_kind": "labor",
+                "goods_delta": {},
+                "stocks_delta": {"榫熺敳鑸硅繍": -0.03},
+                "macro_delta": {"worker_unrest": 1.1},
+                "family_delta": {"榫熺敳鑸瑰潪": -0.04},
+            },
+            to_player=False,
+            promote_news=False,
+            intensity=1.0,
+        )
+        topic_id = self.engine.snapshot()["topic_registry"][0]["id"]
+        speaker = next(row for row in self.engine.state["npcs"] if row["id"] == "npc_36")
+        listener = next(row for row in self.engine.state["npcs"] if row["id"] == "npc_23")
+        speaker["prompt_profile"]["trusted_people"] = [listener["name"]]
+        speaker["heard_topic_ids"] = [topic_id]
+        listener["heard_topic_ids"] = []
+        target_name = self.engine._npc_social_target_name(speaker, "organize", topic_id)
+        self.assertEqual(target_name, listener["name"])
+
+    def test_blocked_pairs_do_not_trigger_social_turns_even_if_close(self) -> None:
+        boss = next(row for row in self.engine.state["npcs"] if row["title"] == "龟甲船坞掌门")
+        worker = next(
+            row
+            for row in self.engine.state["npcs"]
+            if row["district"] == "工厂区" and row["role"] in {"工人", "临时工"} and row["id"] != boss["id"]
+        )
+        boss["x"] = 2200.0
+        boss["y"] = 1100.0
+        boss["subregion_id"] = "watermill_yard"
+        worker["x"] = 2208.0
+        worker["y"] = 1106.0
+        worker["subregion_id"] = "watermill_yard"
+        self.engine.state["npcs"] = [boss, worker]
+        baseline = len(self.engine.state["local_broadcasts"])
+        self.engine._run_agent_social_turns({}, allow_llm=False)
+        self.assertEqual(len(self.engine.state["local_broadcasts"]), baseline)
+
+    def test_conversation_registers_topic_memory_for_both_participants(self) -> None:
+        self.engine._apply_intel_packet(
+            {
+                "id": "rumor_conversation_memory",
+                "district": "宸ュ巶鍖?",
+                "source": "test rumor",
+                "title": "factory memory rumor",
+                "line": "Workers are passing around another pay-cut whisper.",
+                "body": "Workers are passing around another pay-cut whisper.",
+                "tags": ["rumor", "factory", "wage"],
+                "scope": "district",
+                "topic_kind": "labor",
+                "goods_delta": {},
+                "stocks_delta": {"榫熺敳鑸硅繍": -0.02},
+                "macro_delta": {"worker_unrest": 0.9},
+                "family_delta": {"榫熺敳鑸瑰潪": -0.03},
+            },
+            to_player=False,
+            promote_news=False,
+            intensity=1.0,
+        )
+        speaker = next(row for row in self.engine.state["npcs"] if row["id"] == "npc_36")
+        listener = next(row for row in self.engine.state["npcs"] if row["id"] == "npc_23")
+        speaker["subregion_id"] = "stoneyard_workcamp"
+        listener["subregion_id"] = "stoneyard_workcamp"
+        self.engine.conversation("npc_36", "npc_23", "测试串话", allow_llm=False)
+        speaker_after = next(row for row in self.engine.state["npcs"] if row["id"] == "npc_36")
+        listener_after = next(row for row in self.engine.state["npcs"] if row["id"] == "npc_23")
+        topic_id = str(speaker_after.get("last_spoken_topic_id", ""))
+        self.assertTrue(topic_id)
+        self.assertIn(topic_id, speaker_after["heard_topic_ids"])
+        self.assertIn(topic_id, listener_after["heard_topic_ids"])
+        self.assertTrue(
+            any(
+                entry.get("kind") == "heard_topic" and entry.get("topic_id") == topic_id
+                for entry in listener_after["local_memory_bank"]
+            )
+        )
+
+    def test_local_hearing_does_not_cross_subregion_for_ordinary_speaker(self) -> None:
+        self.engine._apply_intel_packet(
+            {
+                "id": "rumor_hearing_gate",
+                "district": "璐皯琛?",
+                "source": "test rumor",
+                "title": "market hearing rumor",
+                "line": "A stall whisper is moving through the market.",
+                "body": "A stall whisper is moving through the market.",
+                "tags": ["rumor", "market"],
+                "scope": "district",
+                "topic_kind": "public",
+                "goods_delta": {"闈㈠寘": 0.03},
+                "stocks_delta": {},
+                "macro_delta": {"media_sentiment": 0.4},
+                "family_delta": {},
+            },
+            to_player=False,
+            promote_news=False,
+            intensity=1.0,
+        )
+        topic_id = self.engine.snapshot()["topic_registry"][0]["id"]
+        speaker = next(row for row in self.engine.state["npcs"] if row["id"] == "npc_06")
+        listener = next(row for row in self.engine.state["npcs"] if row["id"] == "npc_03")
+        speaker["speech_lines"] = ["先把这话压低一点。"]
+        speaker["last_spoken_topic_id"] = topic_id
+        speaker["broadcast_intent"] = "low"
+        speaker["emotion_delta"] = {"fear": 0, "greed": 0}
+        speaker["subregion_id"] = "courtyard_garden"
+        listener["subregion_id"] = "wild_path"
+        listener["heard_topic_ids"] = []
+        self.engine._apply_local_hearing(speaker)
+        self.assertNotIn(topic_id, listener["heard_topic_ids"])
 
     def test_buy_and_sell_goods(self) -> None:
         buy = self.engine.action("buy_goods", "贫民街", {"good_name": "面包", "quantity": 1})
@@ -102,11 +374,627 @@ class WorldEngineTest(unittest.TestCase):
         self.assertTrue(after["rumor_log"])
         self.assertTrue(after["player"]["rumors"])
         self.assertTrue(after["local_rumor"])
+        self.assertTrue(after["topic_registry"])
+        self.assertTrue(after["active_topics"])
+        self.assertTrue(str(after["rumor_log"][0].get("topic_id", "")))
         self.assertTrue(
             any(abs(value) > 0.0 for value in after["market_pressure"]["goods"].values())
             or any(abs(value) > 0.0 for value in after["market_pressure"]["stocks"].values())
             or after["quick_hud"]["latest_rumor"]
         )
+
+    def test_topic_registry_merges_repeated_rumors(self) -> None:
+        packet = {
+            "id": "rumor_test_supply",
+            "district": "贫民街",
+            "source": "测试风声",
+            "title": "面包供给风声",
+            "line": "海藻家族在市集悄悄囤货。",
+            "body": "海藻家族在市集悄悄囤货。",
+            "tags": ["传闻", "贫民街", "粮价"],
+            "scope": "district",
+            "topic_kind": "supply",
+            "goods_delta": {"面包": 0.08},
+            "stocks_delta": {},
+            "macro_delta": {},
+            "family_delta": {"海藻家族": 0.04},
+        }
+        self.engine._apply_intel_packet(packet, to_player=False, promote_news=False, intensity=1.0)
+        self.engine._apply_intel_packet(packet, to_player=False, promote_news=False, intensity=0.6)
+        snapshot = self.engine.snapshot()
+        self.assertEqual(len(snapshot["topic_registry"]), 1)
+        topic = snapshot["topic_registry"][0]
+        self.assertEqual(topic["id"], "topic_supply_贫民街_面包")
+        self.assertEqual(topic["mention_count"], 2)
+        self.assertGreaterEqual(topic["spread_count"], 2)
+        self.assertEqual(snapshot["rumor_log"][0]["topic_id"], topic["id"])
+        self.assertTrue(snapshot["active_topics"])
+
+    def test_npc_prompt_includes_explicit_topic_digest(self) -> None:
+        self.engine._apply_intel_packet(
+            {
+                "id": "rumor_prompt_supply",
+                "district": "贫民街",
+                "source": "测试风声",
+                "title": "面包供给风声",
+                "line": "海藻家族在市集悄悄囤货。",
+                "body": "海藻家族在市集悄悄囤货。",
+                "tags": ["传闻", "贫民街", "粮价"],
+                "scope": "district",
+                "topic_kind": "supply",
+                "goods_delta": {"面包": 0.08},
+                "stocks_delta": {},
+                "macro_delta": {},
+                "family_delta": {"海藻家族": 0.04},
+            },
+            to_player=False,
+            promote_news=False,
+            intensity=1.0,
+        )
+        snapshot = self.engine.snapshot()
+        npc = next(n for n in snapshot["npcs"] if n["id"] == "npc_01")
+        self.assertIn("当前显式议题=", npc["agent_prompt"])
+        self.assertIn("面包的供给风声", npc["agent_prompt"])
+
+    def test_seeded_norms_surface_in_snapshot_and_prompt(self) -> None:
+        snapshot = self.engine.snapshot()
+        self.assertTrue(snapshot["norm_registry"])
+        self.assertTrue(snapshot["active_norms"])
+        self.assertTrue(snapshot["quick_hud"]["norm_prompt"])
+        self.assertTrue(snapshot["macro_summary"]["norms_brief"])
+        npc = next(n for n in snapshot["npcs"] if n["id"] == "npc_01")
+        self.assertIn("当前显式规范=", npc["agent_prompt"])
+        self.assertIn("先保住口粮", snapshot["macro_summary"]["norms_brief"])
+
+    def test_npc_topic_and_norm_actions_update_systems(self) -> None:
+        self.engine._apply_intel_packet(
+            {
+                "id": "rumor_labor_norm",
+                "district": "工厂区",
+                "source": "测试风声",
+                "title": "工厂工资风声",
+                "line": "船坞总经理准备继续压工资线。",
+                "body": "船坞总经理准备继续压工资线。",
+                "tags": ["传闻", "工厂", "工资"],
+                "scope": "district",
+                "topic_kind": "labor",
+                "goods_delta": {},
+                "stocks_delta": {"龟甲船运": -0.05},
+                "macro_delta": {"worker_unrest": 1.8},
+                "family_delta": {"龟甲船坞": -0.04},
+            },
+            to_player=False,
+            promote_news=False,
+            intensity=1.0,
+        )
+        topic_id = self.engine.snapshot()["topic_registry"][0]["id"]
+        before_topic = next(topic for topic in self.engine.state["topic_registry"] if topic["id"] == topic_id)
+        before_norm = next(norm for norm in self.engine.state["norm_registry"] if norm["text"] == "降薪不能忍")
+        before_heat = float(before_topic["heat"])
+        before_spread = int(before_topic["spread_count"])
+        before_reinforce = int(before_norm["reinforce_count"])
+        self.engine._apply_llm_npc_updates(
+            [
+                {
+                    "id": "npc_36",
+                    "line": "这口气不能再忍，得把人先聚起来。",
+                    "stance": "激进",
+                    "market_tilt": "neutral",
+                    "topic_action": {"mode": "amplify", "topic_id": topic_id, "intensity": 0.78, "note": "把情绪往上拱"},
+                    "norm_action": {"mode": "reinforce", "text": "降薪不能忍", "intensity": 0.74, "note": "把不满变成共识"},
+                }
+            ]
+        )
+        snapshot = self.engine.snapshot()
+        topic = next(topic for topic in snapshot["topic_registry"] if topic["id"] == topic_id)
+        norm = next(norm for norm in snapshot["norm_registry"] if norm["text"] == "降薪不能忍")
+        spin = snapshot["npc_spin_map"]["npc_36"]
+        self.assertGreater(float(topic["heat"]), before_heat)
+        self.assertGreater(int(topic["spread_count"]), before_spread)
+        self.assertEqual(topic["last_action"], "amplify")
+        self.assertGreater(int(norm["reinforce_count"]), before_reinforce)
+        self.assertEqual(spin["topic_action"]["mode"], "amplify")
+        self.assertEqual(spin["norm_action"]["mode"], "reinforce")
+
+    def test_collective_actions_emerge_from_labor_topic(self) -> None:
+        self.engine._apply_intel_packet(
+            {
+                "id": "rumor_collective_seed",
+                "district": "工厂区",
+                "source": "测试风声",
+                "title": "工厂工资风声",
+                "line": "船坞总经理准备把班次压得更狠，工人私下已经在串。",
+                "body": "船坞总经理准备把班次压得更狠，工人私下已经在串。",
+                "tags": ["传闻", "工厂", "工资"],
+                "scope": "district",
+                "topic_kind": "labor",
+                "goods_delta": {},
+                "stocks_delta": {"龟甲船运": -0.06},
+                "macro_delta": {"worker_unrest": 2.2},
+                "family_delta": {"龟甲船坞": -0.05},
+            },
+            to_player=False,
+            promote_news=False,
+            intensity=1.0,
+        )
+        snapshot = self.engine.snapshot()
+        self.assertTrue(snapshot["collective_action_registry"])
+        self.assertTrue(snapshot["active_collective_actions"])
+        action = snapshot["collective_action_registry"][0]
+        self.assertIn(action["kind"], {"strike", "meeting"})
+        self.assertEqual(action["district"], "工厂区")
+        self.assertTrue(snapshot["quick_hud"]["collective_prompt"])
+        npc = next(n for n in snapshot["npcs"] if n["id"] == "npc_36")
+        self.assertIn("当前显式集体行动=", npc["agent_prompt"])
+
+    def test_collective_actions_progress_from_organize_to_attend(self) -> None:
+        self.engine._apply_intel_packet(
+            {
+                "id": "rumor_collective_progress",
+                "district": "工厂区",
+                "source": "测试风声",
+                "title": "工厂工资风声",
+                "line": "船坞里已经有人在约晚上碰头，准备把降薪的事摊开。",
+                "body": "船坞里已经有人在约晚上碰头，准备把降薪的事摊开。",
+                "tags": ["传闻", "工厂", "工资"],
+                "scope": "district",
+                "topic_kind": "labor",
+                "goods_delta": {},
+                "stocks_delta": {"龟甲船运": -0.05},
+                "macro_delta": {"worker_unrest": 1.9},
+                "family_delta": {"龟甲船坞": -0.04},
+            },
+            to_player=False,
+            promote_news=False,
+            intensity=1.0,
+        )
+        seed_snapshot = self.engine.snapshot()
+        topic_id = seed_snapshot["topic_registry"][0]["id"]
+        action_id = seed_snapshot["collective_action_registry"][0]["id"]
+        workers = [
+            str(npc.get("id", ""))
+            for npc in self.engine.state["npcs"]
+            if str(npc.get("district", "")) == "工厂区" and str(npc.get("role", "")) in {"工人", "临时工"}
+        ][:2]
+        self.assertEqual(len(workers), 2)
+        self.engine._apply_llm_npc_updates(
+            [
+                {
+                    "id": "npc_36",
+                    "line": "先把人拢起来，今晚别各回各家。",
+                    "stance": "激进",
+                    "market_tilt": "neutral",
+                    "topic_action": {"mode": "amplify", "topic_id": topic_id, "intensity": 0.78, "note": "让更多人听见"},
+                    "norm_action": {"mode": "reinforce", "text": "降薪不能忍", "intensity": 0.72, "note": "把不满变成共识"},
+                    "collective_action": {"mode": "organize", "action_id": action_id, "kind": "strike", "intensity": 0.84, "note": "先定一个碰头口"},
+                },
+                {
+                    "id": workers[0],
+                    "line": "我去，今晚算我一个。",
+                    "stance": "抱团",
+                    "market_tilt": "neutral",
+                    "topic_action": {"mode": "share", "topic_id": topic_id, "intensity": 0.62, "note": "传给工友"},
+                    "norm_action": {"mode": "reinforce", "text": "降薪不能忍", "intensity": 0.6, "note": "跟上口风"},
+                    "collective_action": {"mode": "commit", "action_id": action_id, "kind": "strike", "intensity": 0.74, "note": "先答应到"},
+                },
+                {
+                    "id": workers[1],
+                    "line": "别光说，我现在就去门口等。",
+                    "stance": "激进",
+                    "market_tilt": "neutral",
+                    "topic_action": {"mode": "share", "topic_id": topic_id, "intensity": 0.6, "note": "把人带过去"},
+                    "norm_action": {"mode": "reinforce", "text": "降薪不能忍", "intensity": 0.58, "note": "顶住"},
+                    "collective_action": {"mode": "attend", "action_id": action_id, "kind": "strike", "intensity": 0.82, "note": "直接到场"},
+                },
+            ]
+        )
+        snapshot = self.engine.snapshot()
+        action = next(row for row in snapshot["collective_action_registry"] if row["id"] == action_id)
+        spin = snapshot["npc_spin_map"]["npc_36"]
+        self.assertGreaterEqual(int(action["support_count"]), 3)
+        self.assertGreaterEqual(int(action["commit_count"]), 3)
+        self.assertGreaterEqual(int(action["attendee_count"]), 1)
+        self.assertIn(action["stage"], {"committing", "active"})
+        self.assertEqual(spin["collective_action"]["mode"], "organize")
+
+    def test_collective_actions_surface_target_and_response_metadata(self) -> None:
+        self.engine._apply_intel_packet(
+            {
+                "id": "rumor_collective_metadata",
+                "district": "工厂区",
+                "source": "测试风声",
+                "title": "工厂工资风声",
+                "line": "工头压班的消息已经把厂区气压顶高了。",
+                "body": "工头压班的消息已经把厂区气压顶高了。",
+                "tags": ["传闻", "工厂", "工资"],
+                "scope": "district",
+                "topic_kind": "labor",
+                "goods_delta": {},
+                "stocks_delta": {"龟甲船运": -0.05},
+                "macro_delta": {"worker_unrest": 2.0},
+                "family_delta": {"龟甲船坞": -0.04},
+            },
+            to_player=False,
+            promote_news=False,
+            intensity=1.0,
+        )
+        snapshot = self.engine.snapshot()
+        action = snapshot["active_collective_actions"][0]
+        self.assertTrue(action["target_location_title"])
+        self.assertTrue(action["target_subregion_name"])
+        self.assertGreater(float(action["target_x"]), 0.0)
+        self.assertGreater(float(action["target_y"]), 0.0)
+        self.assertIn(action["response_mode"], {"observe", "suppress", "negotiate"})
+        self.assertTrue(snapshot["macro_summary"]["collective_brief"])
+
+    def test_collective_schedule_moves_participants_and_responders(self) -> None:
+        self.engine._apply_intel_packet(
+            {
+                "id": "rumor_collective_schedule",
+                "district": "工厂区",
+                "source": "测试风声",
+                "title": "工厂工资风声",
+                "line": "船坞里已经开始串人，白天就准备堵到值台前。",
+                "body": "船坞里已经开始串人，白天就准备堵到值台前。",
+                "tags": ["传闻", "工厂", "工资"],
+                "scope": "district",
+                "topic_kind": "labor",
+                "goods_delta": {},
+                "stocks_delta": {"龟甲船运": -0.05},
+                "macro_delta": {"worker_unrest": 2.1},
+                "family_delta": {"龟甲船坞": -0.05},
+            },
+            to_player=False,
+            promote_news=False,
+            intensity=1.0,
+        )
+        seed_snapshot = self.engine.snapshot()
+        topic_id = seed_snapshot["topic_registry"][0]["id"]
+        action_id = seed_snapshot["collective_action_registry"][0]["id"]
+        workers = [
+            str(npc.get("id", ""))
+            for npc in self.engine.state["npcs"]
+            if str(npc.get("district", "")) == "工厂区" and str(npc.get("role", "")) in {"工人", "临时工"}
+        ][:2]
+        self.engine._apply_llm_npc_updates(
+            [
+                {
+                    "id": "npc_36",
+                    "line": "白天就堵到值台前，别让他们当没看见。",
+                    "stance": "激进",
+                    "market_tilt": "neutral",
+                    "topic_action": {"mode": "amplify", "topic_id": topic_id, "intensity": 0.78, "note": "往外拱"},
+                    "norm_action": {"mode": "reinforce", "text": "降薪不能忍", "intensity": 0.72, "note": "拧成一股"},
+                    "collective_action": {"mode": "organize", "action_id": action_id, "kind": "strike", "intensity": 0.84, "note": "先把人带过去"},
+                },
+                {
+                    "id": workers[0],
+                    "line": "我跟着过去。",
+                    "stance": "抱团",
+                    "market_tilt": "neutral",
+                    "topic_action": {"mode": "share", "topic_id": topic_id, "intensity": 0.62, "note": "传给工友"},
+                    "norm_action": {"mode": "reinforce", "text": "降薪不能忍", "intensity": 0.6, "note": "跟上"},
+                    "collective_action": {"mode": "commit", "action_id": action_id, "kind": "strike", "intensity": 0.74, "note": "先答应"},
+                },
+                {
+                    "id": workers[1],
+                    "line": "我现在就去。",
+                    "stance": "激进",
+                    "market_tilt": "neutral",
+                    "topic_action": {"mode": "share", "topic_id": topic_id, "intensity": 0.6, "note": "继续带"},
+                    "norm_action": {"mode": "reinforce", "text": "降薪不能忍", "intensity": 0.58, "note": "顶住"},
+                    "collective_action": {"mode": "attend", "action_id": action_id, "kind": "strike", "intensity": 0.82, "note": "到场"},
+                },
+            ]
+        )
+        self.engine.state["clock_minutes"] = 9 * 60 + 45
+        self.engine._apply_clock_state()
+        self.engine._apply_npc_schedule()
+        snapshot = self.engine.snapshot()
+        action = next(row for row in snapshot["collective_action_registry"] if row["id"] == action_id)
+        organizer = next(npc for npc in snapshot["npcs"] if npc["id"] == "npc_36")
+        self.assertIn(organizer["activity"], {"assembling", "protesting", "meeting"})
+        self.assertLess(abs(float(organizer["x"]) - float(action["target_x"])), 120.0)
+        self.assertLess(abs(float(organizer["y"]) - float(action["target_y"])), 120.0)
+        self.assertTrue(action["response_actor_ids"])
+        responder_id = str(action["response_actor_ids"][0])
+        responder = next(npc for npc in snapshot["npcs"] if npc["id"] == responder_id)
+        self.assertIn(responder["activity"], {"responding", "negotiating", "watching"})
+        self.assertLess(abs(float(responder["x"]) - float(action["response_target_x"])), 140.0)
+        self.assertLess(abs(float(responder["y"]) - float(action["response_target_y"])), 140.0)
+
+    def test_collective_intervention_can_trigger_concession(self) -> None:
+        self.engine._apply_intel_packet(
+            {
+                "id": "rumor_collective_concede",
+                "district": "工厂区",
+                "source": "测试风声",
+                "title": "工厂工资风声",
+                "line": "工友已经准备白天去堵值台，场子里都在等谁先松口。",
+                "body": "工友已经准备白天去堵值台，场子里都在等谁先松口。",
+                "tags": ["传闻", "工厂", "工资"],
+                "scope": "district",
+                "topic_kind": "labor",
+                "goods_delta": {},
+                "stocks_delta": {"龟甲船运": -0.05},
+                "macro_delta": {"worker_unrest": 2.0},
+                "family_delta": {"龟甲船坞": -0.05},
+            },
+            to_player=False,
+            promote_news=False,
+            intensity=1.0,
+        )
+        seed_snapshot = self.engine.snapshot()
+        topic_id = seed_snapshot["topic_registry"][0]["id"]
+        action_id = seed_snapshot["collective_action_registry"][0]["id"]
+        workers = [
+            str(npc.get("id", ""))
+            for npc in self.engine.state["npcs"]
+            if str(npc.get("district", "")) == "工厂区" and str(npc.get("role", "")) in {"工人", "临时工"}
+        ][:2]
+        self.engine._apply_llm_npc_updates(
+            [
+                {
+                    "id": "npc_36",
+                    "line": "今天就去把人拢到值台前。",
+                    "stance": "激进",
+                    "market_tilt": "neutral",
+                    "topic_action": {"mode": "amplify", "topic_id": topic_id, "intensity": 0.8, "note": "继续往上拱"},
+                    "norm_action": {"mode": "reinforce", "text": "降薪不能忍", "intensity": 0.72, "note": "拧成一股"},
+                    "collective_action": {"mode": "organize", "action_id": action_id, "kind": "strike", "intensity": 0.86, "note": "把人带过去"},
+                },
+                {
+                    "id": workers[0],
+                    "line": "我先答应，到了时间就去。",
+                    "stance": "抱团",
+                    "market_tilt": "neutral",
+                    "topic_action": {"mode": "share", "topic_id": topic_id, "intensity": 0.66, "note": "传给工友"},
+                    "norm_action": {"mode": "reinforce", "text": "降薪不能忍", "intensity": 0.62, "note": "跟上"},
+                    "collective_action": {"mode": "commit", "action_id": action_id, "kind": "strike", "intensity": 0.74, "note": "先答应"},
+                },
+                {
+                    "id": workers[1],
+                    "line": "我现在就去门口。",
+                    "stance": "激进",
+                    "market_tilt": "neutral",
+                    "topic_action": {"mode": "share", "topic_id": topic_id, "intensity": 0.62, "note": "继续带"},
+                    "norm_action": {"mode": "reinforce", "text": "降薪不能忍", "intensity": 0.58, "note": "顶住"},
+                    "collective_action": {"mode": "attend", "action_id": action_id, "kind": "strike", "intensity": 0.82, "note": "到场"},
+                },
+            ]
+        )
+        self.engine.state["clock_minutes"] = 9 * 60 + 45
+        self.engine._apply_clock_state()
+        self.engine._apply_npc_schedule()
+        before = next(row for row in self.engine.snapshot()["collective_action_registry"] if row["id"] == action_id)
+        before_threshold = float(before["effective_turnout_threshold"])
+        result = self.engine.action("collective_intervene", "工厂区", {"action_id": action_id, "mode": "mediate"})
+        action = next(row for row in result.world_state["collective_action_registry"] if row["id"] == action_id)
+        self.assertLess(float(action["effective_turnout_threshold"]), before_threshold)
+        self.assertEqual(action["resolution_kind"], "conceded")
+        self.assertTrue(result.world_state["collective_outcomes"])
+
+    def test_collective_intervention_can_escalate_suppression(self) -> None:
+        self.engine._apply_intel_packet(
+            {
+                "id": "rumor_collective_escalate",
+                "district": "工厂区",
+                "source": "测试风声",
+                "title": "工厂工资风声",
+                "line": "有人想去值台前闹一场，但现在还是零散串联。",
+                "body": "有人想去值台前闹一场，但现在还是零散串联。",
+                "tags": ["传闻", "工厂", "工资"],
+                "scope": "district",
+                "topic_kind": "labor",
+                "goods_delta": {},
+                "stocks_delta": {"龟甲船运": -0.04},
+                "macro_delta": {"worker_unrest": 1.8},
+                "family_delta": {"龟甲船坞": -0.04},
+            },
+            to_player=False,
+            promote_news=False,
+            intensity=1.0,
+        )
+        seed_snapshot = self.engine.snapshot()
+        topic_id = seed_snapshot["topic_registry"][0]["id"]
+        action_id = seed_snapshot["collective_action_registry"][0]["id"]
+        self.engine._apply_llm_npc_updates(
+            [
+                {
+                    "id": "npc_36",
+                    "line": "先把风放出去，看看谁敢先站出来。",
+                    "stance": "激进",
+                    "market_tilt": "neutral",
+                    "topic_action": {"mode": "amplify", "topic_id": topic_id, "intensity": 0.72, "note": "先点火"},
+                    "norm_action": {"mode": "reinforce", "text": "降薪不能忍", "intensity": 0.66, "note": "试探口风"},
+                    "collective_action": {"mode": "organize", "action_id": action_id, "kind": "strike", "intensity": 0.8, "note": "先拢人"},
+                }
+            ]
+        )
+        self.engine.state["clock_minutes"] = 10 * 60 + 40
+        self.engine._apply_clock_state()
+        self.engine._apply_npc_schedule()
+        before_unrest = int(self.engine.state["macro"]["worker_unrest"])
+        result = self.engine.action("collective_intervene", "工厂区", {"action_id": action_id, "mode": "suppress"})
+        action = next(row for row in result.world_state["collective_action_registry"] if row["id"] == action_id)
+        self.assertEqual(action["resolution_kind"], "escalated")
+        self.assertGreater(int(result.world_state["macro"]["worker_unrest"]), before_unrest)
+
+    def test_collective_action_can_fizzle_after_window(self) -> None:
+        self.engine._apply_intel_packet(
+            {
+                "id": "rumor_collective_fizzle",
+                "district": "工厂区",
+                "source": "测试风声",
+                "title": "工厂工资风声",
+                "line": "有人放话说要去堵值台，但一整天都没多少人真到场。",
+                "body": "有人放话说要去堵值台，但一整天都没多少人真到场。",
+                "tags": ["传闻", "工厂", "工资"],
+                "scope": "district",
+                "topic_kind": "labor",
+                "goods_delta": {},
+                "stocks_delta": {"龟甲船运": -0.04},
+                "macro_delta": {"worker_unrest": 1.6},
+                "family_delta": {"龟甲船坞": -0.03},
+            },
+            to_player=False,
+            promote_news=False,
+            intensity=1.0,
+        )
+        snapshot = self.engine.snapshot()
+        action_id = snapshot["collective_action_registry"][0]["id"]
+        self.engine.state["clock_minutes"] = 18 * 60 + 10
+        self.engine._apply_clock_state()
+        self.engine._refresh_derived_views()
+        action = next(row for row in self.engine.state["collective_action_registry"] if row["id"] == action_id)
+        self.assertEqual(action["resolution_kind"], "fizzled")
+        self.assertTrue(self.engine.state["collective_outcomes"])
+
+    def test_collective_concession_queues_and_applies_settlement_followup(self) -> None:
+        company = next(row for row in self.engine.state["companies"] if row["id"] == "company_blackstone")
+        district = str(company["district"])
+        stock_name = str(company["stock_name"])
+        family_name = str(company["family_owner"])
+        self.engine._apply_intel_packet(
+            {
+                "id": "rumor_collective_settlement",
+                "district": district,
+                "source": "test rumor",
+                "title": "factory wage rumor",
+                "line": "Workers say the yard gate finally has enough people to push for a concession.",
+                "body": "Workers say the yard gate finally has enough people to push for a concession.",
+                "tags": ["rumor", "factory", "wage"],
+                "scope": "district",
+                "topic_kind": "labor",
+                "goods_delta": {},
+                "stocks_delta": {stock_name: -0.05},
+                "macro_delta": {"worker_unrest": 2.0},
+                "family_delta": {family_name: -0.05},
+            },
+            to_player=False,
+            promote_news=False,
+            intensity=1.0,
+        )
+        seed_snapshot = self.engine.snapshot()
+        topic_id = seed_snapshot["topic_registry"][0]["id"]
+        action_id = seed_snapshot["collective_action_registry"][0]["id"]
+        workers = [str(npc.get("id", "")) for npc in self.engine.state["npcs"] if str(npc.get("district", "")) == district and str(npc.get("id", "")) != "npc_36"][:2]
+        self.engine._apply_llm_npc_updates(
+            [
+                {
+                    "id": "npc_36",
+                    "line": "Bring them to the gate first, then force the talk.",
+                    "stance": "militant",
+                    "market_tilt": "neutral",
+                    "topic_action": {"mode": "amplify", "topic_id": topic_id, "intensity": 0.82, "note": "push harder"},
+                    "norm_action": {"mode": "reinforce", "text": "pay cuts cannot stand", "intensity": 0.72, "note": "lock the line"},
+                    "collective_action": {"mode": "organize", "action_id": action_id, "kind": "strike", "intensity": 0.88, "note": "organize the gate"},
+                },
+                {
+                    "id": workers[0],
+                    "line": "I will commit first and show up on time.",
+                    "stance": "solidarity",
+                    "market_tilt": "neutral",
+                    "topic_action": {"mode": "share", "topic_id": topic_id, "intensity": 0.68, "note": "share to coworkers"},
+                    "norm_action": {"mode": "reinforce", "text": "pay cuts cannot stand", "intensity": 0.62, "note": "commit first"},
+                    "collective_action": {"mode": "commit", "action_id": action_id, "kind": "strike", "intensity": 0.76, "note": "commit first"},
+                },
+                {
+                    "id": workers[1],
+                    "line": "I am going there now and will stay on the line.",
+                    "stance": "militant",
+                    "market_tilt": "neutral",
+                    "topic_action": {"mode": "share", "topic_id": topic_id, "intensity": 0.64, "note": "bring another worker"},
+                    "norm_action": {"mode": "reinforce", "text": "pay cuts cannot stand", "intensity": 0.58, "note": "hold the line"},
+                    "collective_action": {"mode": "attend", "action_id": action_id, "kind": "strike", "intensity": 0.84, "note": "show up"},
+                },
+            ]
+        )
+        self.engine.state["clock_minutes"] = 9 * 60 + 45
+        self.engine._apply_clock_state()
+        self.engine._apply_npc_schedule()
+        result = self.engine.action("collective_intervene", district, {"action_id": action_id, "mode": "mediate"})
+        self.assertEqual(result.world_state["collective_outcomes"][0]["resolution_kind"], "conceded")
+        followup = next(row for row in result.world_state["collective_followups"] if row["kind"] == "settlement")
+        self.assertEqual(followup["source_action_id"], action_id)
+        wage_before = float(company["wage_level"])
+        inventory_before = int(company["inventory"])
+        self.engine._advance_clock(120)
+        company_after = next(row for row in self.engine.state["companies"] if row["id"] == "company_blackstone")
+        self.assertGreater(float(company_after["wage_level"]), wage_before)
+        self.assertGreater(int(company_after["inventory"]), inventory_before)
+
+    def test_collective_escalation_spawns_secondary_topic_and_followup_action(self) -> None:
+        company = next(row for row in self.engine.state["companies"] if row["id"] == "company_blackstone")
+        district = str(company["district"])
+        stock_name = str(company["stock_name"])
+        family_name = str(company["family_owner"])
+        self.engine._apply_intel_packet(
+            {
+                "id": "rumor_collective_aftershock",
+                "district": district,
+                "source": "test rumor",
+                "title": "factory crackdown rumor",
+                "line": "People are gathering at the yard gate, and the atmosphere is turning heavy.",
+                "body": "People are gathering at the yard gate, and the atmosphere is turning heavy.",
+                "tags": ["rumor", "factory", "wage"],
+                "scope": "district",
+                "topic_kind": "labor",
+                "goods_delta": {},
+                "stocks_delta": {stock_name: -0.04},
+                "macro_delta": {"worker_unrest": 1.8},
+                "family_delta": {family_name: -0.04},
+            },
+            to_player=False,
+            promote_news=False,
+            intensity=1.0,
+        )
+        seed_snapshot = self.engine.snapshot()
+        topic_id = seed_snapshot["topic_registry"][0]["id"]
+        action_id = seed_snapshot["collective_action_registry"][0]["id"]
+        self.engine._apply_llm_npc_updates(
+            [
+                {
+                    "id": "npc_36",
+                    "line": "Push the crowd to the gate and see who dares to stand up.",
+                    "stance": "militant",
+                    "market_tilt": "neutral",
+                    "topic_action": {"mode": "amplify", "topic_id": topic_id, "intensity": 0.74, "note": "light the fuse"},
+                    "norm_action": {"mode": "reinforce", "text": "pay cuts cannot stand", "intensity": 0.66, "note": "test the wind"},
+                    "collective_action": {"mode": "organize", "action_id": action_id, "kind": "strike", "intensity": 0.82, "note": "gather them"},
+                }
+            ]
+        )
+        self.engine.state["clock_minutes"] = 10 * 60 + 40
+        self.engine._apply_clock_state()
+        self.engine._apply_npc_schedule()
+        result = self.engine.action("collective_intervene", district, {"action_id": action_id, "mode": "suppress"})
+        self.assertEqual(result.world_state["collective_outcomes"][0]["resolution_kind"], "escalated")
+        followup = next(row for row in result.world_state["collective_followups"] if row["kind"] == "crackdown")
+        self.assertEqual(followup["source_action_id"], action_id)
+        self.engine._advance_clock(60)
+        self.engine._refresh_derived_views()
+        followup_after = next(row for row in self.engine.state["collective_followups"] if row["id"] == followup["id"])
+        self.assertTrue(str(followup_after.get("secondary_topic_id", "")))
+        self.assertTrue(str(followup_after.get("followup_action_id", "")))
+        followup_action = next(row for row in self.engine.state["collective_action_registry"] if row["id"] == followup_after["followup_action_id"])
+        self.assertEqual(followup_action["parent_action_id"], action_id)
+        self.assertGreaterEqual(int(followup_action["escalation_level"]), 1)
+
+    def test_player_collective_profile_surfaces_in_hud_and_family_moves(self) -> None:
+        baseline_move = next(row for row in self.engine.snapshot()["family_moves"] if row["id"] == "wolf")
+        district = str(next(row for row in self.engine.state["companies"] if row["id"] == "company_blackstone")["district"])
+        action = {"id": "collective_profile_probe", "label": "profile probe", "district": district}
+        self.engine._record_player_collective_intervention(action, "support")
+        self.engine._record_player_collective_intervention(action, "support")
+        self.engine._record_player_collective_intervention(action, "support")
+        self.engine._refresh_derived_views()
+        profile = self.engine.state["task_summary"]["player_collective_profile"]
+        self.assertEqual(profile["dominant_mode"], "support")
+        self.assertGreaterEqual(int(profile["consecutive_count"]), 3)
+        self.assertTrue(self.engine.state["quick_hud"]["player_collective_stance"])
+        move_after = next(row for row in self.engine.state["family_moves"] if row["id"] == "wolf")
+        self.assertNotEqual(move_after["player_attitude"], baseline_move["player_attitude"])
 
     def test_end_day_prefers_matching_event_conditions(self) -> None:
         self.engine.state["macro"]["worker_unrest"] = 82
@@ -225,17 +1113,17 @@ class WorldEngineTest(unittest.TestCase):
         def fake_pulse_brief(_payload: dict[str, object]) -> dict[str, object]:
             return {
                 "pulse_summary": "交易所在热，港口在忍。",
-                "market_note": "蓝潮航运被人护着，工钱却在拖。",
+                "market_note": "海藻食业被人护着，码头工资却在拖。",
                 "scene_focus": "钟楼下的人都在看牌价和你。",
                 "npc_updates": [
                     {"id": "npc_01", "line": "砖牙：工牌还挂着，但工钱已经慢了。", "stance": "谨慎"},
                     {"id": "npc_02", "line": "灰鳍：港口嘴上稳，手却在抖。", "stance": "现实"},
                 ],
                 "family_updates": [
-                    {"name": "白鹭家族", "public_line": "白鹭家族嘴上说稳，手上先护票。", "hidden_line": "白鹭家族在等别人先慌。", "focus": "护住蓝潮航运"},
+                    {"name": "海藻家族", "public_line": "海藻家族嘴上说保供，手上先护粮票。", "hidden_line": "海藻家族在等别人先慌。", "focus": "护住海藻食业"},
                 ],
                 "company_updates": [
-                    {"id": "company_blue_tide", "headline": "蓝潮航运表面稳着，底下在拖工钱。", "worker_note": "港口工人开始算欠账。", "risk_note": "融资口还没彻底补上。"},
+                    {"id": "company_blue_tide", "headline": "海藻食业表面稳着，底下在拖码头工钱。", "worker_note": "港口工人开始算欠账。", "risk_note": "融资口还没彻底补上。"},
                 ],
             }
 
@@ -249,15 +1137,15 @@ class WorldEngineTest(unittest.TestCase):
         def fake_family_briefing(payload: dict[str, object]) -> dict[str, object]:
             family = payload.get("family", {})
             family_name = str(family.get("name", "家族"))
-            if family_name == "白鹭家族":
-                return {"public_line": "白鹭家族嘴上说稳，手上先护票。", "hidden_line": "白鹭家族在等别人先慌。", "focus": "护住蓝潮航运", "signal": "support"}
+            if family_name == "海藻家族":
+                return {"public_line": "海藻家族嘴上说保供，手上先护粮票。", "hidden_line": "海藻家族在等别人先慌。", "focus": "护住海藻食业", "signal": "support"}
             return {"public_line": f"{family_name}：补单。", "hidden_line": "补单。", "focus": "补单", "signal": "steady"}
 
         def fake_company_briefing(payload: dict[str, object]) -> dict[str, object]:
             company = payload.get("company", {})
             company_id = str(company.get("id", "company"))
             if company_id == "company_blue_tide":
-                return {"headline": "蓝潮航运表面稳着，底下在拖工钱。", "worker_note": "港口工人开始算欠账。", "risk_note": "融资口还没彻底补上。", "signal": "stress"}
+                return {"headline": "海藻食业表面稳着，底下在拖码头工钱。", "worker_note": "港口工人开始算欠账。", "risk_note": "融资口还没彻底补上。", "signal": "stress"}
             return {"headline": f"{company_id}：补单。", "worker_note": "补单。", "risk_note": "补单。", "signal": "steady"}
 
         self.engine.ark.generate_pulse_brief = fake_pulse_brief  # type: ignore[method-assign]
@@ -267,10 +1155,10 @@ class WorldEngineTest(unittest.TestCase):
         result = self.engine.ai_pulse(trigger="manual_scene")
         snapshot = result.world_state
         self.assertEqual(snapshot["llm_pulse_summary"], "交易所在热，港口在忍。")
-        self.assertEqual(snapshot["llm_market_note"], "蓝潮航运被人护着，工钱却在拖。")
+        self.assertEqual(snapshot["llm_market_note"], "海藻食业被人护着，码头工资却在拖。")
         self.assertTrue(snapshot["npc_spin_map"]["npc_01"]["line"].startswith("砖牙"))
-        self.assertEqual(snapshot["family_briefings"]["白鹭家族"]["focus"], "护住蓝潮航运")
-        self.assertIn("拖工钱", snapshot["company_briefings"]["company_blue_tide"]["headline"])
+        self.assertEqual(snapshot["family_briefings"]["海藻家族"]["focus"], "护住海藻食业")
+        self.assertIn("拖码头工钱", snapshot["company_briefings"]["company_blue_tide"]["headline"])
         self.assertEqual(snapshot["quick_hud"]["ai_focus"], "交易所在热，港口在忍。")
         self.assertTrue(any(card.get("llm_source") == "llm" for card in snapshot["npc_cards"]))
 
@@ -364,7 +1252,7 @@ class WorldEngineTest(unittest.TestCase):
                 "market_note": "盘口先听声，再慢慢挪。",
                 "scene_focus": "这轮先看谁漏了。",
                 "npc_updates": [{"id": "npc_01", "line": "npc_01：我先开口。", "stance": "谨慎", "market_tilt": "neutral"}],
-                "family_updates": [{"name": "白鹭家族", "public_line": "白鹭先放稳盘话。", "hidden_line": "白鹭还在后面等。", "focus": "蓝潮航运", "signal": "support"}],
+                "family_updates": [{"name": "海藻家族", "public_line": "海藻先放保供话。", "hidden_line": "海藻还在后面等。", "focus": "海藻食业", "signal": "support"}],
                 "company_updates": [{"id": "company_blue_tide", "headline": "蓝潮先稳住门面。", "worker_note": "码头工人先盯着。", "risk_note": "融资口子没完全开。", "signal": "steady"}],
             }
 
@@ -409,16 +1297,16 @@ class WorldEngineTest(unittest.TestCase):
 
     def test_llm_signals_surface_in_histories_and_market_pressure(self) -> None:
         self.engine.ark._client = object()
-        before_stock = float(self.engine.state["market_pressure"]["stocks"]["蓝潮航运"])
+        before_stock = float(self.engine.state["market_pressure"]["stocks"]["海藻食业"])
 
         def fake_pulse_brief(_payload: dict[str, object]) -> dict[str, object]:
             return {
                 "pulse_summary": "有人在稳盘，有人在咬牙。",
-                "market_note": "蓝潮嘴上稳，下面其实紧。",
+                "market_note": "海藻嘴上稳，下面其实紧。",
                 "scene_focus": "码头和交易所都在盯盘。",
                 "npc_updates": [{"id": "npc_01", "line": "npc_01：我看这票要先往下压。", "stance": "冷眼", "market_tilt": "bearish"}],
-                "family_updates": [{"name": "白鹭家族", "public_line": "白鹭出来护盘。", "hidden_line": "白鹭先保蓝潮。", "focus": "蓝潮航运", "signal": "support"}],
-                "company_updates": [{"id": "company_blue_tide", "headline": "蓝潮航运门面还撑着。", "worker_note": "工人嘴上不说，心里开始算账。", "risk_note": "融资口子紧。", "signal": "stress"}],
+                "family_updates": [{"name": "海藻家族", "public_line": "海藻出来护盘。", "hidden_line": "海藻先保食业。", "focus": "海藻食业", "signal": "support"}],
+                "company_updates": [{"id": "company_blue_tide", "headline": "海藻食业门面还撑着。", "worker_note": "工人嘴上不说，心里开始算账。", "risk_note": "融资口子紧。", "signal": "stress"}],
             }
 
         def fake_npc_spin(payload: dict[str, object]) -> dict[str, object]:
@@ -438,10 +1326,10 @@ class WorldEngineTest(unittest.TestCase):
         self.engine.ark.generate_family_briefing = fake_family_briefing  # type: ignore[method-assign]
         self.engine.ark.generate_company_briefing = fake_company_briefing  # type: ignore[method-assign]
         snapshot = self.engine.ai_pulse(trigger="manual_scene").world_state
-        after_stock = float(snapshot["market_pressure"]["stocks"]["蓝潮航运"])
+        after_stock = float(snapshot["market_pressure"]["stocks"]["海藻食业"])
         self.assertNotEqual(before_stock, after_stock)
         company_state = next(state for state in snapshot["company_states"] if state["id"] == "company_blue_tide")
-        family_move = next(move for move in snapshot["family_moves"] if move["name"] == "白鹭家族")
+        family_move = next(move for move in snapshot["family_moves"] if move["name"] == "海藻家族")
         npc_card = next(card for card in snapshot["npc_cards"] if card["id"] == "npc_01")
         self.assertTrue(company_state["recent_briefs"])
         self.assertTrue(family_move["recent_briefs"])
@@ -703,7 +1591,7 @@ class WorldEngineTest(unittest.TestCase):
                 "scope": "city",
                 "tags": ["媒体", "金融"],
                 "goods_delta": {},
-                "stocks_delta": {"晨报传媒": 0.08},
+                "stocks_delta": {"珊瑚金控": 0.08},
                 "macro_delta": {},
                 "family_delta": {},
             },
@@ -712,6 +1600,68 @@ class WorldEngineTest(unittest.TestCase):
             intensity=1.0,
         )
         self.assertEqual(self.engine.state["global_news"][0]["title"], "报馆把风声写上了头条")
+
+
+    def test_favorability_register_changes_with_money_and_attitude_by_role(self) -> None:
+        banker = next(row for row in self.engine.state["npcs"] if row["title"] == "珊瑚银行掌门")
+        organizer = next(row for row in self.engine.state["npcs"] if row["role"] == "工会领袖")
+
+        banker["player_relation"] = 10
+        banker["player_trust"] = 76.0
+        banker_memory = banker["player_memory"]
+        banker_memory.update(
+            {
+                "talk_count": 8,
+                "friendly_count": 4,
+                "hardball_count": 0,
+                "pressure_from_player": 0.0,
+                "cash_gift_total": 30_000,
+                "bought_over": True,
+                "follows_player": False,
+            }
+        )
+        banker_state = self.engine._npc_favorability_state(banker)
+        self.assertIn(str(banker_state.get("speech_register", "")), {"deferential", "warm", "slick"})
+        self.assertGreater(float(banker_state.get("disclosure_willingness", 0.0)), 0.55)
+
+        organizer["player_relation"] = -6
+        organizer["player_trust"] = 18.0
+        organizer_memory = organizer["player_memory"]
+        organizer_memory.update(
+            {
+                "talk_count": 6,
+                "friendly_count": 0,
+                "hardball_count": 5,
+                "pressure_from_player": 1.3,
+                "cash_gift_total": 0,
+                "bought_over": False,
+                "follows_player": False,
+            }
+        )
+        organizer_state = self.engine._npc_favorability_state(organizer)
+        self.assertIn(str(organizer_state.get("speech_register", "")), {"hostile", "sullen", "guarded"})
+        self.assertGreater(float(organizer_state.get("resentment", 0.0)), float(organizer_state.get("respect", 0.0)))
+
+    def test_player_stock_trade_updates_tape_market_cap_and_holder_registry(self) -> None:
+        result = self.engine.action("buy_stock", "交易所", {"stock_name": "海藻食业", "quantity": 12})
+        snapshot = result.world_state
+        stock = next(row for row in snapshot["stocks"] if row["name"] == "海藻食业")
+        self.assertTrue(snapshot["stock_trade_tape"])
+        self.assertEqual(snapshot["stock_trade_tape"][0]["stock_name"], "海藻食业")
+        self.assertEqual(int(snapshot["stock_trade_tape"][0]["quantity"]), 12)
+        self.assertEqual(int(stock["market_cap"]), int(stock["issued_shares"]) * int(stock["current_price"]))
+        holders = snapshot["stock_holder_registry"]["海藻食业"]
+        self.assertTrue(any(row["holder_id"] == "player" and int(row["shares"]) >= 12 for row in holders))
+
+    def test_social_schedule_keeps_ordinary_worker_on_the_job_without_extreme_heat(self) -> None:
+        worker = next(row for row in self.engine.state["npcs"] if row["district"] == "工厂区" and row["role"] == "工人")
+        self.engine.state["district_signals"]["工厂区"]["labor_heat"] = 0.24
+        self.engine.state["district_signals"]["工厂区"]["gossip"] = 0.18
+        self.engine.state["clock_minutes"] = 10 * 60 + 20
+        self.engine._apply_clock_state()
+        self.engine._apply_npc_schedule()
+        self.assertEqual(worker["activity"], "working")
+        self.assertEqual(worker["subregion_id"], str(worker.get("work_subregion_id", worker.get("subregion_id", ""))))
 
 
 if __name__ == "__main__":

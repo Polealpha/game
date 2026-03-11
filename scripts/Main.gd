@@ -696,7 +696,7 @@ func _register_optional_ui(node: CanvasItem) -> void:
 	optional_ui_nodes.append(node)
 
 
-func _update_compact_hud(snapshot: Dictionary, district_name: String) -> void:
+func _update_compact_hud_legacy(snapshot: Dictionary, district_name: String) -> void:
 	var player_data: Dictionary = snapshot.get("player", {})
 	var quick: Dictionary = snapshot.get("quick_hud", {})
 	var metrics: Dictionary = snapshot.get("demo_metrics", {})
@@ -732,6 +732,70 @@ func _update_compact_hud(snapshot: Dictionary, district_name: String) -> void:
 		secondary_line = _sanitize_visible_text(str(quick.get("latest_rumor", "街上暂时没新风声。")), "街上暂时没新风声。")
 	if not market_note.is_empty():
 		secondary_line += "\n%s" % market_note
+	market_flash_label.text = "[b]盘口[/b] %s\n%s" % [
+		market_flash,
+		secondary_line
+	]
+
+
+func _compact_stock_board(snapshot: Dictionary) -> String:
+	var stocks: Array = snapshot.get("stocks", [])
+	var tape: Array = snapshot.get("stock_trade_tape", [])
+	if stocks.is_empty():
+		return ""
+	var stock_lines: Array[String] = []
+	for item in stocks.slice(0, min(3, stocks.size())):
+		var change_pct := float(item.get("change_pct", 0.0)) * 100.0
+		stock_lines.append("%s %s (%+.2f%%)" % [
+			str(item.get("name", "")),
+			str(item.get("current_price", 0)),
+			change_pct
+		])
+	var result := "[b]三股[/b] %s" % " / ".join(stock_lines)
+	if not tape.is_empty():
+		result += "\n[b]最近成交[/b] %s" % _sanitize_visible_text(str(tape[0].get("anonymous_label", "")), "还没有人下单")
+	return result
+
+
+func _update_compact_hud(snapshot: Dictionary, district_name: String) -> void:
+	var player_data: Dictionary = snapshot.get("player", {})
+	var quick: Dictionary = snapshot.get("quick_hud", {})
+	var metrics: Dictionary = snapshot.get("demo_metrics", {})
+	var visual_summary := _compose_visual_macro_summary(snapshot.get("macro_summary", {}))
+	var subregion_name := _current_subregion_for_position(player.position if not interior_mode else house_interior.get_player_position())
+	var area_label := district_name
+	if not subregion_name.is_empty():
+		area_label = "%s · %s" % [district_name, subregion_name]
+	var social_prompt := _sanitize_visible_text(str(quick.get("social_prompt", "")), "")
+	var institution_flash := _sanitize_visible_text(str(quick.get("institution_flash", "")), "")
+	var ai_focus := _sanitize_visible_text(str(quick.get("ai_focus", "")), "")
+	var market_note := _sanitize_visible_text(str(quick.get("market_note", "")), "")
+	var market_flash := _sanitize_visible_text(str(quick.get("market_flash", "")), "市场还算平静")
+	var objective_line := str(quick.get("objective", "先在街上看一圈，摸清地形和价格。"))
+	if not social_prompt.is_empty():
+		objective_line += "\n街上最值得问的是：%s" % social_prompt
+	if not institution_flash.is_empty():
+		objective_line += "\n机构动作：%s" % institution_flash
+	if not ai_focus.is_empty():
+		objective_line += "\nAI 脉冲：%s" % ai_focus
+	compact_hud_label.text = "[b]第 %s 天 %s[/b]  %s 铜币 · %s\n%s\n[color=#d4b98b]劳动:%s  情报:%s  股票:%s[/color]" % [
+		int(snapshot.get("day", 1)) + visual_day_offset,
+		visual_summary.get("clock_label", "08:00"),
+		player_data.get("cash", 0),
+		area_label,
+		objective_line,
+		metrics.get("work_actions", 0),
+		metrics.get("intel_actions", 0),
+		metrics.get("stock_trades", 0)
+	]
+	var secondary_line := _sanitize_visible_text(str(quick.get("latest_news_title", "")), "")
+	if secondary_line.is_empty():
+		secondary_line = _sanitize_visible_text(str(quick.get("latest_rumor", "街上暂时没新风声。")), "街上暂时没新风声。")
+	if not market_note.is_empty():
+		secondary_line += "\n%s" % market_note
+	var stock_board := _compact_stock_board(snapshot)
+	if not stock_board.is_empty():
+		secondary_line += "\n%s" % stock_board
 	market_flash_label.text = "[b]盘口[/b] %s\n%s" % [
 		market_flash,
 		secondary_line
@@ -1155,6 +1219,7 @@ func _open_interactable_actions() -> void:
 
 	if not interior_mode:
 		_add_nearby_npc_actions(current_district)
+		_add_collective_actions(current_district, current_subregion)
 	_add_action_button("手动触发 AI 脉冲", {"action_type":"manual_pulse"})
 	_add_action_button("测试 AI 连接", {"action_type":"probe_ai"})
 	_add_action_button("重置世界到第一天", {"action_type":"reset_world"})
@@ -1254,6 +1319,37 @@ func _payload_requires_panel(payload: Dictionary) -> bool:
 	return action_type in ["buy_goods", "sell_goods", "buy_stock", "sell_stock", "accept_task", "claim_task"]
 
 
+func _snapshot_goods_names() -> Array:
+	var names: Array = []
+	for row in GameState.snapshot.get("goods", []):
+		var good_name := str(row.get("name", ""))
+		if not good_name.is_empty():
+			names.append(good_name)
+	if names.is_empty():
+		return ["面包", "煤", "罐头"]
+	return names
+
+
+func _snapshot_stock_names() -> Array:
+	var names: Array = []
+	for row in GameState.snapshot.get("stocks", []):
+		var stock_name := str(row.get("name", ""))
+		if not stock_name.is_empty():
+			names.append(stock_name)
+	if names.is_empty():
+		return ["海藻食业", "珊瑚金控", "龟甲船运"]
+	return names
+
+
+func _npc_display_role(card: Dictionary, entry: Dictionary = {}) -> String:
+	var title := str(card.get("title", ""))
+	if title.is_empty():
+		title = str(entry.get("title", ""))
+	if not title.is_empty():
+		return title
+	return str(card.get("role", entry.get("role", "路人")))
+
+
 func _add_context_actions(node: InteractableView) -> void:
 	match node.kind:
 		"house":
@@ -1269,11 +1365,11 @@ func _add_context_actions(node: InteractableView) -> void:
 		"work":
 			_add_action_button("做一轮打工", {"action_type":"work", "district": node.district})
 		"goods":
-			for good_name in ["面包", "煤", "罐头"]:
+			for good_name in _snapshot_goods_names():
 				_add_action_button("买入 %s" % good_name, {"action_type":"buy_goods", "district": node.district, "payload":{"good_name":good_name, "quantity":1}})
 				_add_action_button("卖出 %s" % good_name, {"action_type":"sell_goods", "district": node.district, "payload":{"good_name":good_name, "quantity":1}})
 		"stocks":
-			for stock_name in ["蓝潮航运", "黑石矿业", "晨报传媒"]:
+			for stock_name in _snapshot_stock_names():
 				_add_action_button("买入 %s" % stock_name, {"action_type":"buy_stock", "district": node.district, "payload":{"stock_name":stock_name, "quantity":1}})
 				_add_action_button("卖出 %s" % stock_name, {"action_type":"sell_stock", "district": node.district, "payload":{"stock_name":stock_name, "quantity":1}})
 		"info":
@@ -1338,8 +1434,8 @@ func _add_nearby_npc_actions(current_district: String) -> void:
 	for entry in nearby_npcs:
 		var npc_id := str(entry.get("id", ""))
 		var npc_name := str(entry.get("name", "陌生人"))
-		var npc_role := str(entry.get("role", "路人"))
 		var card := _npc_card_for_id(npc_id)
+		var npc_role := _npc_display_role(card, entry)
 		var relation_status := _npc_relation_status(card)
 		if not card.is_empty():
 			var status_label := Label.new()
@@ -1398,6 +1494,78 @@ func _add_nearby_npc_actions(current_district: String) -> void:
 						"intent": intent
 					}
 				})
+
+
+func _add_collective_actions(current_district: String, current_subregion: String) -> void:
+	var actions: Array = []
+	for raw_action in GameState.snapshot.get("active_collective_actions", []):
+		var action: Dictionary = raw_action
+		var district := str(action.get("district", ""))
+		var scope := str(action.get("scope", "district"))
+		if scope != "city" and district != current_district:
+			continue
+		actions.append(action)
+	if actions.is_empty():
+		return
+	var subtitle := Label.new()
+	subtitle.text = "附近现场"
+	subtitle.add_theme_font_size_override("font_size", 16)
+	subtitle.add_theme_color_override("font_color", Color("7b4026"))
+	action_panel.add_child(subtitle)
+	for raw_action in actions.slice(0, 2):
+		var action: Dictionary = raw_action
+		var line := Label.new()
+		var site_label := str(action.get("target_location_title", action.get("target_subregion_name", current_district)))
+		var stage_label := str(action.get("stage_label", "听说"))
+		var resolution_label := str(action.get("resolution_label", ""))
+		line.text = "  %s [%s @ %s]" % [str(action.get("label", "集体行动")), resolution_label if not resolution_label.is_empty() else stage_label, site_label]
+		line.add_theme_color_override("font_color", Color("6a4a31"))
+		line.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		action_panel.add_child(line)
+		var note := Label.new()
+		var response_note := str(action.get("resolution_note", action.get("response_note", "")))
+		if response_note.is_empty():
+			response_note = "现场正在重新抬价、压场或试探口风。"
+		note.text = "  %s" % response_note
+		note.add_theme_color_override("font_color", Color("7a6448"))
+		note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		action_panel.add_child(note)
+		if not resolution_label.is_empty():
+			continue
+		if not current_subregion.is_empty() and current_subregion != str(action.get("target_subregion_name", current_subregion)):
+			_add_action_button("赶去 %s 围观" % site_label, {
+				"action_type":"collective_intervene",
+				"district": current_district,
+				"payload":{
+					"action_id": str(action.get("id", "")),
+					"mode":"mediate"
+				}
+			})
+			continue
+		_add_action_button("给 %s 撑场" % str(action.get("label", "现场")), {
+			"action_type":"collective_intervene",
+			"district": current_district,
+			"payload":{
+				"action_id": str(action.get("id", "")),
+				"mode":"support"
+			}
+		})
+		_add_action_button("替双方斡旋", {
+			"action_type":"collective_intervene",
+			"district": current_district,
+			"payload":{
+				"action_id": str(action.get("id", "")),
+				"mode":"mediate"
+			}
+		})
+		_add_action_button("帮机构压场", {
+			"action_type":"collective_intervene",
+			"district": current_district,
+			"payload":{
+				"action_id": str(action.get("id", "")),
+				"mode":"suppress"
+			}
+		})
 
 
 func _add_action_button(label_text: String, payload: Dictionary) -> void:
@@ -2005,6 +2173,7 @@ func _on_api_response(tag: String, data: Dictionary) -> void:
 					dialogue["trade_quotes"] = active_dialogue_context.get("trade_quotes", [])
 				if str(dialogue.get("npc_name", "")).is_empty():
 					dialogue["npc_name"] = str(active_dialogue_context.get("npc_name", ""))
+				dialogue["trade_quotes"] = _npc_card_for_id(str(dialogue.get("npc_id", ""))).get("trade_quotes", dialogue.get("trade_quotes", []))
 			if str(dialogue.get("title", "")).is_empty():
 				dialogue["title"] = "你与 %s 交谈" % str(dialogue.get("npc_name", "附近角色"))
 			if str(dialogue.get("body", "")).is_empty():
@@ -2371,7 +2540,7 @@ func _on_snapshot_updated(snapshot: Dictionary) -> void:
 	status_label.text += "  ·  天气: %s" % weather_label
 	_update_compact_hud(snapshot, district_name)
 	_update_goods(snapshot.get("goods", []), player_data.get("goods_inventory", {}))
-	_update_stocks(snapshot.get("stocks", []), player_data.get("stock_holdings", {}))
+	_update_stocks(snapshot.get("stocks", []), player_data.get("stock_holdings", {}), snapshot.get("stock_trade_tape", []))
 	_update_news(news_items)
 	_refresh_news_ticker(snapshot)
 	_update_families(snapshot.get("families", []))
@@ -2395,6 +2564,8 @@ func _on_snapshot_updated(snapshot: Dictionary) -> void:
 	)
 	house_interior.update_house_state(_house_state_for_id(str(current_house_data.get("id", ""))))
 	_refresh_npcs()
+	if modal_overlay.visible and not active_dialogue_context.is_empty():
+		_refresh_modal_trade_panel(active_dialogue_context)
 	_maybe_trigger_news_emotion_wave(news_items, district_name)
 	if not interior_mode:
 		_update_minimap()
@@ -2495,7 +2666,7 @@ func _update_goods(goods: Array, inventory: Dictionary) -> void:
 	goods_label.text = "\n".join(lines)
 
 
-func _update_stocks(stocks: Array, holdings: Dictionary) -> void:
+func _update_stocks_legacy(stocks: Array, holdings: Dictionary) -> void:
 	var lines: Array[String] = []
 	for item in stocks:
 		var sentiment := str(item.get("market_sentiment", "平"))
@@ -2511,6 +2682,43 @@ func _update_stocks(stocks: Array, holdings: Dictionary) -> void:
 			sentiment_color,
 			sentiment
 		])
+	stocks_label.text = "\n".join(lines)
+
+
+func _update_stocks(stocks: Array, holdings: Dictionary, tape: Array) -> void:
+	var lines: Array[String] = []
+	for item in stocks:
+		var sentiment := str(item.get("market_sentiment", "平"))
+		var sentiment_color := "#6a5a43"
+		if sentiment == "乐观":
+			sentiment_color = "#8f2d2d"
+		elif sentiment == "恐慌":
+			sentiment_color = "#2f6f4f"
+		var change_pct := float(item.get("change_pct", 0.0)) * 100.0
+		var change_amount := int(item.get("change_amount", 0))
+		var turnover := float(item.get("float_turnover", 0.0)) * 100.0
+		var change_color := "#6a5a43"
+		if change_pct > 0.01:
+			change_color = "#8f2d2d"
+		elif change_pct < -0.01:
+			change_color = "#2f6f4f"
+		lines.append("[b]%s[/b]  价%s  持仓:%s  [color=%s]情绪:%s[/color]\n[color=%s]涨跌:%+d / %+.2f%%[/color]  总市值:%s  流通热度:%.1f%%" % [
+			item.get("name", ""),
+			item.get("current_price", 0),
+			holdings.get(item.get("name", ""), 0),
+			sentiment_color,
+			sentiment,
+			change_color,
+			change_amount,
+			change_pct,
+			item.get("market_cap", 0),
+			turnover
+		])
+	if not tape.is_empty():
+		var tape_lines: Array[String] = []
+		for row in tape.slice(0, min(4, tape.size())):
+			tape_lines.append("• %s" % _sanitize_visible_text(str(row.get("anonymous_label", "")), "盘面刚动了一下"))
+		lines.append("[b]最近匿名成交[/b]\n%s" % "\n".join(tape_lines))
 	stocks_label.text = "\n".join(lines)
 
 
@@ -3583,21 +3791,22 @@ func _refresh_modal_trade_panel(dialogue_context: Dictionary) -> void:
 		action_button.text = str(quote.get("button", "交易"))
 		_style_button(action_button, Color("6c4a2a"), Color("8a6037"), Color("4f3520"))
 		var action_type := str(quote.get("action_type", ""))
-		var good_name := str(quote.get("good_name", ""))
-		var quantity := int(quote.get("quantity", 1))
-		action_button.disabled = action_type.is_empty() or good_name.is_empty()
+		action_button.disabled = action_type.is_empty()
 		action_button.pressed.connect(func() -> void:
-			_submit_modal_trade(action_type, good_name, quantity)
+			_submit_modal_trade(quote)
 		)
 		modal_trade_buttons.add_child(action_button)
 
 
-func _modal_trade_payload(dialogue_context: Dictionary) -> Dictionary:
+func _modal_trade_payload_legacy(dialogue_context: Dictionary) -> Dictionary:
 	var npc_id := str(dialogue_context.get("npc_id", ""))
 	if npc_id.is_empty():
 		return {}
 	var npc_card := _npc_card_for_id(npc_id)
 	var quotes: Array = dialogue_context.get("trade_quotes", [])
+	var card_quotes: Array = npc_card.get("trade_quotes", [])
+	if not card_quotes.is_empty():
+		quotes = card_quotes
 	if quotes.is_empty():
 		var dialogue: Dictionary = GameState.snapshot.get("last_dialogue", {})
 		if str(dialogue.get("npc_id", "")) == npc_id:
@@ -3611,17 +3820,63 @@ func _modal_trade_payload(dialogue_context: Dictionary) -> Dictionary:
 		quote_lines.append("• %s" % str(quote.get("description", "")))
 	return {
 		"npc_name": str(dialogue_context.get("npc_name", npc_card.get("name", "对方"))),
-		"summary": "[b]身份[/b] %s · [b]态度[/b] %s\n[b]库存[/b] %s\n%s" % [
-			str(npc_card.get("role", "街头角色")),
+		"summary": "[b]身份[/b] %s · [b]态度[/b] %s\n[b]现金[/b] %s 铜币 · [b]库存[/b] %s\n[b]消息生意[/b] %s\n%s" % [
+			_npc_display_role(npc_card),
 			str(npc_card.get("relation_status", "观望")),
+			int(npc_card.get("cash", 0)),
 			str(npc_card.get("inventory_summary", "没有报出库存")),
+			"可卖，眼下开价 %s 铜币" % int(npc_card.get("intel_price", 0)) if bool(npc_card.get("can_sell_info", false)) else "暂时不肯直接卖",
 			"\n".join(quote_lines),
 		],
 		"quotes": quotes,
 	}
 
 
+func _modal_trade_payload(dialogue_context: Dictionary) -> Dictionary:
+	var npc_id := str(dialogue_context.get("npc_id", ""))
+	if npc_id.is_empty():
+		return {}
+	var npc_card := _npc_card_for_id(npc_id)
+	var quotes: Array = dialogue_context.get("trade_quotes", [])
+	var card_quotes: Array = npc_card.get("trade_quotes", [])
+	if not card_quotes.is_empty():
+		quotes = card_quotes
+	if quotes.is_empty():
+		var dialogue: Dictionary = GameState.snapshot.get("last_dialogue", {})
+		if str(dialogue.get("npc_id", "")) == npc_id:
+			quotes = dialogue.get("trade_quotes", [])
+	if quotes.is_empty() and not npc_card.is_empty():
+		quotes = _fallback_trade_quotes(npc_card)
+	if quotes.is_empty():
+		return {}
+	var quote_lines: Array[String] = []
+	for quote in quotes:
+		quote_lines.append("• %s" % str(quote.get("description", "")))
+	var relation_status := str(npc_card.get("relation_status", "观望"))
+	var speech_register := str(npc_card.get("speech_register", "平视你"))
+	var intel_line := "暂时不肯直接卖"
+	if bool(npc_card.get("can_sell_info", false)):
+		intel_line = "可卖，眼下开价 %s 铜币" % int(npc_card.get("intel_price", 0))
+	var summary_text := "[b]身份[/b] %s · [b]态度[/b] %s · [b]口风[/b] %s\n[b]现金[/b] %s 铜币 · [b]库存[/b] %s\n[b]消息生意[/b] %s\n%s" % [
+		_npc_display_role(npc_card),
+		relation_status,
+		speech_register,
+		int(npc_card.get("cash", 0)),
+		str(npc_card.get("inventory_summary", "没有报出库存")),
+		intel_line,
+		"\n".join(quote_lines),
+	]
+	return {
+		"npc_name": str(dialogue_context.get("npc_name", npc_card.get("name", "对方"))),
+		"summary": summary_text,
+		"quotes": quotes,
+	}
+
+
 func _fallback_trade_quotes(npc_card: Dictionary) -> Array:
+	var ready_quotes: Array = npc_card.get("trade_quotes", [])
+	if not ready_quotes.is_empty():
+		return ready_quotes
 	var quotes: Array = []
 	var goods_rows: Array = GameState.snapshot.get("goods", [])
 	for spec in [
@@ -3646,8 +3901,26 @@ func _fallback_trade_quotes(npc_card: Dictionary) -> Array:
 			"action_type": action_type,
 			"good_name": good_name,
 			"quantity": int(spec.get("qty", 1)),
+			"amount": quoted_price * int(spec.get("qty", 1)),
 			"button": button_text,
 			"description": description,
+		})
+	for amount in [1000, 10000, 100000]:
+		quotes.append({
+			"action_type": "gift_money",
+			"amount": amount,
+			"quantity": 1,
+			"button": "送 %s 铜币" % amount,
+			"description": "真给对方 %s 铜币，这笔钱会直接进他的口袋。" % amount,
+		})
+	if bool(npc_card.get("can_sell_info", false)):
+		quotes.append({
+			"action_type": "buy_intel",
+			"amount": int(npc_card.get("intel_price", 0)),
+			"quantity": 1,
+			"topic_id": "",
+			"button": "买消息 %s" % int(npc_card.get("intel_price", 0)),
+			"description": "花 %s 铜币买一条消息。" % int(npc_card.get("intel_price", 0)),
 		})
 	return quotes
 
@@ -3659,20 +3932,21 @@ func _snapshot_good_row(goods_rows: Array, good_name: String) -> Dictionary:
 	return {}
 
 
-func _submit_modal_trade(action_type: String, good_name: String, quantity: int) -> void:
+func _submit_modal_trade(quote: Dictionary) -> void:
 	var npc_id := str(active_dialogue_context.get("npc_id", ""))
 	if npc_id.is_empty():
 		GameState.add_toast("当前没有可交易的对象。")
 		return
+	var payload: Dictionary = quote.duplicate(true)
+	payload["npc_id"] = npc_id
+	payload.erase("button")
+	payload.erase("description")
+	var action_type := str(payload.get("action_type", ""))
 	_submit_interaction({
 		"action_type": "trade_action",
 		"trade_mode": action_type,
 		"district": _current_district_for_position(player.position if not interior_mode else house_interior.get_player_position()),
-		"payload": {
-			"good_name": good_name,
-			"quantity": quantity,
-			"npc_id": npc_id,
-		}
+		"payload": payload
 	})
 
 

@@ -7,6 +7,7 @@ var district_states: Dictionary = {}
 var player_position := Vector2.ZERO
 var npc_points: Array = []
 var interactable_points: Array = []
+var collective_points: Array = []
 var current_district := ""
 
 
@@ -21,6 +22,7 @@ func update_snapshot(snapshot: Dictionary, actor_position: Vector2, interactable
 	current_district = district_name
 	npc_points.clear()
 	interactable_points.clear()
+	collective_points.clear()
 	for row in snapshot.get("districts", []):
 		district_states[str(row.get("name", ""))] = str(row.get("state", "normal"))
 	for npc in snapshot.get("npcs", []):
@@ -28,6 +30,14 @@ func update_snapshot(snapshot: Dictionary, actor_position: Vector2, interactable
 			"position": Vector2(float(npc.get("x", 0.0)), float(npc.get("y", 0.0))),
 			"district": str(npc.get("district", "")),
 			"mood": str(npc.get("mood", ""))
+		})
+	for action in snapshot.get("active_collective_actions", []):
+		collective_points.append({
+			"position": Vector2(float(action.get("target_x", 0.0)), float(action.get("target_y", 0.0))),
+			"district": str(action.get("district", "")),
+			"kind": str(action.get("kind", "")),
+			"stage": str(action.get("stage", "")),
+			"response_mode": str(action.get("response_mode", ""))
 		})
 	for node in interactables:
 		interactable_points.append({
@@ -51,6 +61,10 @@ func _draw() -> void:
 	draw_line(_world_to_map(Vector2(40, 490)), _world_to_map(Vector2(1560, 490)), Color("c49a63"), 2.0)
 	for point in interactable_points:
 		draw_circle(_world_to_map(point.get("position", Vector2.ZERO)), 3.5, _interactable_color(str(point.get("kind", ""))))
+	for point in collective_points:
+		var marker := _world_to_map(point.get("position", Vector2.ZERO))
+		draw_circle(marker, 6.5, _collective_color(str(point.get("kind", "")), str(point.get("response_mode", ""))))
+		draw_circle(marker, 10.5, Color(1, 0.94, 0.76, 0.14))
 	for point in npc_points:
 		draw_circle(_world_to_map(point.get("position", Vector2.ZERO)), 2.2, _npc_color(str(point.get("mood", ""))))
 	draw_circle(_world_to_map(player_position), 4.5, Color("8bd36c"))
@@ -110,6 +124,23 @@ func _interactable_color(kind: String) -> Color:
 			return Color("d4715d")
 		"end_day":
 			return Color("f1df9d")
+	return Color("d8c8a1")
+
+
+func _collective_color(kind: String, response_mode: String) -> Color:
+	if response_mode == "suppress":
+		return Color("b54e40")
+	if response_mode == "negotiate":
+		return Color("c7a24e")
+	match kind:
+		"strike":
+			return Color("c95b47")
+		"meeting":
+			return Color("d0a45d")
+		"rally":
+			return Color("be6f56")
+		"party":
+			return Color("8d7cc0")
 	return Color("d8c8a1")
 
 

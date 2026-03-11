@@ -80,6 +80,108 @@ HOUSE_PATROL_POINTS: dict[str, list[tuple[float, float]]] = {
     "exchange_house": [(1348.0, 628.0), (1394.0, 628.0), (1338.0, 666.0), (1402.0, 664.0)],
 }
 
+COLLECTIVE_GATHER_POINTS: dict[str, dict[str, dict[str, Any]]] = {
+    "贫民街": {
+        "meeting": {"location_id": "charity_board", "title": "山坡告示牌", "subregion_id": "forest_farm", "subregion_name": "农坡地", "x": 240.0, "y": 360.0},
+        "rally": {"location_id": "forest_stall", "title": "街口风声", "subregion_id": "courtyard_garden", "subregion_name": "鱼市前街", "x": 720.0, "y": 900.0},
+        "party": {"location_id": "rag_broker", "title": "巷口杂铺", "subregion_id": "courtyard_garden", "subregion_name": "鱼市前街", "x": 430.0, "y": 760.0},
+    },
+    "港口": {
+        "meeting": {"location_id": "harbor_broker", "title": "运河耳报", "subregion_id": "canal_harbor", "subregion_name": "运河码头", "x": 1260.0, "y": 1080.0},
+        "strike": {"location_id": "dock_labor", "title": "船坞工牌", "subregion_id": "shipyard_workshop", "subregion_name": "船坞工坊", "x": 1430.0, "y": 1540.0},
+        "rally": {"location_id": "bridge_notice", "title": "石桥留言牌", "subregion_id": "canal_harbor", "subregion_name": "运河码头", "x": 980.0, "y": 1000.0},
+        "party": {"location_id": "dock_house", "title": "石桥住屋", "subregion_id": "stonebridge_quarter", "subregion_name": "石桥街口", "x": 860.0, "y": 720.0},
+    },
+    "工厂区": {
+        "meeting": {"location_id": "rumor_post", "title": "货场小报", "subregion_id": "stoneyard_workcamp", "subregion_name": "石料工地", "x": 2520.0, "y": 1450.0},
+        "strike": {"location_id": "mill_notice", "title": "机房白板", "subregion_id": "watermill_yard", "subregion_name": "磨坊前院", "x": 2070.0, "y": 980.0},
+        "rally": {"location_id": "foreman_desk", "title": "工头值台", "subregion_id": "watermill_yard", "subregion_name": "磨坊前院", "x": 1940.0, "y": 1200.0},
+        "party": {"location_id": "canteen_supply", "title": "厂区配给", "subregion_id": "watermill_yard", "subregion_name": "磨坊前院", "x": 1850.0, "y": 1440.0},
+    },
+    "交易所": {
+        "meeting": {"location_id": "family_registry", "title": "会客前厅", "subregion_id": "rune_tower", "subregion_name": "塔楼会客厅", "x": 1120.0, "y": 620.0},
+        "rally": {"location_id": "chapel_notice", "title": "广场耳语", "subregion_id": "church_graveyard", "subregion_name": "教堂墓园", "x": 2040.0, "y": 520.0},
+        "party": {"location_id": "exchange_board", "title": "交易牌价", "subregion_id": "clocktower_market", "subregion_name": "钟楼市集", "x": 2190.0, "y": 220.0},
+    },
+}
+
+SOCIAL_BAND_SUBREGIONS: dict[str, dict[str, str]] = {
+    "贫民街": {
+        "elite": "forest_farm",
+        "authority": "forest_farm",
+        "manager": "forest_farm",
+        "finance": "courtyard_garden",
+        "trade": "courtyard_garden",
+        "media": "courtyard_garden",
+        "organizer": "courtyard_garden",
+        "labor": "courtyard_garden",
+        "precariat": "wild_path",
+        "resident": "wild_path",
+    },
+    "港口": {
+        "elite": "canal_harbor",
+        "authority": "canal_harbor",
+        "manager": "canal_harbor",
+        "finance": "canal_harbor",
+        "trade": "stonebridge_quarter",
+        "media": "stonebridge_quarter",
+        "organizer": "shipyard_workshop",
+        "labor": "shipyard_workshop",
+        "precariat": "stonebridge_quarter",
+        "resident": "stonebridge_quarter",
+    },
+    "工厂区": {
+        "elite": "watermill_yard",
+        "authority": "watermill_yard",
+        "manager": "watermill_yard",
+        "finance": "watermill_yard",
+        "trade": "stoneyard_workcamp",
+        "media": "watermill_yard",
+        "organizer": "stoneyard_workcamp",
+        "labor": "stoneyard_workcamp",
+        "precariat": "stoneyard_workcamp",
+        "resident": "stoneyard_workcamp",
+    },
+    "交易所": {
+        "elite": "rune_tower",
+        "authority": "rune_tower",
+        "manager": "rune_tower",
+        "finance": "clocktower_market",
+        "trade": "clocktower_market",
+        "media": "church_graveyard",
+        "organizer": "church_graveyard",
+        "labor": "clocktower_market",
+        "precariat": "clocktower_market",
+        "resident": "church_graveyard",
+    },
+}
+
+SOCIAL_BAND_WHITELIST: dict[str, set[str]] = {
+    "elite": {"elite", "authority", "manager", "finance", "media"},
+    "authority": {"elite", "authority", "manager", "finance", "media", "trade"},
+    "manager": {"elite", "authority", "manager", "finance", "media", "trade", "organizer"},
+    "finance": {"elite", "authority", "manager", "finance", "media", "trade"},
+    "trade": {"authority", "manager", "finance", "trade", "media", "labor", "precariat", "resident"},
+    "media": {"elite", "authority", "manager", "finance", "trade", "media", "organizer", "labor", "precariat", "resident"},
+    "organizer": {"manager", "media", "organizer", "labor", "precariat", "trade", "resident"},
+    "labor": {"trade", "media", "organizer", "labor", "precariat", "resident"},
+    "precariat": {"trade", "media", "organizer", "labor", "precariat", "resident"},
+    "resident": {"trade", "media", "organizer", "labor", "precariat", "resident"},
+}
+
+NPC_WORK_SUBREGION_OVERRIDES: dict[str, str] = {
+    "npc_07": "church_graveyard",
+    "npc_09": "rune_tower",
+    "npc_10": "rune_tower",
+    "npc_11": "rune_tower",
+    "npc_14": "clocktower_market",
+    "npc_15": "clocktower_market",
+    "npc_16": "rune_tower",
+    "npc_17": "clocktower_market",
+    "npc_22": "rune_tower",
+    "npc_35": "church_graveyard",
+}
+
 
 @dataclass
 class ActionResult:
@@ -97,6 +199,7 @@ class WorldEngine:
         self.stock_defs = self._load_json("stocks.json")
         self.event_defs = self._load_json("events.json")
         self.npc_defs = self._load_json("npcs.json")
+        self.npc_prompt_defs = self._load_json("npc_prompt_profiles.json")
         self.family_defs = self._load_json("families.json")
         self.company_defs = self._load_json("companies.json")
         self.macro_defaults = self._load_json("macro.json")
@@ -121,6 +224,17 @@ class WorldEngine:
                 item = copy.deepcopy(stock)
                 item["current_price"] = item["base_price"]
                 item["market_sentiment"] = "平"
+                item["previous_close"] = int(item.get("base_price", 10))
+                item["reference_price"] = float(item.get("base_price", 10))
+                item["issued_shares"] = int(item.get("issued_shares", self._stock_issued_shares(item)))
+                item["free_float"] = int(item.get("free_float", max(1, round(item["issued_shares"] * 0.56))))
+                item["trade_volume"] = 0
+                item["float_turnover"] = 0.0
+                item["net_cash_flow"] = 0.0
+                item["last_trade_price"] = int(item["current_price"])
+                item["change_amount"] = 0
+                item["change_pct"] = 0.0
+                item["market_cap"] = int(item["issued_shares"] * item["current_price"])
                 stocks.append(item)
 
             families = copy.deepcopy(self.family_defs)
@@ -137,6 +251,8 @@ class WorldEngine:
             subregion_lookup = {row["id"]: row for row in subregions}
             npcs = copy.deepcopy(self.npc_defs)
             for index, npc in enumerate(npcs):
+                npc["prompt_profile"] = copy.deepcopy(self.npc_prompt_defs.get(str(npc.get("id", "")), {}))
+                npc["social_band"] = self._npc_social_band(npc)
                 npc["current_goal"] = npc.get("current_goal", "守住今天")
                 npc["mood"] = npc.get("mood", "wary")
                 npc["stance"] = npc.get("stance", "观望")
@@ -152,8 +268,19 @@ class WorldEngine:
                 npc["subregion_name"] = str(
                     npc.get("subregion_name", subregion_meta.get("name", ""))
                 )
-                npc["work_x"] = float(npc.get("x", 0.0))
-                npc["work_y"] = float(npc.get("y", 0.0))
+                preferred_work_subregion = self._preferred_work_subregion(npc)
+                work_subregion_id = str(npc.get("work_subregion_id", preferred_work_subregion or npc["subregion_id"]))
+                work_subregion_meta = subregion_lookup.get(work_subregion_id, subregion_meta)
+                work_anchor_x, work_anchor_y = self._subregion_anchor(
+                    work_subregion_id,
+                    float(npc.get("x", 0.0)),
+                    float(npc.get("y", 0.0)),
+                )
+                work_slot_x, work_slot_y = self._npc_slot_offset(npc, "work")
+                npc["work_subregion_id"] = work_subregion_id
+                npc["work_subregion_name"] = str(npc.get("work_subregion_name", work_subregion_meta.get("name", npc["subregion_name"])))
+                npc["work_x"] = round(work_anchor_x + work_slot_x, 1)
+                npc["work_y"] = round(work_anchor_y + work_slot_y, 1)
                 house_meta = self._house_for_district(str(npc.get("district", "")))
                 npc["home_id"] = house_meta["id"]
                 npc["home_label"] = house_meta["title"]
@@ -164,6 +291,9 @@ class WorldEngine:
                 npc["activity"] = "working"
                 npc["home_state"] = "away"
                 npc["indoor_activity"] = "away"
+                npc["collective_action_id"] = ""
+                npc["collective_role"] = ""
+                npc["response_mode"] = ""
                 npc["lights_on"] = False
                 npc["schedule_note"] = "白天还在外面奔忙。"
                 npc["schedule_role"] = self._schedule_role_for_npc(npc)
@@ -179,20 +309,38 @@ class WorldEngine:
                 "weather": {"kind": "sunny", "label": "晴天", "intensity": 0.12, "slot": -1, "day": 1},
                 "last_tick_at": time.time(),
                 "player": {
-                    "cash": 30,
+                    "cash": 1_000_000,
                     "credit": 20,
                     "reputation": 5,
                     "class_position": "底层",
+                    "attitude_style": "respectful",
+                    "last_talk_approach": "cautious",
                     "goods_inventory": {"面包": 1, "煤": 0, "罐头": 0},
-                    "stock_holdings": {"蓝潮航运": 0, "黑石矿业": 0, "晨报传媒": 0},
+                    "stock_holdings": {"海藻食业": 0, "珊瑚金控": 0, "龟甲船运": 0},
                     "rumors": [],
-                    "family_relations": {"白鹭家族": 0, "灰狼家族": 0, "猫头鹰家族": 0, "街头互助会": 0},
+                    "family_relations": {"海藻家族": 0, "珊瑚银行": 0, "龟甲船坞": 0, "镇政府": 0, "街头互助会": 0},
+                    "collective_profile": {
+                        "support_count": 0,
+                        "mediate_count": 0,
+                        "suppress_count": 0,
+                        "worker_standing": 0.0,
+                        "capital_standing": 0.0,
+                        "government_standing": 0.0,
+                        "public_standing": 0.0,
+                        "dominant_mode": "observe",
+                        "stance_label": "看风向的人",
+                        "consecutive_mode": "",
+                        "consecutive_count": 0,
+                        "history": [],
+                    },
                     "task_progress": {},
                     "active_task_id": "",
                     "completed_tasks": [],
                 },
                 "goods": goods,
                 "stocks": stocks,
+                "stock_trade_tape": [],
+                "stock_holder_registry": {},
                 "families": families,
                 "companies": companies,
                 "districts": districts,
@@ -204,6 +352,17 @@ class WorldEngine:
                 "local_broadcasts": [],
                 "rumor_log": [],
                 "local_rumor": [],
+                "topic_registry": [],
+                "active_topics": [],
+                "topic_decay_tick": 8 * 60,
+                "norm_registry": [],
+                "active_norms": [],
+                "norm_decay_tick": 8 * 60,
+                "collective_action_registry": [],
+                "active_collective_actions": [],
+                "collective_action_decay_tick": 8 * 60,
+                "collective_outcomes": [],
+                "collective_followups": [],
                 "district_topic": {},
                 "city_news": [],
                 "company_states": [],
@@ -261,6 +420,7 @@ class WorldEngine:
                 "last_pulse_at": "未触发",
                 "last_day_end_at": "未触发",
             }
+            self._seed_norm_registry()
             self._seed_global_news()
             self._apply_clock_state()
             self._apply_npc_schedule()
@@ -298,6 +458,12 @@ class WorldEngine:
                     return self._trade_stock(payload["stock_name"], int(payload.get("quantity", 1)), 1)
                 case "sell_stock":
                     return self._trade_stock(payload["stock_name"], int(payload.get("quantity", 1)), -1)
+                case "gift_money":
+                    return self._gift_money_to_npc(str(payload.get("npc_id", "")), int(payload.get("amount", 0)), district)
+                case "buy_intel":
+                    return self._buy_intel_from_npc(str(payload.get("npc_id", "")), int(payload.get("amount", 0)), str(payload.get("topic_id", "")), district)
+                case "collective_intervene":
+                    return self._intervene_collective(district, payload)
                 case "accept_task":
                     return self._accept_task(payload["task_id"])
                 case "claim_task":
@@ -310,9 +476,12 @@ class WorldEngine:
             self._advance_realtime_clock()
             self._run_livelihood_tick("end_day")
             self._settle_company_operations("end_day")
+            previous_clock = int(self.state.get("clock_minutes", 8 * 60))
             self.state["day"] += 1
             self.state["clock_minutes"] = 6 * 60 + self.random.randint(0, 45)
             self._apply_clock_state()
+            overnight_minutes = max(1, (24 * 60 - previous_clock) + int(self.state.get("clock_minutes", 6 * 60)))
+            self._apply_collective_followups(overnight_minutes)
             self._decay_district_signals()
             event = self._pick_event_for_day()
             self.state["pending_events"] = [event]
@@ -385,39 +554,49 @@ class WorldEngine:
             topic = self._resolve_talk_topic(npc, topic_id, district)
             truth_profile = self._truth_metrics_for_topic(npc, topic, approach, intent)
             trust_delta, intel_strength, npc_openness = self._evaluate_talk_approach(npc, topic, approach)
-            self._queue_agent_task(npc, "player_talk", str(topic.get("label", "????")))
+            favorability_state = self._npc_favorability_state(npc)
+            npc["last_spoken_topic_id"] = str(topic.get("id", ""))
+            npc["last_spoken_topic_label"] = str(topic.get("label", ""))
+            self._queue_agent_task(npc, "player_talk", str(topic.get("label", "街头风声")))
             if self._consume_agent_budget(npc, "player_talk", 1):
                 npc_snapshot = copy.deepcopy(npc)
                 llm_payload = {
                     "speaker": {
-                        "name": "??",
+                        "name": "玩家",
                         "district": district,
                         "family_affiliation": "",
                         "mood": "wary",
-                        "current_goal": topic.get("label", "????"),
+                        "current_goal": topic.get("label", "街头风声"),
                         "fear": 24,
                         "greed": 28,
                         "relationship_memory": copy.deepcopy(npc_snapshot.get("player_memory", {})),
                     },
                     "speaker_agent": {
                         "agent_id": "player_proxy",
-                        "system_prompt": "???????????????????????????????",
-                        "tool_policy": ["?????", "??? NPC ??", "?????"],
+                        "system_prompt": "你代表玩家发起这一轮问话。只负责复述玩家原话、交代问法和意图，不替 NPC 回答。",
+                        "tool_policy": ["保持玩家语气", "不替 NPC 编回答", "围绕当前议题追问"],
                         "memory": copy.deepcopy(list(npc_snapshot.get("relationship_memory", []))[:4]),
                     },
                     "listener": npc_snapshot,
                     "listener_agent": self._npc_agent_profile(npc_snapshot),
                     "district": district,
-                    "trigger": "????",
+                    "trigger": "玩家搭话",
                     "topic": topic,
                     "approach": approach,
                     "intent": intent,
                     "player_input": player_input,
+                    "active_topics": self._active_public_topics(limit=4, district_name=district),
+                    "active_norms": self._active_norms_view(limit=4, district_name=district),
+                    "active_collective_actions": self._active_collective_actions_view(limit=4, district_name=district),
                     "scene_observation": live_observation,
                     "truth_profile": truth_profile,
+                    "favorability_state": favorability_state,
+                    "listener_sections": self._npc_llm_sections(npc_snapshot, topic),
                     "relationship_memory": {
                         "player_memory": copy.deepcopy(npc_snapshot.get("player_memory", {})),
                         "recent_events": copy.deepcopy(list(npc_snapshot.get("relationship_memory", []))[:4]),
+                        "conversation_history": self._dialogue_history_view(npc_snapshot, counterpart_id="player", limit=5),
+                        "local_memory": self._local_memory_view(npc_snapshot, counterpart_id="player", topic_id=str(topic.get("id", "")), limit=5),
                     },
                 }
         if llm_payload is not None:
@@ -429,8 +608,8 @@ class WorldEngine:
             player = self.state["player"]
             player_input = player_input.strip()
             lines = [str(line) for line in dialogue.get("lines", [])[:2]] if dialogue else []
-            stance = str(dialogue.get("stance", truth_profile.get("bias", npc.get("stance", "??")))) if dialogue else str(
-                truth_profile.get("bias", npc.get("stance", "??"))
+            stance = str(dialogue.get("stance", truth_profile.get("bias", npc.get("stance", "观望")))) if dialogue else str(
+                truth_profile.get("bias", npc.get("stance", "观望"))
             )
             revealed_topic_ids = [str(value) for value in dialogue.get("revealed_topic_ids", []) if str(value).strip()] if dialogue else []
             if len(lines) < 2:
@@ -452,8 +631,10 @@ class WorldEngine:
             npc["stance"] = stance
             npc["player_relation"] = int(npc.get("player_relation", 0)) + trust_delta
             npc["player_trust"] = max(0.0, min(100.0, float(npc.get("player_trust", 0.0)) + trust_delta * 2.4))
+            player["attitude_style"] = approach
+            player["last_talk_approach"] = approach
             player["credit"] = min(100, int(player["credit"]) + 1)
-            player["reputation"] = min(100, int(player["reputation"]) + (1 if npc["class"] != "??" and trust_delta > 0 else 0))
+            player["reputation"] = min(100, int(player["reputation"]) + (1 if npc["class"] != "底层" and trust_delta > 0 else 0))
             npc["memory_tags"] = self._push_memory(npc["memory_tags"], "talk:player")
             npc["heard_topic_ids"] = self._push_memory(npc.get("heard_topic_ids", []), str(topic.get("id", "")))
             self.state["demo_metrics"]["npc_talks"] = int(self.state["demo_metrics"].get("npc_talks", 0)) + 1
@@ -464,6 +645,30 @@ class WorldEngine:
             if effective_strength > 0.12:
                 self._apply_intel_packet(intel, to_player=True, promote_news=promote_news, intensity=effective_strength)
             self._remember_player_talk(npc, topic, approach, intent, trust_delta, effective_strength)
+            self._append_dialogue_history(
+                npc,
+                "player",
+                "玩家",
+                lines[0],
+                lines[1],
+                str(topic.get("id", "")),
+                str(topic.get("label", "")),
+                "玩家搭话",
+                "player_talk",
+                "player",
+            )
+            memory_summary = f"玩家这次围着{topic.get('label', '街头风声')}来问“{lines[0]}”，你回了：{lines[1]}"
+            self._remember_local_memory(
+                npc,
+                kind="player_talk",
+                summary=memory_summary,
+                counterpart_id="player",
+                counterpart_name="玩家",
+                topic_id=str(topic.get("id", "")),
+                topic_label=str(topic.get("label", "")),
+                tags=["玩家", str(topic.get("kind", "")), approach, intent],
+                salience=max(0.42, min(0.95, 0.38 + abs(trust_delta) * 0.08 + effective_strength * 0.4)),
+            )
             self._bump_district_signal(npc["district"], "gossip", 0.12)
             self._bump_district_signal(npc["district"], "liquidity", 0.05 if topic.get("kind") in {"asset", "family", "company"} else 0.0)
             self.state["local_broadcasts"].insert(
@@ -481,7 +686,7 @@ class WorldEngine:
             if not revealed_topic_ids:
                 revealed_topic_ids = [str(topic.get("id", ""))]
             world_effects = self._describe_world_effects(intel, effective_strength)
-            trade_quotes = self._default_trade_quotes_for_npc(npc)
+            trade_quotes = self._default_trade_quotes_for_npc(npc, str(topic.get("id", "")))
             intel_note = intel["line"] if effective_strength > 0.12 else "这次没问出实货，只摸到一点态度。"
             self.state["last_dialogue"] = {
                 "title": f"你与 {npc['name']} 交谈",
@@ -510,6 +715,7 @@ class WorldEngine:
             self.state["last_dialogue"]["npc_name"] = str(npc.get("name", ""))
             self.state["last_dialogue"]["district"] = npc["district"]
             self.state["last_dialogue"]["relation_status"] = self._npc_player_status(npc)
+            self.state["last_dialogue"]["speech_register"] = self._npc_favorability_state(npc).get("speech_register_label", "平视你")
             self.state["last_dialogue"]["heard_by"] = heard_by
             self.state["last_dialogue"]["source"] = "llm" if dialogue else "rule"
             self.state["last_dialogue"]["model"] = str(dialogue.get("_meta_model", self.ark.model_id)) if dialogue else "rule"
@@ -541,6 +747,10 @@ class WorldEngine:
             live_observation = copy.deepcopy(self.state.get("scene_observation", {}))
             self._refresh_derived_views()
             topic = self._resolve_talk_topic(speaker, "", speaker["district"])
+            speaker["last_spoken_topic_id"] = str(topic.get("id", ""))
+            speaker["last_spoken_topic_label"] = str(topic.get("label", ""))
+            listener["last_spoken_topic_id"] = str(topic.get("id", ""))
+            listener["last_spoken_topic_label"] = str(topic.get("label", ""))
             self._queue_agent_task(speaker, "npc_conversation", str(listener.get("name", "")))
             self._queue_agent_task(listener, "npc_conversation", str(speaker.get("name", "")))
             dialogue = None
@@ -549,11 +759,16 @@ class WorldEngine:
                     {
                         "speaker": speaker,
                         "speaker_agent": self._npc_agent_profile(speaker),
+                        "speaker_sections": self._npc_llm_sections(speaker, topic),
                         "listener": listener,
                         "listener_agent": self._npc_agent_profile(listener),
+                        "listener_sections": self._npc_llm_sections(listener, topic),
                         "district": speaker["district"],
                         "trigger": trigger,
                         "topic": topic,
+                        "active_topics": self._active_public_topics(limit=4, district_name=str(speaker.get("district", ""))),
+                        "active_norms": self._active_norms_view(limit=4, district_name=str(speaker.get("district", ""))),
+                        "active_collective_actions": self._active_collective_actions_view(limit=4, district_name=str(speaker.get("district", ""))),
                         "approach": "cautious",
                         "intent": "街头搭话",
                         "scene_observation": live_observation,
@@ -561,6 +776,10 @@ class WorldEngine:
                         "relationship_memory": {
                             "speaker_recent_events": copy.deepcopy(list(speaker.get("relationship_memory", []))[:3]),
                             "listener_recent_events": copy.deepcopy(list(listener.get("relationship_memory", []))[:3]),
+                            "speaker_conversation_history": self._dialogue_history_view(speaker, counterpart_id=listener_id, limit=4),
+                            "listener_conversation_history": self._dialogue_history_view(listener, counterpart_id=speaker_id, limit=4),
+                            "speaker_local_memory": self._local_memory_view(speaker, counterpart_id=listener_id, topic_id=str(topic.get("id", "")), limit=4),
+                            "listener_local_memory": self._local_memory_view(listener, counterpart_id=speaker_id, topic_id=str(topic.get("id", "")), limit=4),
                         },
                     }
                 )
@@ -607,6 +826,69 @@ class WorldEngine:
                     "topic_id": str(topic.get("id", "")),
                 },
             )
+            self._append_dialogue_history(
+                speaker,
+                listener_id,
+                str(listener.get("name", "")),
+                lines[0],
+                lines[1],
+                str(topic.get("id", "")),
+                str(topic.get("label", "")),
+                trigger,
+                "npc_conversation",
+                "npc",
+            )
+            self._append_dialogue_history(
+                listener,
+                speaker_id,
+                str(speaker.get("name", "")),
+                lines[1],
+                lines[0],
+                str(topic.get("id", "")),
+                str(topic.get("label", "")),
+                trigger,
+                "npc_conversation",
+                "npc",
+            )
+            conversation_intensity = max(0.22, min(0.92, float(topic.get("heat", 0.3)) * 0.55 + 0.28))
+            self._remember_local_memory(
+                speaker,
+                kind="npc_conversation",
+                summary=f"{listener.get('name', '对方')}刚围着{topic.get('label', '风声')}跟你低声换话：{lines[1]}",
+                counterpart_id=listener_id,
+                counterpart_name=str(listener.get("name", "")),
+                topic_id=str(topic.get("id", "")),
+                topic_label=str(topic.get("label", "")),
+                tags=["社交", str(topic.get("kind", "")), trigger],
+                salience=max(0.34, min(0.88, conversation_intensity)),
+            )
+            self._remember_local_memory(
+                listener,
+                kind="npc_conversation",
+                summary=f"{speaker.get('name', '对方')}刚围着{topic.get('label', '风声')}跟你低声换话：{lines[0]}",
+                counterpart_id=speaker_id,
+                counterpart_name=str(speaker.get("name", "")),
+                topic_id=str(topic.get("id", "")),
+                topic_label=str(topic.get("label", "")),
+                tags=["社交", str(topic.get("kind", "")), trigger],
+                salience=max(0.34, min(0.88, float(topic.get("heat", 0.3)) * 0.55 + 0.28)),
+            )
+            self._register_topic_heard(
+                speaker,
+                topic,
+                listener,
+                channel="conversation",
+                salience=min(0.94, conversation_intensity + 0.08),
+                line=f"{listener.get('name', '对方')}刚刚围着“{topic.get('label', '街面风声')}”回了你一句：{lines[1]}",
+            )
+            self._register_topic_heard(
+                listener,
+                topic,
+                speaker,
+                channel="conversation",
+                salience=min(0.94, conversation_intensity + 0.08),
+                line=f"{speaker.get('name', '对方')}刚刚围着“{topic.get('label', '街面风声')}”递了你一句：{lines[0]}",
+            )
             speaker["cooldown_until"] = now + 7
             listener["cooldown_until"] = now + 7
 
@@ -625,7 +907,6 @@ class WorldEngine:
             self._apply_local_hearing(listener)
             self._check_local_escalation(speaker)
             self._check_local_escalation(listener)
-            conversation_intensity = max(0.22, min(0.92, float(topic.get("heat", 0.3)) * 0.55 + 0.28))
             if dialogue or float(topic.get("heat", 0.0)) >= 0.24:
                 packet = self._build_intel_packet_from_topic(topic, speaker, speaker["district"])
                 packet["source"] = f"{speaker['name']}和{listener['name']}的私语"
@@ -654,7 +935,7 @@ class WorldEngine:
             return ActionResult("", self.snapshot())
 
     def _run_agent_social_turns(self, scene_observation: dict[str, Any], allow_llm: bool = True) -> None:
-        rows: list[tuple[float, float, str, str]] = []
+        rows: list[tuple[float, float, str, str, str]] = []
         npcs = self.state.get("npcs", [])
         for index, speaker in enumerate(npcs):
             for listener in npcs[index + 1 :]:
@@ -665,23 +946,38 @@ class WorldEngine:
                     continue
                 district_signals = self.state.get("district_signals", {}).get(str(speaker.get("district", "")), {})
                 district_heat = float(district_signals.get("gossip", 0.0)) + float(district_signals.get("fear", 0.0)) + float(district_signals.get("labor_heat", 0.0))
+                pair_score = self._npc_social_pair_score(speaker, listener, distance, district_heat)
+                if pair_score is None:
+                    continue
                 social_pull = float(speaker.get("proactive_interest", 0.3)) + float(listener.get("proactive_interest", 0.3))
-                same_subregion_bonus = 0.22 if str(speaker.get("subregion_id", "")) == str(listener.get("subregion_id", "")) else 0.0
                 role_bonus = 0.18 if str(speaker.get("role", "")) in {"记者", "代理人", "工会领袖"} else 0.0
                 role_bonus += 0.18 if str(listener.get("role", "")) in {"记者", "代理人", "工会领袖"} else 0.0
-                score = social_pull + district_heat * 0.24 + same_subregion_bonus + role_bonus - distance / 420.0
-                rows.append((score, distance, str(speaker.get("id", "")), str(listener.get("id", ""))))
+                score = pair_score + social_pull * 0.35 + district_heat * 0.18 + role_bonus
+                if score < 0.08:
+                    continue
+                subregion_key = (
+                    f"{speaker.get('district', '')}:{speaker.get('subregion_id', '')}"
+                    if str(speaker.get("subregion_id", "")) == str(listener.get("subregion_id", ""))
+                    else ""
+                )
+                rows.append((score, distance, str(speaker.get("id", "")), str(listener.get("id", "")), subregion_key))
         rows.sort(key=lambda item: (item[0], -item[1]), reverse=True)
         used: set[str] = set()
+        subregion_turns: dict[str, int] = {}
         turns = 0
-        max_turns = min(6, max(3, len(npcs) // 4))
-        for _, _, speaker_id, listener_id in rows:
+        max_turns = min(4, max(2, len(npcs) // 6 + 1))
+        for _, _, speaker_id, listener_id, subregion_key in rows:
             if speaker_id in used or listener_id in used:
                 continue
             speaker = self._find_npc(speaker_id)
             listener = self._find_npc(listener_id)
             if not speaker or not listener:
                 continue
+            if subregion_key:
+                pressure = self._district_social_pressure(str(speaker.get("district", "")))
+                cap = 2 if float(pressure.get("total_heat", 0.0)) >= 0.88 else 1
+                if int(subregion_turns.get(subregion_key, 0)) >= cap:
+                    continue
             self._queue_agent_task(speaker, "agent_social", str(listener.get("name", "")))
             self._queue_agent_task(listener, "agent_social", str(speaker.get("name", "")))
             trigger = "盘前试探"
@@ -694,6 +990,8 @@ class WorldEngine:
             self.conversation(speaker_id, listener_id, trigger, scene_observation=scene_observation, allow_llm=allow_llm)
             used.add(speaker_id)
             used.add(listener_id)
+            if subregion_key:
+                subregion_turns[subregion_key] = int(subregion_turns.get(subregion_key, 0)) + 1
             turns += 1
             if turns >= max_turns:
                 break
@@ -712,6 +1010,464 @@ class WorldEngine:
                 row["district_name"] = district_name
                 rows.append(row)
         return rows
+
+    def _subregion_anchor(self, subregion_id: str, fallback_x: float, fallback_y: float) -> tuple[float, float]:
+        points = SUBREGION_ROUTE_POINTS.get(str(subregion_id), [])
+        if not points:
+            return round(float(fallback_x), 1), round(float(fallback_y), 1)
+        x = sum(point[0] for point in points) / float(len(points))
+        y = sum(point[1] for point in points) / float(len(points))
+        return round(x, 1), round(y, 1)
+
+    def _npc_social_band(self, npc: dict[str, Any]) -> str:
+        role = str(npc.get("role", ""))
+        title = str(npc.get("title", ""))
+        family = str(npc.get("family_affiliation", ""))
+        class_name = str(npc.get("class", ""))
+        if family == "镇政府":
+            return "authority"
+        if role == "记者":
+            return "media"
+        if role == "工会领袖":
+            return "organizer"
+        if role == "投机者":
+            return "finance"
+        if role == "银行经理":
+            return "elite" if any(token in title for token in ["掌门", "总", "监管官"]) else "finance"
+        if role == "老板":
+            return "elite"
+        if role == "代理人":
+            return "manager"
+        if role == "店主":
+            return "trade"
+        if role == "工人":
+            return "labor"
+        if role == "临时工":
+            return "precariat" if class_name == "底层" else "resident"
+        return "resident"
+
+    def _preferred_work_subregion(self, npc: dict[str, Any]) -> str:
+        npc_id = str(npc.get("id", "")).strip()
+        override = NPC_WORK_SUBREGION_OVERRIDES.get(npc_id, "")
+        if override:
+            return override
+        district_name = str(npc.get("district", ""))
+        band = str(npc.get("social_band", self._npc_social_band(npc)))
+        return str(SOCIAL_BAND_SUBREGIONS.get(district_name, {}).get(band, npc.get("subregion_id", "")))
+
+    def _npc_contact_names(self, npc: dict[str, Any], key: str) -> set[str]:
+        profile = npc.get("prompt_profile", {})
+        if not isinstance(profile, dict):
+            return set()
+        return {str(value).strip() for value in profile.get(key, []) if str(value).strip()}
+
+    def _subregion_name(self, subregion_id: str) -> str:
+        needle = str(subregion_id).strip()
+        for row in self.state.get("subregions", []):
+            if str(row.get("id", "")) == needle:
+                return str(row.get("name", needle))
+        return needle
+
+    @staticmethod
+    def _normalized_district_signal(value: Any) -> float:
+        numeric = float(value or 0.0)
+        if numeric <= 1.0:
+            return max(0.0, numeric)
+        return max(0.0, min(1.0, numeric / 5.0))
+
+    def _district_social_pressure(self, district_name: str) -> dict[str, Any]:
+        signals = self.state.get("district_signals", {}).get(district_name, {})
+        trade_heat = self._normalized_district_signal(signals.get("trade_heat", 0.0))
+        labor_heat = self._normalized_district_signal(signals.get("labor_heat", 0.0))
+        gossip = self._normalized_district_signal(signals.get("gossip", 0.0))
+        fear = self._normalized_district_signal(signals.get("fear", 0.0))
+        liquidity = self._normalized_district_signal(signals.get("liquidity", 0.0))
+        topics = self._active_public_topics(limit=4, district_name=district_name)
+        norms = self._active_norms_view(limit=3, district_name=district_name)
+        top_topic = topics[0] if topics else {}
+        topic_kind = str(top_topic.get("kind", ""))
+        topic_label = str(top_topic.get("label", ""))
+        topic_heat = float(top_topic.get("heat", 0.0))
+        labor_topic_heat = max((float(row.get("heat", 0.0)) for row in topics if str(row.get("kind", "")) in {"labor", "public"}), default=0.0)
+        gossip_topic_heat = max((float(row.get("heat", 0.0)) for row in topics if str(row.get("kind", "")) in {"panic", "rumor", "media", "public"}), default=0.0)
+        finance_topic_heat = max((float(row.get("heat", 0.0)) for row in topics if str(row.get("kind", "")) in {"finance", "asset", "trade"}), default=0.0)
+        norm_pressure = max((float(row.get("pressure", 0.0)) for row in norms), default=0.0)
+        norm_text = str(norms[0].get("text", "")) if norms else ""
+        return {
+            "trade_heat": trade_heat,
+            "labor_heat": labor_heat,
+            "gossip": gossip,
+            "fear": fear,
+            "liquidity": liquidity,
+            "total_heat": trade_heat + labor_heat + gossip + fear,
+            "topic_id": str(top_topic.get("id", "")),
+            "topic_kind": topic_kind,
+            "topic_label": topic_label,
+            "topic_heat": topic_heat,
+            "labor_topic_heat": labor_topic_heat,
+            "gossip_topic_heat": gossip_topic_heat,
+            "finance_topic_heat": finance_topic_heat,
+            "norm_pressure": norm_pressure,
+            "norm_text": norm_text,
+        }
+
+    def _npc_social_target_name(self, npc: dict[str, Any], purpose: str, topic_id: str = "") -> str:
+        trusted = list(self._npc_contact_names(npc, "trusted_people"))
+        watch = list(self._npc_contact_names(npc, "watch_people"))
+        ordered_names: list[str] = []
+        if purpose in {"organize", "steady"}:
+            ordered_names = trusted + [name for name in watch if name not in trusted]
+        elif purpose in {"watch", "broadcast"}:
+            ordered_names = watch + [name for name in trusted if name not in watch]
+        else:
+            ordered_names = trusted + [name for name in watch if name not in trusted]
+        if topic_id:
+            npc_heard = {str(value) for value in npc.get("heard_topic_ids", []) if str(value).strip()}
+            knows_topic = topic_id in npc_heard
+            for name in ordered_names:
+                other = self._find_by_name(self.state.get("npcs", []), name)
+                if not other or str(other.get("id", "")) == str(npc.get("id", "")):
+                    continue
+                if str(other.get("district", "")) != str(npc.get("district", "")):
+                    continue
+                other_heard = {str(value) for value in other.get("heard_topic_ids", []) if str(value).strip()}
+                if purpose in {"organize", "broadcast"} and knows_topic and topic_id not in other_heard:
+                    return name
+                if purpose == "watch" and name in watch:
+                    return name
+        if purpose in {"organize", "steady"} and trusted:
+            return trusted[0]
+        if purpose in {"watch", "broadcast"} and watch:
+            return watch[0]
+        if trusted:
+            return trusted[0]
+        if watch:
+            return watch[0]
+        return ""
+
+    def _resolve_focus_topic(self, npc: dict[str, Any]) -> dict[str, Any]:
+        topic_id = str(npc.get("last_spoken_topic_id", "")).strip()
+        if topic_id:
+            topic = self._find_by_id(self.state.get("talk_topics", []), topic_id)
+            if not topic:
+                topic = self._find_by_id(self.state.get("topic_registry", []), topic_id)
+            if not topic:
+                topic = next((row for row in self._npc_personal_topics(npc) if str(row.get("id", "")) == topic_id), None)
+            if topic:
+                return copy.deepcopy(topic)
+        district_name = str(npc.get("district", ""))
+        active = self._active_public_topics(limit=1, district_name=district_name)
+        if active:
+            return copy.deepcopy(active[0])
+        return {}
+
+    def _topic_spread_bonus(self, speaker: dict[str, Any], listener: dict[str, Any], district_name: str) -> float:
+        speaker_heard = {str(value) for value in speaker.get("heard_topic_ids", []) if str(value).strip()}
+        listener_heard = {str(value) for value in listener.get("heard_topic_ids", []) if str(value).strip()}
+        if not speaker_heard and not listener_heard:
+            return 0.0
+        bonus = 0.0
+        for topic in self._active_public_topics(limit=3, district_name=district_name):
+            topic_id = str(topic.get("id", "")).strip()
+            if not topic_id:
+                continue
+            topic_heat = float(topic.get("heat", 0.0))
+            spread_value = 0.1 + min(0.2, topic_heat * 0.22)
+            if topic_id in speaker_heard and topic_id not in listener_heard:
+                bonus = max(bonus, spread_value)
+            if topic_id in listener_heard and topic_id not in speaker_heard:
+                bonus = max(bonus, spread_value)
+        return round(bonus, 3)
+
+    def _register_topic_heard(
+        self,
+        listener: dict[str, Any],
+        topic: dict[str, Any],
+        source_npc: dict[str, Any],
+        *,
+        channel: str,
+        salience: float,
+        line: str = "",
+    ) -> bool:
+        topic_id = str(topic.get("id", "")).strip()
+        if not topic_id:
+            return False
+        heard = [str(value) for value in listener.get("heard_topic_ids", []) if str(value).strip()]
+        already_known = topic_id in heard
+        listener["heard_topic_ids"] = self._push_memory(heard, topic_id)
+        listener["memory_tags"] = self._push_memory(list(listener.get("memory_tags", [])), f"heard_topic:{topic_id}")
+        topic_label = str(topic.get("label", "街面风声"))
+        source_name = str(source_npc.get("name", "街头")) or "街头"
+        summary = line.strip() or f"{source_name}通过{channel}把“{topic_label}”递到了你耳边。"
+        self._remember_local_memory(
+            listener,
+            kind="heard_topic",
+            summary=summary,
+            counterpart_id=str(source_npc.get("id", "")),
+            counterpart_name=source_name,
+            topic_id=topic_id,
+            topic_label=topic_label,
+            tags=["heard", channel, str(topic.get("kind", ""))],
+            salience=salience,
+        )
+        if already_known:
+            return False
+        registry_topic = self._find_by_id(self.state.get("topic_registry", []), topic_id)
+        if registry_topic:
+            registry_topic["spread_count"] = int(registry_topic.get("spread_count", 0)) + 1
+            registry_topic["heat"] = round(min(1.8, float(registry_topic.get("heat", 0.0)) + salience * 0.05), 3)
+        return True
+
+    def _npc_slot_offset(self, npc: dict[str, Any], mode: str) -> tuple[float, float]:
+        raw_id = str(npc.get("id", "npc_0")).split("_")[-1]
+        try:
+            seed = max(1, int(raw_id))
+        except ValueError:
+            seed = max(1, (sum(ord(ch) for ch in str(npc.get("id", ""))) % 41) + 1)
+        band = str(npc.get("social_band", self._npc_social_band(npc)))
+        radius_x = 18.0
+        radius_y = 12.0
+        if mode == "home":
+            radius_x = 10.0
+            radius_y = 6.0
+        elif mode == "social":
+            radius_x = 22.0
+            radius_y = 14.0
+        elif mode == "collective":
+            radius_x = 16.0
+            radius_y = 10.0
+        if band in {"elite", "authority", "finance"}:
+            if mode == "home":
+                radius_x *= 0.8
+                radius_y *= 0.8
+            else:
+                radius_x *= 1.35
+                radius_y *= 1.2
+        elif band in {"labor", "precariat", "organizer"}:
+            radius_x *= 1.08
+            radius_y *= 1.08
+        phase = seed * 0.91 + len(mode) * 0.37
+        return round(math.sin(phase) * radius_x, 1), round(math.cos(phase * 1.21) * radius_y, 1)
+
+    def _social_window_open(
+        self,
+        npc: dict[str, Any],
+        minutes: int,
+        base_activity: str,
+        pressure: dict[str, Any],
+    ) -> bool:
+        if base_activity != "working":
+            return True
+        band = str(npc.get("social_band", self._npc_social_band(npc)))
+        total_heat = float(pressure.get("total_heat", 0.0))
+        labor_heat = max(float(pressure.get("labor_heat", 0.0)), float(pressure.get("labor_topic_heat", 0.0)))
+        gossip_heat = max(float(pressure.get("gossip", 0.0)), float(pressure.get("gossip_topic_heat", 0.0)))
+        finance_heat = max(float(pressure.get("trade_heat", 0.0)), float(pressure.get("finance_topic_heat", 0.0)))
+        lunch_window = 11 * 60 + 30 <= minutes < 13 * 60 + 30
+        evening_window = 18 * 60 <= minutes < 21 * 60
+        morning_window = 7 * 60 <= minutes < 8 * 60 + 30
+        if band in {"media", "organizer"}:
+            return lunch_window or evening_window or total_heat >= 0.6
+        if band in {"authority", "elite", "manager", "finance"}:
+            return total_heat >= 0.7 or finance_heat >= 0.72 or labor_heat >= 0.78 or gossip_heat >= 0.78
+        if band in {"labor", "precariat", "trade", "resident"}:
+            return lunch_window or evening_window or morning_window or total_heat >= 0.76 or labor_heat >= 0.8
+        return False
+
+    def _npc_social_pair_score(
+        self,
+        speaker: dict[str, Any],
+        listener: dict[str, Any],
+        distance: float,
+        district_heat: float,
+    ) -> float | None:
+        if str(speaker.get("district", "")) != str(listener.get("district", "")):
+            return None
+        speaker_band = str(speaker.get("social_band", self._npc_social_band(speaker)))
+        listener_band = str(listener.get("social_band", self._npc_social_band(listener)))
+        speaker_name = str(speaker.get("name", ""))
+        listener_name = str(listener.get("name", ""))
+        speaker_trusted = self._npc_contact_names(speaker, "trusted_people")
+        listener_trusted = self._npc_contact_names(listener, "trusted_people")
+        speaker_watch = self._npc_contact_names(speaker, "watch_people")
+        listener_watch = self._npc_contact_names(listener, "watch_people")
+        trusted_link = listener_name in speaker_trusted or speaker_name in listener_trusted
+        watch_link = listener_name in speaker_watch or speaker_name in listener_watch
+        same_collective = (
+            str(speaker.get("collective_action_id", ""))
+            and str(speaker.get("collective_action_id", "")) == str(listener.get("collective_action_id", ""))
+        )
+        same_subregion = str(speaker.get("subregion_id", "")) == str(listener.get("subregion_id", ""))
+        current_target_link = listener_name == str(speaker.get("current_target", "")) or speaker_name == str(listener.get("current_target", ""))
+        speaker_activity = str(speaker.get("activity", ""))
+        listener_activity = str(listener.get("activity", ""))
+        speaker_allowed = listener_band in SOCIAL_BAND_WHITELIST.get(speaker_band, set())
+        listener_allowed = speaker_band in SOCIAL_BAND_WHITELIST.get(listener_band, set())
+        if not same_collective and not trusted_link and not current_target_link:
+            if speaker_band == "elite" and listener_band in {"labor", "precariat", "organizer"}:
+                return None
+            if listener_band == "elite" and speaker_band in {"labor", "precariat", "organizer"}:
+                return None
+        if not same_subregion and not same_collective:
+            cross_subregion_ok = (
+                trusted_link
+                or current_target_link
+                or ("media" in {speaker_band, listener_band})
+                or ("authority" in {speaker_band, listener_band} and district_heat >= 0.42)
+            )
+            if not cross_subregion_ok:
+                return None
+        if not same_collective and not trusted_link and not current_target_link and not (speaker_allowed and listener_allowed):
+            if not ("media" in {speaker_band, listener_band} and district_heat >= 0.26):
+                return None
+        if (
+            speaker_activity == "working"
+            and listener_activity == "working"
+            and not same_collective
+            and not trusted_link
+            and not current_target_link
+            and district_heat < 0.72
+            and "media" not in {speaker_band, listener_band}
+            and "organizer" not in {speaker_band, listener_band}
+        ):
+            return None
+        if watch_link and district_heat < 0.42 and not same_collective and not current_target_link:
+            return None
+        shared_heard_topics = len(set(speaker.get("heard_topic_ids", [])) & set(listener.get("heard_topic_ids", [])))
+        target_bonus = 0.22 if current_target_link else 0.0
+        topic_gap_bonus = self._topic_spread_bonus(speaker, listener, str(speaker.get("district", "")))
+        band_bonus = 0.18 if speaker_band == listener_band else 0.08 if speaker_allowed and listener_allowed else -0.1
+        trusted_bonus = 0.34 if trusted_link else 0.0
+        watch_bias = 0.12 + district_heat * 0.18 if watch_link else 0.0
+        media_bonus = 0.16 if "media" in {speaker_band, listener_band} else 0.0
+        collective_bonus = 0.42 if same_collective else 0.0
+        subregion_bonus = 0.2 if same_subregion else -0.08
+        shared_topic_bonus = min(0.18, shared_heard_topics * 0.06)
+        distance_penalty = distance / 520.0
+        return (
+            band_bonus
+            + trusted_bonus
+            + watch_bias
+            + media_bonus
+            + collective_bonus
+            + subregion_bonus
+            + shared_topic_bonus
+            + target_bonus
+            + topic_gap_bonus
+            - distance_penalty
+        )
+
+    def _social_schedule_override(self, npc: dict[str, Any], minutes: int, base_activity: str) -> dict[str, Any]:
+        district_name = str(npc.get("district", ""))
+        band = str(npc.get("social_band", self._npc_social_band(npc)))
+        pressure = self._district_social_pressure(district_name)
+        labor_push = max(float(pressure["labor_heat"]), float(pressure["labor_topic_heat"]), float(pressure["norm_pressure"]) * 0.7)
+        gossip_push = max(float(pressure["gossip"]), float(pressure["gossip_topic_heat"]))
+        finance_push = max(float(pressure["trade_heat"]), float(pressure["finance_topic_heat"]), float(pressure["liquidity"]) * 0.55)
+        fear_push = float(pressure["fear"])
+        topic_label = str(pressure.get("topic_label", ""))
+        norm_text = str(pressure.get("norm_text", ""))
+        if base_activity == "home" and max(labor_push, gossip_push, finance_push, fear_push) < 0.42:
+            return {}
+        if not self._social_window_open(npc, minutes, base_activity, pressure):
+            return {}
+
+        target_band = ""
+        activity = base_activity
+        purpose = "steady"
+
+        if band in {"elite", "authority", "manager"}:
+            if labor_push >= 0.38 or fear_push >= 0.34 or gossip_push >= 0.4:
+                target_band = "authority" if band == "authority" else "elite" if band == "elite" else "manager"
+                activity = "watching" if band == "authority" else "working"
+                purpose = "watch"
+        elif band == "finance":
+            if finance_push >= 0.26 or gossip_push >= 0.34:
+                target_band = "finance"
+                activity = "watching"
+                purpose = "watch"
+        elif band == "media":
+            if max(labor_push, gossip_push, finance_push) >= 0.24:
+                target_band = "media"
+                activity = "watching"
+                purpose = "broadcast"
+        elif band == "organizer":
+            if labor_push >= 0.22 or gossip_push >= 0.3:
+                target_band = "organizer"
+                activity = "assembling"
+                purpose = "organize"
+        elif band == "labor":
+            if labor_push >= 0.28:
+                target_band = "labor"
+                activity = "assembling"
+                purpose = "organize"
+        elif band == "precariat":
+            if labor_push >= 0.34 or gossip_push >= 0.38:
+                target_band = "organizer" if labor_push >= fear_push else "resident"
+                activity = "assembling" if target_band == "organizer" else "home"
+                purpose = "organize" if target_band == "organizer" else "steady"
+        elif band == "trade":
+            if max(finance_push, gossip_push) >= 0.24:
+                target_band = "trade"
+                activity = "gathering"
+                purpose = "broadcast" if gossip_push >= finance_push else "steady"
+        elif band == "resident":
+            if fear_push >= 0.42:
+                target_band = "resident"
+                activity = "home"
+                purpose = "steady"
+            elif gossip_push >= 0.34:
+                target_band = "trade"
+                activity = "gathering"
+                purpose = "broadcast"
+
+        if not target_band:
+            return {}
+        target_subregion_id = str(SOCIAL_BAND_SUBREGIONS.get(district_name, {}).get(target_band, ""))
+        if not target_subregion_id:
+            return {}
+        anchor_x, anchor_y = self._subregion_anchor(
+            target_subregion_id,
+            float(npc.get("work_x", npc.get("x", 0.0))),
+            float(npc.get("work_y", npc.get("y", 0.0))),
+        )
+        slot_x, slot_y = self._npc_slot_offset(npc, "social")
+        anchor_x = round(anchor_x + slot_x, 1)
+        anchor_y = round(anchor_y + slot_y, 1)
+        target_name = self._npc_social_target_name(npc, purpose, str(pressure.get("topic_id", "")))
+        goal_bits: list[str] = []
+        if activity == "assembling":
+            goal_bits.append("去串联一圈")
+        elif activity == "watching":
+            goal_bits.append("先盯风向")
+        elif activity == "gathering":
+            goal_bits.append("去听街面回声")
+        else:
+            goal_bits.append("先缩回自己的圈层")
+        if topic_label:
+            goal_bits.append(topic_label)
+        elif norm_text:
+            goal_bits.append(norm_text)
+        if target_name:
+            goal_bits.append(target_name)
+        goal = " / ".join(goal_bits[:3])
+        note = ""
+        if band in {"elite", "authority", "manager", "finance"}:
+            note = f"{npc['name']} 正缩回 {self._subregion_name(target_subregion_id)}，先把{topic_label or norm_text or '风向'}看稳。"
+        elif band in {"media", "trade"}:
+            note = f"{npc['name']} 正往 {self._subregion_name(target_subregion_id)} 靠，准备围着{topic_label or '街面风声'}找人开口。"
+        else:
+            note = f"{npc['name']} 正往 {self._subregion_name(target_subregion_id)} 串人，想把{topic_label or norm_text or '这股情绪'}拢起来。"
+        return {
+            "activity": activity,
+            "x": anchor_x,
+            "y": anchor_y,
+            "target_subregion_id": target_subregion_id,
+            "target_subregion_name": self._subregion_name(target_subregion_id),
+            "goal": goal,
+            "current_target": target_name or topic_label or norm_text or str(npc.get("current_target", "")),
+            "schedule_note": note,
+        }
 
     def _do_work(self, district: str) -> ActionResult:
         wages = 7 if district == "港口" else 5
@@ -804,6 +1560,414 @@ class WorldEngine:
         }
         return ActionResult("你在账桌前把价格、风声和人情重新理顺了一遍。", self.snapshot())
 
+    def _intervene_collective(self, district: str, payload: dict[str, Any]) -> ActionResult:
+        action_id = str(payload.get("action_id", "")).strip()
+        mode = str(payload.get("mode", "support")).strip().lower()
+        mode = {
+            "support": "support",
+            "back": "support",
+            "mediate": "mediate",
+            "negotiate": "mediate",
+            "suppress": "suppress",
+            "pressure": "suppress",
+        }.get(mode, "support")
+        action = self._collective_row_by_id(action_id)
+        if not action:
+            candidates = self._active_collective_actions_view(limit=4, district_name=district)
+            action = self._collective_row_by_id(str(candidates[0].get("id", ""))) if candidates else None
+        if not action:
+            return ActionResult("这片街区眼下没有能介入的集体行动。", self.snapshot())
+        if str(action.get("resolution_kind", "")):
+            return ActionResult("这场集体行动已经出结果了，街上讨论的是它留下的后果。", self.snapshot())
+        influence = 0.18 + int(self.state.get("player", {}).get("reputation", 0)) / 140.0 + int(self.state.get("player", {}).get("credit", 0)) / 220.0
+        if mode == "support":
+            action["player_support"] = round(self._clamp(float(action.get("player_support", 0.0)) + influence, 0.0, 1.6), 3)
+            action["support"] = round(self._clamp(float(action.get("support", 0.0)) + 0.02 + influence * 0.05, 0.0, 1.0), 3)
+            action["commitment"] = round(self._clamp(float(action.get("commitment", 0.0)) + influence * 0.03, 0.0, 1.0), 3)
+            self._bump_district_signal(str(action.get("district", district)), "labor_heat", 0.12)
+            self._bump_district_signal(str(action.get("district", district)), "gossip", 0.09)
+            self.state["player"]["reputation"] = min(100, int(self.state["player"].get("reputation", 0)) + 1)
+            message = f"你去 {action.get('target_location_title', '现场')} 给 {action.get('label', '这场行动')} 撑场，现场的承诺阈值被往下压了一截。"
+        elif mode == "mediate":
+            action["player_mediation"] = round(self._clamp(float(action.get("player_mediation", 0.0)) + influence, 0.0, 1.6), 3)
+            action["risk"] = round(self._clamp(float(action.get("risk", 0.0)) - 0.03 - influence * 0.05, 0.08, 1.0), 3)
+            action["support"] = round(self._clamp(float(action.get("support", 0.0)) + influence * 0.02, 0.0, 1.0), 3)
+            self._bump_district_signal(str(action.get("district", district)), "gossip", 0.07)
+            self.state["player"]["reputation"] = min(100, int(self.state["player"].get("reputation", 0)) + 1)
+            self.state["player"]["family_relations"]["镇政府"] = int(self.state["player"]["family_relations"].get("镇政府", 0)) + 1
+            message = f"你在 {action.get('target_location_title', '现场')} 两边跑口风，{action.get('label', '这场行动')} 的谈判阈值开始松动。"
+        else:
+            action["player_suppression"] = round(self._clamp(float(action.get("player_suppression", 0.0)) + influence, 0.0, 1.6), 3)
+            action["risk"] = round(self._clamp(float(action.get("risk", 0.0)) + 0.04 + influence * 0.06, 0.08, 1.0), 3)
+            action["support"] = round(self._clamp(float(action.get("support", 0.0)) - influence * 0.03, 0.0, 1.0), 3)
+            action["commitment"] = round(self._clamp(float(action.get("commitment", 0.0)) - influence * 0.02, 0.0, 1.0), 3)
+            self._bump_district_signal(str(action.get("district", district)), "fear", 0.11)
+            self.state["player"]["family_relations"]["镇政府"] = int(self.state["player"]["family_relations"].get("镇政府", 0)) + 1
+            message = f"你去 {action.get('target_location_title', '现场')} 帮着压场，{action.get('label', '这场行动')} 的到场门槛被抬高了。"
+        action["last_actor_id"] = "player"
+        action["last_action"] = f"player_{mode}"
+        action["last_tick"] = self._world_tick()
+        self._record_player_collective_intervention(action, mode)
+        self._refresh_collective_action_row(action)
+        self._refresh_derived_views()
+        return ActionResult(message, self.snapshot())
+
+    def _player_collective_profile(self) -> dict[str, Any]:
+        player = self.state.setdefault("player", {})
+        profile = player.get("collective_profile", {})
+        if not isinstance(profile, dict):
+            profile = {}
+        defaults: dict[str, Any] = {
+            "support_count": 0,
+            "mediate_count": 0,
+            "suppress_count": 0,
+            "worker_standing": 0.0,
+            "capital_standing": 0.0,
+            "government_standing": 0.0,
+            "public_standing": 0.0,
+            "dominant_mode": "observe",
+            "stance_label": "看风向的人",
+            "consecutive_mode": "",
+            "consecutive_count": 0,
+            "history": [],
+        }
+        for key, value in defaults.items():
+            if key not in profile:
+                profile[key] = copy.deepcopy(value)
+        if not isinstance(profile.get("history", []), list):
+            profile["history"] = []
+        player["collective_profile"] = profile
+        return profile
+
+    def _refresh_player_collective_profile(self) -> dict[str, Any]:
+        profile = self._player_collective_profile()
+        counts = {
+            "support": int(profile.get("support_count", 0)),
+            "mediate": int(profile.get("mediate_count", 0)),
+            "suppress": int(profile.get("suppress_count", 0)),
+        }
+        if sum(counts.values()) <= 0:
+            profile["dominant_mode"] = "observe"
+            profile["stance_label"] = "看风向的人"
+            return profile
+        dominant_mode = max(
+            counts.keys(),
+            key=lambda key: (
+                counts[key],
+                abs(float(profile.get(f"{'worker' if key == 'support' else 'government' if key == 'suppress' else 'public'}_standing", 0.0))),
+            ),
+        )
+        profile["dominant_mode"] = dominant_mode
+        streak = int(profile.get("consecutive_count", 0))
+        if dominant_mode == "support":
+            profile["stance_label"] = "街头动员者" if streak >= 3 else "给现场撑场的人"
+        elif dominant_mode == "mediate":
+            profile["stance_label"] = "两边递话的人" if streak < 3 else "能把两边按在桌边的人"
+        else:
+            profile["stance_label"] = "替机构压场的人" if streak < 3 else "街上都认得的压场熟手"
+        return profile
+
+    def _player_collective_attitude_for_family(self, family_name: str) -> str:
+        profile = self._refresh_player_collective_profile()
+        worker = float(profile.get("worker_standing", 0.0))
+        capital = float(profile.get("capital_standing", 0.0))
+        government = float(profile.get("government_standing", 0.0))
+        public = float(profile.get("public_standing", 0.0))
+        dominant = str(profile.get("dominant_mode", "observe"))
+        if family_name == "龟甲船坞":
+            if worker >= 0.22 and dominant == "support":
+                return "把你当成会把工友拢起来的人"
+            if capital >= 0.18 and dominant == "suppress":
+                return "觉得你会替厂里压场面"
+            if dominant == "mediate":
+                return "在观察你能不能把工潮按进谈判桌"
+        if family_name == "珊瑚银行":
+            if capital >= 0.18:
+                return "把你当成能替资本看场子的人"
+            if worker >= 0.18:
+                return "提防你把街头情绪带进盘面"
+            if dominant == "mediate":
+                return "想先试试你是不是能递话的中间人"
+        if family_name == "海藻家族":
+            if public >= 0.16 or dominant == "mediate":
+                return "觉得你有机会稳住民生口风"
+            if worker >= 0.2:
+                return "担心你把缺粮和工价拧成一股"
+        return ""
+
+    def _record_player_collective_intervention(self, action: dict[str, Any], mode: str) -> None:
+        profile = self._player_collective_profile()
+        player = self.state.get("player", {})
+        counter_key = f"{mode}_count"
+        profile[counter_key] = int(profile.get(counter_key, 0)) + 1
+        if str(profile.get("consecutive_mode", "")) == mode:
+            profile["consecutive_count"] = int(profile.get("consecutive_count", 0)) + 1
+        else:
+            profile["consecutive_mode"] = mode
+            profile["consecutive_count"] = 1
+        streak_bonus = max(0.0, min(0.18, (int(profile.get("consecutive_count", 1)) - 1) * 0.03))
+        if mode == "support":
+            profile["worker_standing"] = round(self._clamp(float(profile.get("worker_standing", 0.0)) + 0.14 + streak_bonus, -1.5, 1.5), 3)
+            profile["public_standing"] = round(self._clamp(float(profile.get("public_standing", 0.0)) + 0.08 + streak_bonus * 0.5, -1.5, 1.5), 3)
+            profile["capital_standing"] = round(self._clamp(float(profile.get("capital_standing", 0.0)) - 0.06 - streak_bonus * 0.3, -1.5, 1.5), 3)
+            profile["government_standing"] = round(self._clamp(float(profile.get("government_standing", 0.0)) - 0.05 - streak_bonus * 0.24, -1.5, 1.5), 3)
+            player["family_relations"]["街头互助会"] = int(player.get("family_relations", {}).get("街头互助会", 0)) + 1
+        elif mode == "mediate":
+            profile["worker_standing"] = round(self._clamp(float(profile.get("worker_standing", 0.0)) + 0.05 + streak_bonus * 0.2, -1.5, 1.5), 3)
+            profile["public_standing"] = round(self._clamp(float(profile.get("public_standing", 0.0)) + 0.1 + streak_bonus * 0.36, -1.5, 1.5), 3)
+            profile["capital_standing"] = round(self._clamp(float(profile.get("capital_standing", 0.0)) + 0.03 + streak_bonus * 0.12, -1.5, 1.5), 3)
+            profile["government_standing"] = round(self._clamp(float(profile.get("government_standing", 0.0)) + 0.06 + streak_bonus * 0.24, -1.5, 1.5), 3)
+        else:
+            profile["worker_standing"] = round(self._clamp(float(profile.get("worker_standing", 0.0)) - 0.12 - streak_bonus * 0.32, -1.5, 1.5), 3)
+            profile["public_standing"] = round(self._clamp(float(profile.get("public_standing", 0.0)) - 0.06 - streak_bonus * 0.18, -1.5, 1.5), 3)
+            profile["capital_standing"] = round(self._clamp(float(profile.get("capital_standing", 0.0)) + 0.08 + streak_bonus * 0.26, -1.5, 1.5), 3)
+            profile["government_standing"] = round(self._clamp(float(profile.get("government_standing", 0.0)) + 0.14 + streak_bonus * 0.4, -1.5, 1.5), 3)
+        profile["history"].insert(
+            0,
+            {
+                "kind": "intervention",
+                "clock_label": self._clock_label(),
+                "mode": mode,
+                "action_id": str(action.get("id", "")),
+                "label": str(action.get("label", "")),
+                "district": str(action.get("district", "")),
+            },
+        )
+        profile["history"] = profile["history"][:12]
+        self._refresh_player_collective_profile()
+
+    def _record_player_collective_outcome(self, action: dict[str, Any], resolution_kind: str) -> None:
+        profile = self._player_collective_profile()
+        support_push = float(action.get("player_support", 0.0)) + float(action.get("player_mediation", 0.0))
+        suppress_push = float(action.get("player_suppression", 0.0))
+        if resolution_kind == "conceded":
+            if support_push >= suppress_push:
+                profile["worker_standing"] = round(self._clamp(float(profile.get("worker_standing", 0.0)) + 0.06, -1.5, 1.5), 3)
+                profile["public_standing"] = round(self._clamp(float(profile.get("public_standing", 0.0)) + 0.08, -1.5, 1.5), 3)
+                profile["government_standing"] = round(self._clamp(float(profile.get("government_standing", 0.0)) + (0.05 if float(action.get("player_mediation", 0.0)) > 0 else -0.03), -1.5, 1.5), 3)
+            else:
+                profile["capital_standing"] = round(self._clamp(float(profile.get("capital_standing", 0.0)) + 0.04, -1.5, 1.5), 3)
+        elif resolution_kind == "escalated":
+            if suppress_push > support_push:
+                profile["government_standing"] = round(self._clamp(float(profile.get("government_standing", 0.0)) + 0.07, -1.5, 1.5), 3)
+                profile["capital_standing"] = round(self._clamp(float(profile.get("capital_standing", 0.0)) + 0.05, -1.5, 1.5), 3)
+                profile["worker_standing"] = round(self._clamp(float(profile.get("worker_standing", 0.0)) - 0.08, -1.5, 1.5), 3)
+            else:
+                profile["worker_standing"] = round(self._clamp(float(profile.get("worker_standing", 0.0)) + 0.08, -1.5, 1.5), 3)
+                profile["public_standing"] = round(self._clamp(float(profile.get("public_standing", 0.0)) + 0.06, -1.5, 1.5), 3)
+                profile["government_standing"] = round(self._clamp(float(profile.get("government_standing", 0.0)) - 0.08, -1.5, 1.5), 3)
+                profile["capital_standing"] = round(self._clamp(float(profile.get("capital_standing", 0.0)) - 0.05, -1.5, 1.5), 3)
+        profile["history"].insert(
+            0,
+            {
+                "kind": "outcome",
+                "clock_label": self._clock_label(),
+                "mode": str(profile.get("dominant_mode", "observe")),
+                "action_id": str(action.get("id", "")),
+                "label": str(action.get("label", "")),
+                "district": str(action.get("district", "")),
+                "resolution_kind": resolution_kind,
+            },
+        )
+        profile["history"] = profile["history"][:12]
+        self._refresh_player_collective_profile()
+
+    def _queue_collective_followup(self, action: dict[str, Any], resolution_kind: str) -> None:
+        current_tick = self._world_tick()
+        followups = list(self.state.get("collective_followups", []))
+        source_id = str(action.get("id", ""))
+        if resolution_kind == "conceded":
+            company = self._collective_company_for_action(action)
+            if company:
+                followups.insert(
+                    0,
+                    {
+                        "id": f"{source_id}_settlement_{current_tick}",
+                        "source_action_id": source_id,
+                        "company_id": str(company.get("id", "")),
+                        "family_name": str(company.get("family_owner", "")),
+                        "district": str(action.get("district", "")),
+                        "kind": "settlement",
+                        "status": "active",
+                        "created_tick": current_tick,
+                        "last_tick": current_tick,
+                        "expires_tick": current_tick + 14 * 60,
+                        "wage_bonus_remaining": 0.42 if str(action.get("kind", "")) == "strike" else 0.24,
+                        "inventory_release_remaining": 10.0 if str(action.get("district", "")) in {"工厂区", "港口"} else 8.0,
+                        "payroll_relief_remaining": 9.0,
+                    },
+                )
+        elif resolution_kind == "escalated":
+            followups.insert(
+                0,
+                {
+                    "id": f"{source_id}_crackdown_{current_tick}",
+                    "source_action_id": source_id,
+                    "district": str(action.get("district", "")),
+                    "kind": "crackdown",
+                    "status": "active",
+                    "created_tick": current_tick,
+                    "last_tick": current_tick,
+                    "expires_tick": current_tick + 12 * 60,
+                    "rumor_tick": current_tick + 18,
+                    "action_tick": current_tick + 40,
+                    "secondary_topic_id": "",
+                    "followup_action_id": "",
+                    "escalation_level": int(action.get("escalation_level", 0)) + 1,
+                },
+            )
+        self.state["collective_followups"] = followups[:16]
+
+    def _spawn_collective_followup_action(self, source_action: dict[str, Any], topic_id: str, escalation_level: int) -> dict[str, Any] | None:
+        action_id = f"{str(source_action.get('id', 'collective'))}_followup_{escalation_level}"
+        existing = self._collective_row_by_id(action_id)
+        if existing:
+            return existing
+        district = "交易所" if str(source_action.get("district", "")) != "交易所" else str(source_action.get("district", ""))
+        thresholds = self._collective_thresholds("rally")
+        current_tick = self._world_tick()
+        action = {
+            "id": action_id,
+            "kind": "rally",
+            "district": district,
+            "scope": "city",
+            "label": f"全城声援{str(source_action.get('district', '街区'))}集会",
+            "theme": f"反对{str(source_action.get('label', '集体行动'))}后的镇压",
+            "status": "emerging",
+            "stage": "forming",
+            "heat": round(self._clamp(float(source_action.get("heat", 0.0)) * 0.76 + 0.18, 0.18, 0.92), 3),
+            "support": round(self._clamp(float(source_action.get("support", 0.0)) * 0.74 + 0.12, 0.12, 0.9), 3),
+            "commitment": round(self._clamp(float(source_action.get("commitment", 0.0)) * 0.68 + 0.06, 0.04, 0.6), 3),
+            "turnout": 0.0,
+            "risk": round(self._clamp(float(source_action.get("risk", 0.0)) + 0.08, 0.16, 1.0), 3),
+            "expected_reward": max(0.38, thresholds["reward"]),
+            "support_threshold": thresholds["support"],
+            "commitment_threshold": thresholds["commitment"],
+            "turnout_threshold": thresholds["turnout"],
+            "source_topic_ids": self._dedupe_id_list([topic_id, *list(source_action.get("source_topic_ids", []))]),
+            "source_norm_ids": self._dedupe_id_list(list(source_action.get("source_norm_ids", []))),
+            "target_groups": self._dedupe_id_list([*list(source_action.get("target_groups", [])), "居民", "店主", "记者"], limit=10),
+            "heard_ids": self._dedupe_id_list([*list(source_action.get("heard_ids", [])), *list(source_action.get("supporter_ids", []))], limit=14),
+            "supporter_ids": self._dedupe_id_list([*list(source_action.get("supporter_ids", [])), *list(source_action.get("committed_ids", []))], limit=12),
+            "committed_ids": self._dedupe_id_list(list(source_action.get("committed_ids", [])), limit=8),
+            "attendee_ids": [],
+            "organizer_ids": self._dedupe_id_list(list(source_action.get("organizer_ids", [])), limit=4),
+            "suppression_ids": [],
+            "created_tick": current_tick,
+            "start_tick": 0,
+            "last_tick": current_tick,
+            "last_actor_id": "system",
+            "last_action": "aftershock",
+            "player_support": 0.0,
+            "player_mediation": 0.0,
+            "player_suppression": 0.0,
+            "player_threshold_shift": 0.0,
+            "effective_support_threshold": thresholds["support"],
+            "effective_commitment_threshold": thresholds["commitment"],
+            "effective_turnout_threshold": thresholds["turnout"],
+            "resolution_kind": "",
+            "resolution_label": "",
+            "resolution_note": "",
+            "resolution_tick": 0,
+            "resolution_crowd_score": 0.0,
+            "resolution_response_score": 0.0,
+            "parent_action_id": str(source_action.get("id", "")),
+            "escalation_level": int(escalation_level),
+        }
+        registry = list(self.state.get("collective_action_registry", []))
+        registry.append(action)
+        self.state["collective_action_registry"] = registry
+        self._resolve_collective_responses()
+        self._refresh_collective_action_row(action)
+        return action
+
+    def _apply_collective_followups(self, delta_minutes: int) -> None:
+        if delta_minutes <= 0:
+            return
+        current_tick = self._world_tick()
+        keep_rows: list[dict[str, Any]] = []
+        for raw_row in list(self.state.get("collective_followups", [])):
+            row = raw_row
+            kind = str(row.get("kind", ""))
+            status = str(row.get("status", "active"))
+            if status not in {"active", "completed"}:
+                continue
+            if kind == "settlement" and status == "active":
+                company = self._find_by_id(self.state.get("companies", []), str(row.get("company_id", "")))
+                scale = max(0.24, min(1.0, delta_minutes / 42.0))
+                if not company:
+                    row["status"] = "expired"
+                else:
+                    wage_step = min(float(row.get("wage_bonus_remaining", 0.0)), 0.06 * scale)
+                    if wage_step > 0:
+                        company["wage_level"] = round(min(14.0, float(company.get("wage_level", 5.0)) + wage_step), 3)
+                        row["wage_bonus_remaining"] = round(max(0.0, float(row.get("wage_bonus_remaining", 0.0)) - wage_step), 3)
+                    inventory_step = min(float(row.get("inventory_release_remaining", 0.0)), max(0.0, round(delta_minutes / 18.0, 2)))
+                    if inventory_step > 0:
+                        company["inventory"] = int(min(220, int(company.get("inventory", 60)) + max(1, int(round(inventory_step)))))
+                        row["inventory_release_remaining"] = round(max(0.0, float(row.get("inventory_release_remaining", 0.0)) - inventory_step), 3)
+                    payroll_step = min(float(row.get("payroll_relief_remaining", 0.0)), 1.1 * scale)
+                    if payroll_step > 0:
+                        company["payroll_delay"] = round(max(0.0, float(company.get("payroll_delay", 0.0)) - payroll_step), 3)
+                        row["payroll_relief_remaining"] = round(max(0.0, float(row.get("payroll_relief_remaining", 0.0)) - payroll_step), 3)
+                    row["last_tick"] = current_tick
+                    if (
+                        float(row.get("wage_bonus_remaining", 0.0)) <= 0.01
+                        and float(row.get("inventory_release_remaining", 0.0)) <= 0.01
+                        and float(row.get("payroll_relief_remaining", 0.0)) <= 0.01
+                    ) or current_tick >= int(row.get("expires_tick", current_tick)):
+                        row["status"] = "completed"
+                        packet = {
+                            "id": f"{row.get('id', 'settlement')}_landed_{current_tick}",
+                            "district": str(row.get("district", "")),
+                            "source": "让步落实",
+                            "title": "让步开始落地",
+                            "line": f"{company.get('name', '公司')} 开始把答应过的工资和配给一点点吐出来了。",
+                            "body": f"{company.get('name', '公司')} 的让步正在落地，工资、拖薪和库存都比前一阵松了一截。",
+                            "tags": ["集体行动", "让步", "落实"],
+                            "scope": "district",
+                            "topic_kind": "labor",
+                            "goods_delta": {},
+                            "stocks_delta": {str(company.get('stock_name', '')): -0.01} if str(company.get("stock_name", "")) else {},
+                            "macro_delta": {"worker_unrest": -0.6},
+                            "family_delta": {str(row.get("family_name", "")): -0.01} if str(row.get("family_name", "")) else {},
+                        }
+                        self._apply_intel_packet(packet, to_player=False, promote_news=False, intensity=0.5)
+            elif kind == "crackdown" and status == "active":
+                source_action = self._collective_row_by_id(str(row.get("source_action_id", "")))
+                if not source_action:
+                    row["status"] = "expired"
+                else:
+                    if not str(row.get("secondary_topic_id", "")) and current_tick >= int(row.get("rumor_tick", current_tick)):
+                        company = self._collective_company_for_action(source_action)
+                        packet = {
+                            "id": f"{row.get('id', 'crackdown')}_rumor_{current_tick}",
+                            "district": str(source_action.get("district", "")),
+                            "source": "镇压余波",
+                            "title": "清场画面传开了",
+                            "line": f"{source_action.get('target_location_title', '现场')} 的清场画面传开后，更多人开始把这事当成全镇议题。",
+                            "body": f"{source_action.get('label', '集体行动')} 的清场余波已经传出原街区，记者、商户和居民都开始讨论要不要继续跟进。",
+                            "tags": ["集体行动", "镇压", "扩散"],
+                            "scope": "city",
+                            "topic_kind": "public",
+                            "goods_delta": {},
+                            "stocks_delta": {str((company or {}).get('stock_name', '')): -0.03} if str((company or {}).get("stock_name", "")) else {},
+                            "macro_delta": {"worker_unrest": 1.4, "media_sentiment": -0.6},
+                            "family_delta": {str((company or {}).get('family_owner', '')): -0.03} if str((company or {}).get("family_owner", "")) else {},
+                        }
+                        topic_row = self._apply_intel_packet(packet, to_player=False, promote_news=True, intensity=0.86)
+                        row["secondary_topic_id"] = str((topic_row or {}).get("id", ""))
+                        row["last_tick"] = current_tick
+                    if str(row.get("secondary_topic_id", "")) and not str(row.get("followup_action_id", "")) and current_tick >= int(row.get("action_tick", current_tick)):
+                        followup_action = self._spawn_collective_followup_action(source_action, str(row.get("secondary_topic_id", "")), int(row.get("escalation_level", 1)))
+                        if followup_action:
+                            row["followup_action_id"] = str(followup_action.get("id", ""))
+                        row["status"] = "completed"
+                        row["last_tick"] = current_tick
+            if str(row.get("status", "active")) in {"active", "completed"} and current_tick - int(row.get("last_tick", current_tick)) <= 8 * 60:
+                keep_rows.append(row)
+        self.state["collective_followups"] = keep_rows[:16]
+
     def _trade_good(self, good_name: str, quantity: int, direction: int, payload: dict[str, Any] | None = None) -> ActionResult:
         player = self.state["player"]
         good = self._find_by_name(self.state["goods"], good_name)
@@ -860,6 +2024,138 @@ class WorldEngine:
             return ActionResult(f"你把 {good_name} x{quantity} 卖给了 {npc['name']}，收回 {cost} 铜币。", self.snapshot())
         return ActionResult(f"卖出 {good_name} x{quantity}。", self.snapshot())
 
+    def _record_player_cash_gift(self, npc: dict[str, Any], amount: int) -> dict[str, Any]:
+        memory = self._npc_player_memory(npc)
+        total = int(memory.get("cash_gift_total", 0)) + amount
+        memory["cash_gift_total"] = total
+        memory["cash_gift_count"] = int(memory.get("cash_gift_count", 0)) + 1
+        memory["last_gift_amount"] = amount
+        bribe_threshold = self._npc_bribe_threshold(npc)
+        follow_threshold = self._npc_follow_threshold(npc)
+        if total >= bribe_threshold:
+            memory["bought_over"] = True
+        if total >= follow_threshold:
+            memory["follows_player"] = True
+        trust_boost = 4.0 if amount >= bribe_threshold else 2.2 if amount >= max(10_000, bribe_threshold // 2) else 0.8
+        relation_boost = 5 if amount >= follow_threshold else 3 if amount >= bribe_threshold else 1
+        npc["player_trust"] = min(100.0, float(npc.get("player_trust", 0.0)) + trust_boost)
+        npc["player_relation"] = int(npc.get("player_relation", 0)) + relation_boost
+        npc["proactive_interest"] = min(0.98, float(npc.get("proactive_interest", 0.3)) + (0.18 if bool(memory.get("follows_player", False)) else 0.08))
+        npc["player_memory"] = memory
+        return memory
+
+    def _gift_money_to_npc(self, npc_id: str, amount: int, district: str) -> ActionResult:
+        npc = self._find_npc(npc_id)
+        if not npc:
+            return ActionResult("找不到这个人。", self.snapshot())
+        player = self.state["player"]
+        amount = max(0, int(amount))
+        if amount <= 0:
+            return ActionResult("送钱至少也得掏出一点真铜币。", self.snapshot())
+        if int(player.get("cash", 0)) < amount:
+            return ActionResult("你手头没有这么多钱。", self.snapshot())
+        player["cash"] = int(player.get("cash", 0)) - amount
+        npc["cash"] = int(npc.get("cash", 0)) + amount
+        memory = self._record_player_cash_gift(npc, amount)
+        bought_over = bool(memory.get("bought_over", False))
+        follows_player = bool(memory.get("follows_player", False))
+        npc["speech_lines"] = [
+            "这笔钱我记下了，后面该往哪边站我会重新掂量。"
+            if bought_over and not follows_player
+            else "你这一下给得不轻，我会记住是谁在托我。"
+            if follows_player
+            else "钱先收下，这份人情我记着。",
+            *npc.get("speech_lines", [])[:2],
+        ]
+        self._remember_npc_event(
+            npc,
+            "player_gift_money",
+            {
+                "amount": amount,
+                "bought_over": bought_over,
+                "follows_player": follows_player,
+            },
+        )
+        self._remember_local_memory(
+            npc,
+            kind="player_gift_money",
+            summary=f"玩家当面给了你 {amount} 铜币，这笔钱已经进了你的兜。你现在对他的态度是：{self._npc_player_status(npc)}。",
+            counterpart_id="player",
+            counterpart_name="玩家",
+            tags=["送钱", "收买" if bought_over else "人情", "跟随" if follows_player else "观察"],
+            salience=0.92 if follows_player else 0.8 if bought_over else 0.58,
+        )
+        self._bump_district_signal(str(npc.get("district", district)), "liquidity", min(0.6, amount / 40_000.0))
+        self._refresh_derived_views()
+        if follows_player:
+            return ActionResult(f"你塞给 {npc['name']} {amount} 铜币。对方已经把你当成新的靠山。", self.snapshot())
+        if bought_over:
+            return ActionResult(f"你塞给 {npc['name']} {amount} 铜币。对方的口风已经明显往你这边偏了。", self.snapshot())
+        return ActionResult(f"你给了 {npc['name']} {amount} 铜币。对方记下了这笔钱。", self.snapshot())
+
+    def _intel_topic_for_npc(self, npc: dict[str, Any], district: str, topic_id: str = "") -> dict[str, Any]:
+        topic = self._resolve_talk_topic(npc, topic_id, district or str(npc.get("district", "")))
+        personal_topics = self._npc_personal_topics(npc)
+        if personal_topics:
+            lead = personal_topics[0]
+            if not topic or str(topic.get("id", "")) == "generic_wind" or float(lead.get("heat", 0.0)) > float(topic.get("heat", 0.0)) + 0.08:
+                return lead
+        return topic
+
+    def _buy_intel_from_npc(self, npc_id: str, amount: int, topic_id: str, district: str) -> ActionResult:
+        npc = self._find_npc(npc_id)
+        if not npc:
+            return ActionResult("找不到这个人。", self.snapshot())
+        if not self._npc_can_sell_info(npc):
+            return ActionResult(f"{npc['name']} 现在还不肯拿真消息换钱。", self.snapshot())
+        player = self.state["player"]
+        topic = self._intel_topic_for_npc(npc, district, topic_id)
+        price = self._npc_intel_price(npc, topic)
+        charge = max(price, int(amount or 0))
+        if int(player.get("cash", 0)) < charge:
+            return ActionResult(f"这条口风要 {charge} 铜币，你现在拿不出来。", self.snapshot())
+        player["cash"] = int(player.get("cash", 0)) - charge
+        npc["cash"] = int(npc.get("cash", 0)) + charge
+        memory = self._npc_player_memory(npc)
+        memory["intel_spend_total"] = int(memory.get("intel_spend_total", 0)) + charge
+        memory["intel_bought"] = int(memory.get("intel_bought", 0)) + 1
+        memory["trust_streak"] = min(8, int(memory.get("trust_streak", 0)) + 1)
+        npc["player_memory"] = memory
+        truth_profile = self._truth_metrics_for_topic(npc, topic, "friendly", "花钱买消息")
+        intel = self._build_intel_packet_from_topic(topic, npc, district or str(npc.get("district", "")))
+        intel = self._spin_intel_packet(intel, npc, truth_profile, topic)
+        paid_ratio = charge / float(max(price, 1))
+        strength = max(0.42, min(1.0, 0.52 + paid_ratio * 0.22 + float(npc.get("player_trust", 0.0)) / 220.0))
+        promote_news = strength >= 0.78 or str(topic.get("kind", "")) in {"asset", "family", "company", "institution", "finance"}
+        self._apply_intel_packet(intel, to_player=True, promote_news=promote_news, intensity=strength)
+        npc["speech_lines"] = [f"钱我收了，这条你拿稳：{intel.get('line', topic.get('summary', '风声先记着。'))}", *npc.get("speech_lines", [])[:2]]
+        self._remember_npc_event(
+            npc,
+            "player_buy_intel",
+            {
+                "amount": charge,
+                "topic_id": str(topic.get("id", "")),
+                "topic_label": str(topic.get("label", "")),
+            },
+        )
+        self._remember_local_memory(
+            npc,
+            kind="player_buy_intel",
+            summary=f"玩家花了 {charge} 铜币从你这里买走了一条关于{topic.get('label', '街头风声')}的消息。",
+            counterpart_id="player",
+            counterpart_name="玩家",
+            topic_id=str(topic.get("id", "")),
+            topic_label=str(topic.get("label", "")),
+            tags=["卖消息", str(topic.get("kind", "")), "现金"],
+            salience=0.84,
+        )
+        self._bump_district_signal(str(npc.get("district", district)), "gossip", 0.16 + min(0.24, charge / 12_000.0))
+        self._bump_district_signal(str(npc.get("district", district)), "liquidity", min(0.42, charge / 20_000.0))
+        self.state["demo_metrics"]["intel_actions"] = int(self.state["demo_metrics"].get("intel_actions", 0)) + 1
+        self._apply_intraday_market_move(reason="player_talk", decay=0.76)
+        self._refresh_derived_views()
+        return ActionResult(f"你花了 {charge} 铜币从 {npc['name']} 那里买到一条消息。", self.snapshot())
+
     def _npc_good_quote(self, npc: dict[str, Any], good_name: str, direction: int) -> tuple[int, str]:
         good = self._find_by_name(self.state["goods"], good_name)
         base_price = int(good.get("current_price", 1)) if good else 1
@@ -875,7 +2171,7 @@ class WorldEngine:
             tone = "只能按这个价回收"
         return max(1, int(round(base_price * factor))), tone
 
-    def _default_trade_quotes_for_npc(self, npc: dict[str, Any]) -> list[dict[str, Any]]:
+    def _default_trade_quotes_for_npc(self, npc: dict[str, Any], topic_id: str = "") -> list[dict[str, Any]]:
         quotes: list[dict[str, Any]] = []
         inventory = copy.deepcopy(npc.get("inventory", {}))
         for action_type, good_name, quantity, prefix in [
@@ -893,9 +2189,36 @@ class WorldEngine:
                     "action_type": action_type,
                     "good_name": good_name,
                     "quantity": quantity,
+                    "amount": unit_price * quantity,
                     "unit_price": unit_price,
                     "description": f"{prefix}{good_name} x{quantity}，{tone}，单价 {unit_price} 铜币。",
                     "button": f"{prefix}{good_name}",
+                }
+            )
+        bribe_threshold = self._npc_bribe_threshold(npc)
+        follow_threshold = self._npc_follow_threshold(npc)
+        for amount in [max(1_000, bribe_threshold // 4), bribe_threshold, follow_threshold]:
+            label = "打点一下" if amount < bribe_threshold else "直接收买" if amount < follow_threshold else "砸成自己人"
+            quotes.append(
+                {
+                    "action_type": "gift_money",
+                    "quantity": 1,
+                    "amount": amount,
+                    "button": f"送 {amount} 铜币",
+                    "description": f"{label}，把 {amount} 铜币真的塞到对方手里。对方现金会增加，也会把这笔钱记在你头上。",
+                }
+            )
+        intel_topic = self._intel_topic_for_npc(npc, str(npc.get("district", "")), topic_id)
+        if self._npc_can_sell_info(npc):
+            intel_price = self._npc_intel_price(npc, intel_topic)
+            quotes.append(
+                {
+                    "action_type": "buy_intel",
+                    "quantity": 1,
+                    "amount": intel_price,
+                    "topic_id": str(intel_topic.get("id", "")),
+                    "button": f"买消息 {intel_price}",
+                    "description": f"花 {intel_price} 铜币买一条关于“{intel_topic.get('label', '街头风声')}”的消息，这笔钱会真的进对方口袋。",
                 }
             )
         return quotes
@@ -935,6 +2258,214 @@ class WorldEngine:
             normalized["煤"] = max(normalized["煤"], 1)
         return normalized
 
+    def _stock_issued_shares(self, stock: dict[str, Any]) -> int:
+        name = str(stock.get("name", ""))
+        if name == "海藻食业":
+            return 80_000
+        if name == "珊瑚金控":
+            return 72_000
+        if name == "龟甲船运":
+            return 76_000
+        return 60_000
+
+    def _rebuild_stock_holder_registry(self) -> None:
+        registry: dict[str, list[dict[str, Any]]] = {str(stock.get("name", "")): [] for stock in self.state.get("stocks", [])}
+        player = self.state.get("player", {})
+        for stock_name, qty in dict(player.get("stock_holdings", {})).items():
+            if int(qty) <= 0 or stock_name not in registry:
+                continue
+            registry[stock_name].append({"holder_id": "player", "holder_name": "玩家", "holder_kind": "player", "shares": int(qty)})
+        for npc in self.state.get("npcs", []):
+            for stock_name, qty in dict(npc.get("stock_positions", {})).items():
+                if int(qty) <= 0 or stock_name not in registry:
+                    continue
+                registry[stock_name].append(
+                    {
+                        "holder_id": str(npc.get("id", "")),
+                        "holder_name": str(npc.get("name", "")),
+                        "holder_kind": "npc",
+                        "shares": int(qty),
+                    }
+                )
+        for rows in registry.values():
+            rows.sort(key=lambda row: int(row.get("shares", 0)), reverse=True)
+        self.state["stock_holder_registry"] = registry
+
+    def _reprice_stock_after_trade(self, stock: dict[str, Any], trade_cash: float, direction: int) -> None:
+        previous = int(stock.get("current_price", 0))
+        current_price = max(1.0, float(stock.get("current_price", 1)))
+        free_float_value = max(1.0, float(stock.get("free_float", 1)) * current_price)
+        flow_ratio = max(-0.16, min(0.16, (float(trade_cash) / max(free_float_value * 0.08, 1.0)) * float(direction)))
+        existing_pressure = float(self.state.get("market_pressure", {}).get("stocks", {}).get(str(stock.get("name", "")), 0.0))
+        reference_price = float(stock.get("reference_price", current_price))
+        mispricing = (current_price - reference_price) / max(reference_price, 1.0)
+        factor = 1.0 + flow_ratio * 0.42 + existing_pressure * 0.08 - mispricing * 0.06
+        factor = max(0.9, min(1.12, factor))
+        stock["current_price"] = max(3, int(round(current_price * factor)))
+        stock["last_trade_price"] = int(stock["current_price"])
+        stock["change_amount"] = int(stock["current_price"]) - int(stock.get("previous_close", previous))
+        base = max(float(stock.get("previous_close", previous)), 1.0)
+        stock["change_pct"] = round((float(stock["current_price"]) - base) / base, 4)
+        stock["reference_price"] = round(reference_price * 0.992 + float(stock["current_price"]) * 0.008, 3)
+        stock["market_cap"] = int(int(stock.get("issued_shares", 0)) * int(stock["current_price"]))
+        stock["market_sentiment"] = "乐观" if stock["current_price"] > previous else "恐慌" if stock["current_price"] < previous else "谨慎"
+        stock["float_turnover"] = round(
+            float(stock.get("trade_volume", 0)) / max(float(stock.get("free_float", 1)), 1.0),
+            4,
+        )
+
+    def _record_stock_trade(
+        self,
+        *,
+        actor_kind: str,
+        actor_id: str,
+        actor_name: str,
+        stock_name: str,
+        quantity: int,
+        direction: int,
+        unit_price: int,
+        source: str,
+    ) -> None:
+        stock = self._find_by_name(self.state.get("stocks", []), stock_name)
+        if not stock:
+            return
+        quantity = max(1, int(quantity))
+        total_amount = int(unit_price) * quantity
+        stock["trade_volume"] = int(stock.get("trade_volume", 0)) + quantity
+        stock["net_cash_flow"] = round(float(stock.get("net_cash_flow", 0.0)) + total_amount * (1 if direction > 0 else -1), 2)
+        tape = list(self.state.get("stock_trade_tape", []))
+        tape.insert(
+            0,
+            {
+                "stock_name": stock_name,
+                "side": "buy" if direction > 0 else "sell",
+                "quantity": quantity,
+                "unit_price": int(unit_price),
+                "total_amount": total_amount,
+                "actor_kind": actor_kind,
+                "actor_id": actor_id,
+                "actor_name": actor_name,
+                "source": source,
+                "clock": self._clock_label(),
+                "anonymous_label": f"{'买入' if direction > 0 else '卖出'} {stock_name} {quantity} 股 / {total_amount} 铜币",
+            },
+        )
+        self.state["stock_trade_tape"] = tape[:24]
+        pressure = float(self.state["market_pressure"]["stocks"].get(stock_name, 0.0))
+        cash_ratio = total_amount / max(float(stock.get("free_float", 1)) * max(float(stock.get("current_price", 1)), 1.0), 1.0)
+        self.state["market_pressure"]["stocks"][stock_name] = max(-0.8, min(0.8, pressure + cash_ratio * (2.1 if direction > 0 else -2.1)))
+        self._reprice_stock_after_trade(stock, total_amount, direction)
+        self._rebuild_stock_holder_registry()
+
+    def _npc_stock_trade_budget(self, npc: dict[str, Any], stock: dict[str, Any], direction: int) -> int:
+        cash = int(npc.get("cash", 0))
+        role = str(npc.get("role", ""))
+        class_name = str(npc.get("class", ""))
+        weight = 0.03
+        if role in {"投机者", "银行经理"}:
+            weight = 0.14
+        elif role in {"代理人", "老板"} or class_name in {"特殊角色", "关键角色"}:
+            weight = 0.09
+        elif role in {"店主", "记者"}:
+            weight = 0.05
+        if direction < 0:
+            weight = 1.0
+        return max(int(stock.get("current_price", 1)), int(round(cash * weight)))
+
+    def _coerce_trade_decision(self, raw: Any, npc: dict[str, Any]) -> dict[str, Any]:
+        payload = raw if isinstance(raw, dict) else {}
+        action = str(payload.get("action", payload.get("mode", "hold"))).strip().lower()
+        if action not in {"buy", "sell", "hold"}:
+            action = "hold"
+        stock_name = str(payload.get("stock_name", payload.get("target", ""))).strip()
+        if not stock_name:
+            preferred = next((name for name, qty in dict(npc.get("stock_positions", {})).items() if int(qty) > 0), "")
+            if not preferred:
+                family = str(npc.get("family_affiliation", ""))
+                preferred = next((str(row.get("name", "")) for row in self.state.get("stocks", []) if str(row.get("family_owner", "")) == family), "")
+            stock_name = preferred
+        quantity = max(0, int(payload.get("quantity", payload.get("shares", 0)) or 0))
+        confidence = round(max(0.0, min(1.0, float(payload.get("confidence", 0.45)))), 3)
+        note = str(payload.get("note", payload.get("reason", ""))).strip()
+        return {"action": action, "stock_name": stock_name, "quantity": quantity, "confidence": confidence, "note": note}
+
+    def _rule_npc_trade_decision(self, npc: dict[str, Any]) -> dict[str, Any]:
+        role = str(npc.get("role", ""))
+        if role not in {"投机者", "银行经理", "代理人", "记者", "店主", "老板"} and sum(int(value) for value in dict(npc.get("stock_positions", {})).values()) <= 0:
+            return {"action": "hold", "stock_name": "", "quantity": 0, "confidence": 0.2, "note": ""}
+        family = str(npc.get("family_affiliation", ""))
+        preferred = next((str(row.get("name", "")) for row in self.state.get("stocks", []) if str(row.get("family_owner", "")) == family), "")
+        holdings = {str(name): int(value) for name, value in dict(npc.get("stock_positions", {})).items()}
+        owned_name = next((name for name, qty in holdings.items() if qty > 0), preferred)
+        focus_name = preferred or owned_name or (self.state.get("stocks", [])[0].get("name", "") if self.state.get("stocks") else "")
+        if not focus_name:
+            return {"action": "hold", "stock_name": "", "quantity": 0, "confidence": 0.2, "note": ""}
+        pressure = float(self.state["market_pressure"]["stocks"].get(focus_name, 0.0))
+        sentiment = next((str(row.get("market_sentiment", "谨慎")) for row in self.state.get("stocks", []) if str(row.get("name", "")) == focus_name), "谨慎")
+        if pressure <= -0.08 and holdings.get(focus_name, 0) > 0:
+            return {"action": "sell", "stock_name": focus_name, "quantity": max(1, holdings.get(focus_name, 0) // 3), "confidence": 0.62, "note": "盘口发冷"}
+        if pressure >= 0.06 or sentiment == "乐观":
+            return {"action": "buy", "stock_name": focus_name, "quantity": 0, "confidence": 0.58, "note": "想跟一手"}
+        return {"action": "hold", "stock_name": focus_name, "quantity": 0, "confidence": 0.32, "note": ""}
+
+    def _apply_npc_trade_decision(self, npc: dict[str, Any], raw: Any, source: str = "rule") -> dict[str, Any] | None:
+        decision = self._coerce_trade_decision(raw, npc)
+        if decision["action"] == "hold":
+            decision = self._rule_npc_trade_decision(npc)
+        action = str(decision.get("action", "hold"))
+        stock_name = str(decision.get("stock_name", ""))
+        stock = self._find_by_name(self.state.get("stocks", []), stock_name)
+        if not stock or action == "hold":
+            return None
+        holdings = {str(name): int(value) for name, value in dict(npc.get("stock_positions", {})).items()}
+        unit_price = int(stock.get("current_price", 0))
+        quantity = int(decision.get("quantity", 0))
+        if action == "buy":
+            budget = self._npc_stock_trade_budget(npc, stock, 1)
+            affordable = max(0, min(int(npc.get("cash", 0)) // max(unit_price, 1), max(1, budget // max(unit_price, 1))))
+            quantity = max(1, quantity or affordable)
+            if affordable <= 0:
+                return None
+            quantity = min(quantity, affordable)
+            total_amount = unit_price * quantity
+            npc["cash"] = int(npc.get("cash", 0)) - total_amount
+            holdings[stock_name] = holdings.get(stock_name, 0) + quantity
+            self._record_stock_trade(actor_kind="npc", actor_id=str(npc.get("id", "")), actor_name=str(npc.get("name", "")), stock_name=stock_name, quantity=quantity, direction=1, unit_price=unit_price, source=source)
+        else:
+            available = holdings.get(stock_name, 0)
+            if available <= 0:
+                return None
+            quantity = max(1, quantity or max(1, available // 3))
+            quantity = min(quantity, available)
+            total_amount = unit_price * quantity
+            npc["cash"] = int(npc.get("cash", 0)) + total_amount
+            holdings[stock_name] = max(0, available - quantity)
+            self._record_stock_trade(actor_kind="npc", actor_id=str(npc.get("id", "")), actor_name=str(npc.get("name", "")), stock_name=stock_name, quantity=quantity, direction=-1, unit_price=unit_price, source=source)
+        npc["stock_positions"] = holdings
+        npc["last_trade_pnl"] = round(float(npc.get("last_trade_pnl", 0.0)) + total_amount * (1 if action == "sell" else -1), 2)
+        self._bump_district_signal("交易所", "trade_heat", 0.03 + quantity * 0.006)
+        self._bump_district_signal("交易所", "liquidity", 0.02 + quantity * 0.005)
+        return {"action": action, "stock_name": stock_name, "quantity": quantity, "amount": total_amount}
+
+    def _run_npc_market_round(self, trigger: str) -> None:
+        acted = 0
+        for npc in self.state.get("npcs", []):
+            role = str(npc.get("role", ""))
+            if role not in {"投机者", "银行经理", "代理人", "记者", "店主", "老板"} and sum(int(value) for value in dict(npc.get("stock_positions", {})).values()) <= 0:
+                continue
+            spin = self.state.get("npc_spin_map", {}).get(str(npc.get("id", "")), {})
+            if spin.get("trade_execution"):
+                continue
+            raw_decision = spin.get("trade_decision", {})
+            decision = self._apply_npc_trade_decision(npc, raw_decision, source=trigger)
+            if not decision:
+                continue
+            acted += 1
+            if acted >= 6:
+                break
+        if acted > 0:
+            self.state["demo_metrics"]["stock_trades"] = int(self.state.get("demo_metrics", {}).get("stock_trades", 0)) + acted
+
     def _trade_stock(self, stock_name: str, quantity: int, direction: int) -> ActionResult:
         player = self.state["player"]
         stock = self._find_by_name(self.state["stocks"], stock_name)
@@ -947,23 +2478,43 @@ class WorldEngine:
                 return ActionResult("现金不足。", self.snapshot())
             player["cash"] -= cost
             player["stock_holdings"][stock_name] = player["stock_holdings"].get(stock_name, 0) + quantity
-            if stock_name == "晨报传媒":
+            if stock_name == "珊瑚金控":
                 self._increment_task_progress("swing_trade_media", stock_name, quantity)
             self.state["demo_metrics"]["stock_trades"] = int(self.state["demo_metrics"].get("stock_trades", 0)) + quantity
-            self.state["market_pressure"]["stocks"][stock_name] = float(self.state["market_pressure"]["stocks"].get(stock_name, 0.0)) + 0.06 * quantity
+            self._record_stock_trade(
+                actor_kind="player",
+                actor_id="player",
+                actor_name="玩家",
+                stock_name=stock_name,
+                quantity=quantity,
+                direction=1,
+                unit_price=int(stock.get("current_price", 0)),
+                source="player_action",
+            )
             self._bump_district_signal("交易所", "liquidity", 0.12 * quantity)
             self._bump_district_signal("交易所", "trade_heat", 0.08 * quantity)
             self._update_player_class()
+            self._refresh_derived_views()
             return ActionResult(f"买入 {stock_name} x{quantity}。", self.snapshot())
         if player["stock_holdings"].get(stock_name, 0) < quantity:
             return ActionResult("持仓不足。", self.snapshot())
         player["stock_holdings"][stock_name] -= quantity
         player["cash"] += cost
         self.state["demo_metrics"]["stock_trades"] = int(self.state["demo_metrics"].get("stock_trades", 0)) + quantity
-        self.state["market_pressure"]["stocks"][stock_name] = float(self.state["market_pressure"]["stocks"].get(stock_name, 0.0)) - 0.05 * quantity
+        self._record_stock_trade(
+            actor_kind="player",
+            actor_id="player",
+            actor_name="玩家",
+            stock_name=stock_name,
+            quantity=quantity,
+            direction=-1,
+            unit_price=int(stock.get("current_price", 0)),
+            source="player_action",
+        )
         self._bump_district_signal("交易所", "liquidity", 0.1 * quantity)
         self._bump_district_signal("交易所", "trade_heat", 0.06 * quantity)
         self._update_player_class()
+        self._refresh_derived_views()
         return ActionResult(f"卖出 {stock_name} x{quantity}。", self.snapshot())
 
     def _accept_task(self, task_id: str) -> ActionResult:
@@ -1118,11 +2669,13 @@ class WorldEngine:
 
     def _generate_ai_pulse(self, trigger: str) -> None:
         self.state["local_broadcasts"] = []
+        allow_boot_spread = trigger != "boot"
         for npc in self.state["npcs"]:
             self._update_npc_state(npc, trigger)
             self._generate_npc_speech(npc)
-            self._apply_local_hearing(npc)
-            self._check_local_escalation(npc)
+            if allow_boot_spread:
+                self._apply_local_hearing(npc)
+                self._check_local_escalation(npc)
         pulse_count = int(self.state.get("demo_metrics", {}).get("ai_pulses", 0))
         use_live_llm = (
             trigger != "scheduled"
@@ -1135,6 +2688,7 @@ class WorldEngine:
         else:
             self._apply_fallback_pulse_brief()
             self.state["scene_director_note"] = self._fallback_scene_focus()
+        self._run_npc_market_round(trigger)
         self._refresh_ambient_speeches()
         self._refresh_derived_views()
         self.state["last_pulse_at"] = self._now_label()
@@ -1174,6 +2728,35 @@ class WorldEngine:
             npc["current_goal"] = self.random.choice(["先填饱肚子", "盯住消息", "保住工作", "找条上升的缝", "别被人当垫脚石"])
             npc["action_tendency"] = self.random.choice(["低声抱怨", "左右张望", "讨价还价", "装作无事"])
             npc["broadcast_intent"] = "low"
+        collective_override = self._collective_schedule_override(npc, int(self.state.get("clock_minutes", 8 * 60)))
+        if collective_override:
+            collective_role = str(collective_override.get("role", ""))
+            npc["current_goal"] = str(collective_override.get("goal", npc.get("current_goal", "")))
+            if collective_role == "organizer":
+                npc["mood"] = "defiant"
+                npc["stance"] = "抱团"
+                npc["action_tendency"] = "四处串联"
+                npc["broadcast_intent"] = "faction"
+            elif collective_role in {"attendee", "committed", "supporter"}:
+                npc["mood"] = "defiant" if float(npc.get("fear", 0)) < 74 else "anxious"
+                npc["stance"] = "抱团"
+                npc["action_tendency"] = "朝人堆里靠"
+                npc["broadcast_intent"] = "faction"
+            elif collective_role == "negotiator":
+                npc["mood"] = "wary"
+                npc["stance"] = "现实"
+                npc["action_tendency"] = "试探让步"
+                npc["broadcast_intent"] = "low"
+            elif collective_role == "suppressor":
+                npc["mood"] = "defiant"
+                npc["stance"] = "谨慎"
+                npc["action_tendency"] = "压住场面"
+                npc["broadcast_intent"] = "faction"
+            elif collective_role == "observer":
+                npc["mood"] = "wary"
+                npc["stance"] = "观望"
+                npc["action_tendency"] = "围着看风向"
+                npc["broadcast_intent"] = "low"
         npc["emotion_delta"] = {"fear": self.random.randint(-1, 4), "greed": self.random.randint(-1, 3)}
 
     def _generate_npc_speech(self, npc: dict[str, Any]) -> None:
@@ -1188,8 +2771,8 @@ class WorldEngine:
         if scene_context.get("current_district") == npc["district"]:
             pool.extend(
                 [
-                    "{name}瞥了一眼那只乌龟，像在盘算 {goal}。",
-                    "{name}压低声音：外来壳客在这儿晃，今天的风怕是要改。",
+                    "{name}瞥了一眼那名外来人，像在盘算 {goal}。",
+                    "{name}压低声音：外来人又在这儿晃，今天的风怕是要改。",
                     "{name}朝街口努嘴：有人在附近盯盘，别把话说太满。",
                 ]
             )
@@ -1228,6 +2811,8 @@ class WorldEngine:
     def _apply_local_hearing(self, speaker: dict[str, Any]) -> None:
         if not speaker["speech_lines"]:
             return
+        focus_topic = self._resolve_focus_topic(speaker)
+        speaker_band = str(speaker.get("social_band", self._npc_social_band(speaker)))
         self.state["local_broadcasts"].append(
             {
                 "source": speaker["id"],
@@ -1242,11 +2827,36 @@ class WorldEngine:
                 continue
             if listener["district"] != speaker["district"]:
                 continue
+            same_subregion = str(listener.get("subregion_id", "")) == str(speaker.get("subregion_id", ""))
+            if not same_subregion and speaker_band not in {"media", "authority"} and not str(listener.get("collective_action_id", "")):
+                continue
             if self._distance(speaker, listener) > speaker["social_radius"]:
                 continue
             listener["fear"] = min(100, listener["fear"] + max(0, speaker["emotion_delta"]["fear"]))
             listener["greed"] = min(100, listener["greed"] + max(0, speaker["emotion_delta"]["greed"]))
             listener["memory_tags"] = self._push_memory(listener["memory_tags"], f"heard:{speaker['id']}")
+            if focus_topic:
+                watch_link = str(listener.get("name", "")) in self._npc_contact_names(speaker, "watch_people")
+                trusted_link = str(listener.get("name", "")) in self._npc_contact_names(speaker, "trusted_people")
+                chance = 0.18
+                if same_subregion:
+                    chance += 0.28
+                if trusted_link:
+                    chance += 0.22
+                elif watch_link:
+                    chance += 0.12
+                chance += float(listener.get("rumor_susceptibility", 0.2)) * 0.24
+                if speaker_band in {"media", "organizer"}:
+                    chance += 0.08
+                if self.random.random() < min(0.92, chance):
+                    self._register_topic_heard(
+                        listener,
+                        focus_topic,
+                        speaker,
+                        channel="overheard",
+                        salience=min(0.82, 0.28 + chance * 0.42),
+                        line=f"你在{speaker.get('district', '街口')}听见{speaker.get('name', '有人')}压着嗓子提到“{focus_topic.get('label', '街面风声')}”。",
+                    )
             if speaker["broadcast_intent"] in {"fear", "greed", "faction"} and self.random.random() < listener["rumor_susceptibility"]:
                 rumor_line = f"有人在{speaker['district']}低声说：{speaker['speech_lines'][0][:18]}"
                 listener["speech_lines"] = [rumor_line, *listener["speech_lines"][:2]]
@@ -1336,9 +2946,21 @@ class WorldEngine:
         self._rebuild_company_states()
         self._rebuild_family_moves()
         self._rebuild_npc_truth_profile()
+        self._decay_topic_registry()
+        self._decay_norm_registry()
+        self._rebuild_talk_topics()
+        self.state["active_topics"] = self._active_public_topics(limit=10)
+        self.state["active_norms"] = self._active_norms_view(limit=10)
+        self._sync_collective_actions()
+        self.state["active_collective_actions"] = self._active_collective_actions_view(limit=10)
+        for npc in self.state.get("npcs", []):
+            npc["agent_prompt"] = self._npc_agent_prompt(npc)
         npc_cards = self._build_npc_cards()
         family_moves = copy.deepcopy(self.state.get("family_moves", []))
         company_states = copy.deepcopy(self.state.get("company_states", []))
+        active_topics = copy.deepcopy(self.state.get("active_topics", []))
+        active_norms = copy.deepcopy(self.state.get("active_norms", []))
+        active_collective_actions = copy.deepcopy(self.state.get("active_collective_actions", []))
         include_image = trigger != "scheduled" or self._full_scheduled_llm_mode()
         return {
             "trigger": trigger,
@@ -1346,6 +2968,61 @@ class WorldEngine:
             "scene_observation": self._llm_scene_observation(observation, include_image=include_image),
             "macro": copy.deepcopy(self.state.get("macro", {})),
             "district_signals": copy.deepcopy(self.state.get("district_signals", {})),
+            "topics": [
+                {
+                    "id": str(topic.get("id", "")),
+                    "kind": str(topic.get("kind", "")),
+                    "district": str(topic.get("district", "")),
+                    "label": str(topic.get("label", "")),
+                    "summary": str(topic.get("summary", "")),
+                    "heat": float(topic.get("heat", 0.0)),
+                    "credibility": float(topic.get("credibility", 0.0)),
+                    "spread_count": int(topic.get("spread_count", 0)),
+                    "status": str(topic.get("status", "")),
+                    "tags": list(topic.get("tags", [])),
+                }
+                for topic in active_topics
+            ],
+            "norms": [
+                {
+                    "id": str(norm.get("id", "")),
+                    "text": str(norm.get("text", "")),
+                    "category": str(norm.get("category", "")),
+                    "district": str(norm.get("district", "")),
+                    "support": float(norm.get("support", 0.0)),
+                    "strength": float(norm.get("strength", 0.0)),
+                    "violation_cost": float(norm.get("violation_cost", 0.0)),
+                    "status": str(norm.get("status", "")),
+                    "source_topic_ids": list(norm.get("source_topic_ids", [])),
+                }
+                for norm in active_norms
+            ],
+            "collective_actions": [
+                {
+                    "id": str(action.get("id", "")),
+                    "kind": str(action.get("kind", "")),
+                    "district": str(action.get("district", "")),
+                    "label": str(action.get("label", "")),
+                    "theme": str(action.get("theme", "")),
+                    "stage": str(action.get("stage", "")),
+                    "status": str(action.get("status", "")),
+                    "heat": float(action.get("heat", 0.0)),
+                    "support": float(action.get("support", 0.0)),
+                    "commitment": float(action.get("commitment", 0.0)),
+                    "turnout": float(action.get("turnout", 0.0)),
+                    "risk": float(action.get("risk", 0.0)),
+                    "expected_reward": float(action.get("expected_reward", 0.0)),
+                    "target_location_title": str(action.get("target_location_title", "")),
+                    "target_subregion_name": str(action.get("target_subregion_name", "")),
+                    "target_x": float(action.get("target_x", 0.0)),
+                    "target_y": float(action.get("target_y", 0.0)),
+                    "response_mode": str(action.get("response_mode", "")),
+                    "response_note": str(action.get("response_note", "")),
+                    "source_topic_ids": list(action.get("source_topic_ids", [])),
+                    "source_norm_ids": list(action.get("source_norm_ids", [])),
+                }
+                for action in active_collective_actions
+            ],
             "player": {
                 "cash": int(self.state.get("player", {}).get("cash", 0)),
                 "credit": int(self.state.get("player", {}).get("credit", 0)),
@@ -1404,10 +3081,14 @@ class WorldEngine:
                     "id": str(card.get("id", "")),
                     "name": str(card.get("name", "")),
                     "district": str(card.get("district", "")),
+                    "title": str(card.get("title", "")),
                     "role": str(card.get("role", "")),
                     "agent_prompt": str(card.get("agent_prompt", "")),
                     "agent_budget_left": int(card.get("agent_budget_left", 0)),
                     "summary": str(card.get("personal_summary", "")),
+                    "topic_digest": str(card.get("topic_digest", "")),
+                    "norm_digest": str(card.get("norm_digest", "")),
+                    "collective_digest": str(card.get("collective_digest", "")),
                     "memory_summary": str(card.get("memory_summary", "")),
                     "truthfulness": float(card.get("truthfulness", 0.5)),
                     "confidence": float(card.get("confidence", 0.5)),
@@ -1434,12 +3115,23 @@ class WorldEngine:
                 "line": line,
                 "stance": str(npc.get("stance", "")),
                 "market_tilt": tilt,
+                "topic_action": {"mode": "silence", "topic_id": "", "intensity": 0.0, "note": ""},
+                "norm_action": {"mode": "ignore", "norm_id": "", "text": "", "intensity": 0.0, "note": ""},
+                "collective_action": {"mode": "avoid", "action_id": "", "kind": "", "intensity": 0.0, "note": ""},
                 "source": "rule",
             }
             self._append_entity_brief_history(
                 "npc_brief_history",
                 npc_id,
-                {"line": line, "stance": str(npc.get("stance", "")), "market_tilt": tilt, "source": "rule"},
+                {
+                    "line": line,
+                    "stance": str(npc.get("stance", "")),
+                    "market_tilt": tilt,
+                    "topic_action": "silence",
+                    "norm_action": "ignore",
+                    "collective_action": "avoid",
+                    "source": "rule",
+                },
             )
         self.state["npc_spin_map"] = spin_map
         family_briefings: dict[str, dict[str, Any]] = {}
@@ -1511,11 +3203,39 @@ class WorldEngine:
                 npc["speech_lines"] = [line, *existing[:2]]
             if stance:
                 npc["stance"] = stance
+            fallback_topic = self._resolve_talk_topic(npc, str(row.get("topic_id", "")), str(npc.get("district", "")))
+            topic_action = self._coerce_npc_topic_action(row.get("topic_action", {}), npc, fallback_topic)
+            applied_topic = self._apply_topic_action(npc, fallback_topic, topic_action)
+            norm_action = self._coerce_npc_norm_action(row.get("norm_action", {}), npc, applied_topic or fallback_topic, topic_action)
+            applied_norm = self._record_norm_action(npc, applied_topic or fallback_topic, topic_action, norm_action)
+            collective_action = self._coerce_npc_collective_action(
+                row.get("collective_action", {}),
+                npc,
+                applied_topic or fallback_topic,
+                applied_norm,
+                topic_action,
+                norm_action,
+            )
+            applied_collective = self._apply_collective_action(npc, applied_topic or fallback_topic, applied_norm, collective_action)
+            trade_decision = self._coerce_trade_decision(row.get("trade_decision", {}), npc)
+            applied_trade = self._apply_npc_trade_decision(npc, trade_decision, source="llm")
             market_tilt = self._coerce_market_tilt(str(row.get("market_tilt", "")).strip(), npc)
             spin_map[npc_id] = {
                 "line": line or (str(npc.get("speech_lines", [""])[0]) if npc.get("speech_lines") else ""),
                 "stance": stance or str(npc.get("stance", "")),
                 "market_tilt": market_tilt,
+                "emotions": copy.deepcopy(row.get("emotions", {})),
+                "beliefs_update": copy.deepcopy(row.get("beliefs_update", {})),
+                "top_goals": copy.deepcopy(row.get("top_goals", [])),
+                "social_message": str(row.get("social_message", line or "")),
+                "trade_decision": copy.deepcopy(trade_decision),
+                "trade_execution": copy.deepcopy(applied_trade or {}),
+                "topic_action": copy.deepcopy(topic_action),
+                "norm_action": copy.deepcopy(norm_action),
+                "collective_action": copy.deepcopy(collective_action),
+                "topic_id": str((applied_topic or fallback_topic or {}).get("id", "")),
+                "norm_id": str((applied_norm or {}).get("id", "")),
+                "collective_action_id": str((applied_collective or {}).get("id", "")),
                 "source": "llm",
             }
             self._append_entity_brief_history(
@@ -1525,6 +3245,11 @@ class WorldEngine:
                     "line": spin_map[npc_id]["line"],
                     "stance": spin_map[npc_id]["stance"],
                     "market_tilt": market_tilt,
+                    "social_message": str(row.get("social_message", line or "")),
+                    "trade_decision": str(trade_decision.get("action", "hold")),
+                    "topic_action": str(topic_action.get("mode", "")),
+                    "norm_action": str(norm_action.get("mode", "")),
+                    "collective_action": str(collective_action.get("mode", "")),
                     "source": "llm",
                 },
             )
@@ -1536,6 +3261,14 @@ class WorldEngine:
                 "line": str(npc.get("speech_lines", [""])[0]) if npc.get("speech_lines") else "",
                 "stance": str(npc.get("stance", "")),
                 "market_tilt": self._npc_market_tilt(npc),
+                "emotions": {},
+                "beliefs_update": {},
+                "top_goals": [],
+                "social_message": "",
+                "trade_decision": {"action": "hold", "stock_name": "", "quantity": 0, "confidence": 0.0, "note": ""},
+                "topic_action": {"mode": "silence", "topic_id": "", "intensity": 0.0, "note": ""},
+                "norm_action": {"mode": "ignore", "norm_id": "", "text": "", "intensity": 0.0, "note": ""},
+                "collective_action": {"mode": "avoid", "action_id": "", "kind": "", "intensity": 0.0, "note": ""},
                 "source": "rule",
             }
         self.state["npc_spin_map"] = spin_map
@@ -1636,12 +3369,18 @@ class WorldEngine:
             generated = self.ark.generate_npc_spin(
                 {
                     "npc": copy.deepcopy(npc),
+                    "llm_sections": self._npc_llm_sections(npc, topic),
                     "topic": copy.deepcopy(topic),
+                    "active_topics": self._active_public_topics(limit=4, district_name=str(npc.get("district", ""))),
+                    "active_norms": self._active_norms_view(limit=4, district_name=str(npc.get("district", ""))),
+                    "active_collective_actions": self._active_collective_actions_view(limit=4, district_name=str(npc.get("district", ""))),
                     "truth_profile": truth_profile,
                     "district_signals": copy.deepcopy(self.state.get("district_signals", {}).get(str(npc.get("district", "")), {})),
                     "relationship_memory": {
                         "player_memory": copy.deepcopy(self._npc_player_memory(npc)),
                         "recent_events": copy.deepcopy(list(npc.get("relationship_memory", []))[:4]),
+                        "conversation_history": self._dialogue_history_view(npc, limit=4),
+                        "local_memory": self._local_memory_view(npc, topic_id=str(topic.get("id", "")), limit=5),
                     },
                     "recent_briefs": copy.deepcopy(self._entity_brief_history("npc_brief_history", npc_id)[:3]),
                     "scene_observation": self._llm_scene_observation(observation, include_image=use_image),
@@ -1656,6 +3395,9 @@ class WorldEngine:
                         "line": str((generated.get("lines", [""]) or [""])[0]),
                         "stance": str(generated.get("stance", "")),
                         "market_tilt": str(generated.get("market_tilt", "")),
+                        "topic_action": copy.deepcopy(generated.get("topic_action", {})),
+                        "norm_action": copy.deepcopy(generated.get("norm_action", {})),
+                        "collective_action": copy.deepcopy(generated.get("collective_action", {})),
                     }
                 ]
             )
@@ -1675,6 +3417,9 @@ class WorldEngine:
                         for company in self.state.get("company_states", [])
                         if str(company.get("family_owner", "")) == family_name
                     ],
+                    "active_topics": self._active_public_topics(limit=4, district_name=str(family_move.get("district", ""))),
+                    "active_norms": self._active_norms_view(limit=4, district_name=str(family_move.get("district", ""))),
+                    "active_collective_actions": self._active_collective_actions_view(limit=4, district_name=str(family_move.get("district", ""))),
                     "district_signals": copy.deepcopy(self.state.get("district_signals", {})),
                     "recent_briefs": copy.deepcopy(self._entity_brief_history("family_brief_history", family_name)[:3]),
                     "scene_observation": self._llm_scene_observation(observation, include_image=False),
@@ -1704,6 +3449,9 @@ class WorldEngine:
             generated = self.ark.generate_company_briefing(
                 {
                     "company": copy.deepcopy(company),
+                    "active_topics": self._active_public_topics(limit=4, district_name=str(company.get("district", ""))),
+                    "active_norms": self._active_norms_view(limit=4, district_name=str(company.get("district", ""))),
+                    "active_collective_actions": self._active_collective_actions_view(limit=4, district_name=str(company.get("district", ""))),
                     "district_signals": copy.deepcopy(self.state.get("district_signals", {}).get(str(company.get("district", "")), {})),
                     "recent_briefs": copy.deepcopy(self._entity_brief_history("company_brief_history", company_id)[:3]),
                     "scene_observation": self._llm_scene_observation(observation, include_image=False),
@@ -1752,12 +3500,18 @@ class WorldEngine:
                 {
                     "npc": copy.deepcopy(npc),
                     "agent_profile": self._npc_agent_profile(npc),
+                    "llm_sections": self._npc_llm_sections(npc, topic),
                     "topic": copy.deepcopy(topic),
+                    "active_topics": self._active_public_topics(limit=4, district_name=str(npc.get("district", ""))),
+                    "active_norms": self._active_norms_view(limit=4, district_name=str(npc.get("district", ""))),
+                    "active_collective_actions": self._active_collective_actions_view(limit=4, district_name=str(npc.get("district", ""))),
                     "truth_profile": truth_profile,
                     "district_signals": copy.deepcopy(self.state.get("district_signals", {}).get(str(npc.get("district", "")), {})),
                     "relationship_memory": {
                         "player_memory": copy.deepcopy(self._npc_player_memory(npc)),
                         "recent_events": copy.deepcopy(list(npc.get("relationship_memory", []))[:4]),
+                        "conversation_history": self._dialogue_history_view(npc, limit=4),
+                        "local_memory": self._local_memory_view(npc, topic_id=str(topic.get("id", "")), limit=5),
                     },
                     "recent_briefs": copy.deepcopy(self._entity_brief_history("npc_brief_history", npc_id)[:3]),
                     "scene_observation": self._llm_scene_observation(
@@ -1778,6 +3532,9 @@ class WorldEngine:
                         "line": str((generated.get("lines", [""]) or [""])[0]),
                         "stance": str(generated.get("stance", "")),
                         "market_tilt": str(generated.get("market_tilt", "")),
+                        "topic_action": copy.deepcopy(generated.get("topic_action", {})),
+                        "norm_action": copy.deepcopy(generated.get("norm_action", {})),
+                        "collective_action": copy.deepcopy(generated.get("collective_action", {})),
                     }
                 ]
             )
@@ -1802,6 +3559,7 @@ class WorldEngine:
         nearby = npc_id in (nearby_ids or set())
         current_district = str(observation.get("current_district", "")) if isinstance(observation, dict) else ""
         npc_district = str(npc.get("district", ""))
+        class_name = str(npc.get("class", ""))
         topic_heat = 0.0
         for topic in self._talk_topics_for_npc(npc_id, npc_district):
             topic_heat = max(topic_heat, float(topic.get("heat", 0.0)))
@@ -1816,10 +3574,18 @@ class WorldEngine:
             + float(district_signals.get("trade_heat", 0.0))
             + float(district_signals.get("labor_heat", 0.0))
         )
+        if class_name == "特殊角色":
+            if nearby or npc_district == current_district or topic_heat >= 0.18 or district_heat >= 0.28 or recent_player_attention:
+                return 1
+            return 2
+        if class_name == "关键角色" and (nearby or npc_district == current_district or topic_heat >= 0.18 or district_heat >= 0.28):
+            return 1
         if nearby or topic_heat >= 0.55 or economic_pressure >= 0.42 or recent_player_attention:
             return 1
         if npc_district == current_district and district_heat >= 0.5:
             return 1
+        if class_name in {"关键角色", "中层"} and (topic_heat >= 0.18 or economic_pressure >= 0.18 or npc_district == current_district):
+            return 2
         if topic_heat >= 0.28 or economic_pressure >= 0.22 or npc_district == current_district:
             return 2
         stable_bias = sum(ord(ch) for ch in npc_id) % 2
@@ -2084,20 +3850,128 @@ class WorldEngine:
             },
             {
                 "title": "三大家族都在等别人先犯错",
-                "body": "白鹭守账、灰狼压价、猫头鹰写稿，这座城还没开盘就满是心眼。",
+                "body": "海藻盯供给、龟甲压班次、珊瑚看盘面，这座镇还没开盘就满是算计。",
                 "tags": ["家族", "开局"],
                 "scope": "city",
             },
         ]
         self._refresh_derived_views()
 
+    def _seed_norm_registry(self) -> None:
+        tick = self._world_tick()
+        self.state["norm_registry"] = [
+            {
+                "id": "norm_supply_poor_ration",
+                "text": "先保住口粮",
+                "category": "supply",
+                "district": "贫民街",
+                "scope": "district",
+                "support": 0.58,
+                "strength": 0.46,
+                "violation_cost": 0.22,
+                "pressure": 0.34,
+                "status": "active",
+                "origin": "seed",
+                "source_topic_ids": [],
+                "tags": ["民生", "口粮"],
+                "target_groups": ["居民", "店主", "工人"],
+                "mention_count": 1,
+                "reinforce_count": 1,
+                "contest_count": 0,
+                "seed_count": 1,
+                "last_tick": tick,
+            },
+            {
+                "id": "norm_labor_factory_wage",
+                "text": "降薪不能忍",
+                "category": "labor",
+                "district": "工厂区",
+                "scope": "district",
+                "support": 0.54,
+                "strength": 0.44,
+                "violation_cost": 0.28,
+                "pressure": 0.38,
+                "status": "active",
+                "origin": "seed",
+                "source_topic_ids": [],
+                "tags": ["工资", "工厂"],
+                "target_groups": ["工人", "临时工", "工会"],
+                "mention_count": 1,
+                "reinforce_count": 1,
+                "contest_count": 0,
+                "seed_count": 1,
+                "last_tick": tick,
+            },
+            {
+                "id": "norm_port_schedule_cargo",
+                "text": "货运不能乱",
+                "category": "logistics",
+                "district": "港口",
+                "scope": "district",
+                "support": 0.52,
+                "strength": 0.41,
+                "violation_cost": 0.24,
+                "pressure": 0.31,
+                "status": "active",
+                "origin": "seed",
+                "source_topic_ids": [],
+                "tags": ["港口", "物流"],
+                "target_groups": ["工人", "代理人", "船员"],
+                "mention_count": 1,
+                "reinforce_count": 1,
+                "contest_count": 0,
+                "seed_count": 1,
+                "last_tick": tick,
+            },
+            {
+                "id": "norm_finance_exchange_caution",
+                "text": "行情乱时先缩仓",
+                "category": "finance",
+                "district": "交易所",
+                "scope": "district",
+                "support": 0.49,
+                "strength": 0.39,
+                "violation_cost": 0.2,
+                "pressure": 0.27,
+                "status": "warming",
+                "origin": "seed",
+                "source_topic_ids": [],
+                "tags": ["金融", "仓位"],
+                "target_groups": ["投机者", "银行经理", "店主"],
+                "mention_count": 1,
+                "reinforce_count": 1,
+                "contest_count": 0,
+                "seed_count": 1,
+                "last_tick": tick,
+            },
+        ]
+
     def _refresh_derived_views(self) -> None:
         self.state["headline_news"] = self.state["global_news"][:3]
         self.state["house_states"] = self._build_house_states()
         self._update_player_class()
+        collective_profile = copy.deepcopy(self._refresh_player_collective_profile())
+        self.state["player_collective_profile"] = collective_profile
         self._rebuild_company_states()
         self._rebuild_family_moves()
         self._rebuild_npc_truth_profile()
+        self._decay_topic_registry()
+        self._rebuild_talk_topics()
+        self.state["active_topics"] = self._active_public_topics(limit=8)
+        self._decay_norm_registry()
+        self.state["active_norms"] = self._active_norms_view(limit=8)
+        self._sync_collective_actions()
+        self.state["active_collective_actions"] = self._active_collective_actions_view(limit=8)
+        for stock in self.state.get("stocks", []):
+            stock["market_cap"] = int(int(stock.get("issued_shares", 0)) * int(stock.get("current_price", 0)))
+            stock["float_turnover"] = round(
+                float(stock.get("trade_volume", 0)) / max(float(stock.get("free_float", 1)), 1.0),
+                4,
+            )
+            base = max(float(stock.get("previous_close", stock.get("base_price", stock.get("current_price", 1)))), 1.0)
+            stock["change_amount"] = int(stock.get("current_price", 0)) - int(stock.get("previous_close", stock.get("base_price", 0)))
+            stock["change_pct"] = round((float(stock.get("current_price", 0)) - base) / base, 4)
+        self._rebuild_stock_holder_registry()
         for npc in self.state["npcs"]:
             npc["agent_prompt"] = self._npc_agent_prompt(npc)
             npc["agent_tool_policy"] = self._npc_tool_policy(npc)
@@ -2107,9 +3981,11 @@ class WorldEngine:
                 "market_style": self._npc_market_style(npc),
                 "agenda": self._npc_agent_agenda(npc),
                 "budget_weight": round(max(0.4, min(1.8, self._npc_daily_agent_budget(npc) / 6.0)), 2),
+                "topic_digest": self._npc_topic_digest(npc),
+                "norm_digest": self._npc_norm_digest(npc),
+                "collective_digest": self._npc_collective_digest(npc),
             }
         self.state["npc_cards"] = self._build_npc_cards()
-        self._rebuild_talk_topics()
         self.state["local_rumor"] = copy.deepcopy(self.state.get("rumor_log", [])[:8])
         self.state["city_news"] = self._build_city_news()
         self.state["district_topic"] = self._build_district_topic_map()
@@ -2159,6 +4035,19 @@ class WorldEngine:
             "llm_pulse_summary": self.state.get("llm_pulse_summary", ""),
             "llm_market_note": self.state.get("llm_market_note", ""),
             "llm_scene_focus": self.state.get("llm_scene_focus", ""),
+            "norms_brief": "；".join(str(row.get("text", "")) for row in self.state.get("active_norms", [])[:2]),
+            "collective_brief": "；".join(
+                (
+                    f"{row.get('label', '')}:{row.get('resolution_label', '')}"
+                    if str(row.get("resolution_label", ""))
+                    else str(row.get("label", ""))
+                )
+                for row in self.state.get("active_collective_actions", [])[:2]
+            ),
+            "collective_resolution_brief": "；".join(
+                f"{row.get('label', '')}:{row.get('resolution_label', '')}"
+                for row in self.state.get("collective_outcomes", [])[:2]
+            ),
             "last_scene_capture_at": self.state.get("last_scene_capture_at", "未收到"),
         }
         player = self.state["player"]
@@ -2167,12 +4056,17 @@ class WorldEngine:
             "active_task_id": active_task_id,
             "active_task": self._find_by_id(self.state["task_board"], active_task_id) if active_task_id else None,
             "family_relations": copy.deepcopy(player.get("family_relations", {})),
+            "player_collective_profile": copy.deepcopy(collective_profile),
+            "collective_followups": copy.deepcopy(self.state.get("collective_followups", [])[:6]),
         }
         hot_good = self._top_market_move(self.state["goods"], "price_trend")
         hot_stock = self._top_market_move(self.state["stocks"], "market_sentiment")
+        latest_trade = self.state.get("stock_trade_tape", [{}])[0] if self.state.get("stock_trade_tape") else {}
         latest_news = self.state["headline_news"][0] if self.state["headline_news"] else {}
         latest_rumor = self.state["rumor_log"][0] if self.state["rumor_log"] else {}
-        lead_topic = self.state["talk_topics"][0] if self.state["talk_topics"] else {}
+        lead_topic = self.state["active_topics"][0] if self.state["active_topics"] else self.state["talk_topics"][0] if self.state["talk_topics"] else {}
+        lead_norm = self.state["active_norms"][0] if self.state["active_norms"] else {}
+        lead_collective = self.state["active_collective_actions"][0] if self.state.get("active_collective_actions") else {}
         lead_institution = self.state["institution_actions"][0] if self.state.get("institution_actions") else {}
         metrics = self.state.get("demo_metrics", {})
         objective = "先在街上看一圈，摸清地形和价格。"
@@ -2192,9 +4086,22 @@ class WorldEngine:
             "latest_rumor": str(latest_rumor.get('line', '')),
             "weather_label": str(self.state.get("weather", {}).get("label", "晴天")),
             "social_prompt": str(lead_topic.get("label", "")),
+            "norm_prompt": str(lead_norm.get("text", "")),
+            "collective_prompt": (
+                f"{str(lead_collective.get('label', ''))} / {str(lead_collective.get('resolution_label', ''))}"
+                if str(lead_collective.get("resolution_label", ""))
+                else str(lead_collective.get("label", ""))
+            ),
+            "player_collective_stance": str(collective_profile.get("stance_label", "")),
+            "player_collective_mode": str(collective_profile.get("dominant_mode", "observe")),
+            "collective_aftermath": "；".join(
+                f"{str(row.get('kind', 'followup'))}:{str(row.get('status', 'active'))}"
+                for row in self.state.get("collective_followups", [])[:2]
+            ),
             "institution_flash": str(lead_institution.get("public_line", "")),
             "ai_focus": str(self.state.get("llm_pulse_summary", "")),
             "market_note": str(self.state.get("llm_market_note", "")),
+            "market_tape": str(latest_trade.get("anonymous_label", "")),
         }
 
     def _pick_event_for_day(self) -> dict[str, Any]:
@@ -2241,10 +4148,10 @@ class WorldEngine:
         speaker: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         district_keywords = {
-            "贫民街": ("贫民街", "面包", "罐头"),
-            "港口": ("港口", "蓝潮航运", "航运"),
-            "工厂区": ("工厂", "矿", "煤", "黑石矿业"),
-            "交易所": ("楼市", "晨报传媒", "白鹭", "利息", "银行"),
+            "贫民街": ("贫民街", "海藻", "面包", "囤货", "市集"),
+            "港口": ("港口", "龟甲船运", "慢工", "船", "物流"),
+            "工厂区": ("工厂", "船坞", "事故", "工资", "煤"),
+            "交易所": ("交易所", "珊瑚", "银行", "利息", "证券"),
         }
         pool = [
             line
@@ -2254,7 +4161,7 @@ class WorldEngine:
         if not pool:
             pool = list(self.demo_flow.get("intel_lines", []))
         if speaker and str(speaker.get("role", "")) == "记者":
-            pool.extend([line for line in self.demo_flow.get("intel_lines", []) if "晨报" in line or "楼市" in line])
+            pool.extend([line for line in self.demo_flow.get("intel_lines", []) if any(token in line for token in ["记者", "旧账", "话题", "公告"])])
         line = self.random.choice(pool) if pool else f"{district} 今天的风向发紧，先动的是消息。"
         goods_delta: dict[str, float] = {}
         stocks_delta: dict[str, float] = {}
@@ -2265,44 +4172,44 @@ class WorldEngine:
         def bump(bucket: dict[str, float], key: str, amount: float) -> None:
             bucket[key] = round(float(bucket.get(key, 0.0)) + amount, 3)
 
-        if any(token in line for token in ["港口", "蓝潮航运", "停工", "船"]):
-            bump(stocks_delta, "蓝潮航运", -0.09)
-            bump(goods_delta, "面包", 0.05)
+        if any(token in line for token in ["港口", "龟甲船运", "慢工", "船", "物流"]):
+            bump(stocks_delta, "龟甲船运", -0.09)
             bump(goods_delta, "罐头", 0.05)
+            bump(goods_delta, "煤", 0.04)
             bump(macro_delta, "worker_unrest", 2.0)
-            bump(family_delta, "白鹭家族", -0.06)
-            tags.extend(["港口", "航运"])
-        if any(token in line for token in ["工厂", "黑石矿业", "矿", "煤"]):
-            bump(stocks_delta, "黑石矿业", -0.1)
+            bump(family_delta, "龟甲船坞", -0.06)
+            tags.extend(["港口", "物流"])
+        if any(token in line for token in ["工厂", "龟甲船坞", "事故", "工资", "煤"]):
+            bump(stocks_delta, "龟甲船运", -0.1)
             bump(goods_delta, "煤", 0.1)
             bump(macro_delta, "worker_unrest", 2.0)
-            bump(family_delta, "灰狼家族", -0.05)
-            tags.extend(["工厂", "矿业"])
-        if any(token in line for token in ["晨报传媒", "猫头鹰", "楼市", "头条", "报"]):
-            bump(stocks_delta, "晨报传媒", 0.11)
+            bump(family_delta, "龟甲船坞", -0.05)
+            tags.extend(["工厂", "工资"])
+        if any(token in line for token in ["海藻家族", "海藻食业", "面包", "囤货", "市集", "口粮"]):
+            bump(stocks_delta, "海藻食业", 0.07)
+            bump(goods_delta, "面包", 0.08)
+            bump(macro_delta, "worker_unrest", 2.2)
+            bump(family_delta, "海藻家族", 0.08)
+            tags.extend(["粮价", "民生"])
+        if any(token in line for token in ["珊瑚银行", "珊瑚金控", "利息", "银行", "证券", "短债"]):
+            bump(stocks_delta, "珊瑚金控", 0.11)
             bump(macro_delta, "media_sentiment", 5.0)
-            bump(macro_delta, "housing_heat", 4.0)
-            bump(family_delta, "猫头鹰家族", 0.08)
-            tags.extend(["媒体", "楼市"])
-        if any(token in line for token in ["利息", "银行", "白鹭"]):
             bump(macro_delta, "interest_rate", 0.12)
             bump(macro_delta, "economy_heat", -1.0)
-            bump(stocks_delta, "蓝潮航运", -0.03)
-            bump(family_delta, "白鹭家族", 0.04)
+            bump(family_delta, "珊瑚银行", 0.08)
             tags.extend(["金融", "利率"])
-        if any(token in line for token in ["面包", "罐头", "贫民街", "口粮"]):
-            bump(goods_delta, "面包", 0.08)
-            bump(goods_delta, "罐头", 0.06)
-            bump(macro_delta, "worker_unrest", 3.0)
-            tags.extend(["底层", "口粮"])
+        if any(token in line for token in ["记者", "旧账", "话题", "公告", "全镇"]):
+            bump(macro_delta, "media_sentiment", 4.0)
+            bump(macro_delta, "worker_unrest", 1.0)
+            tags.extend(["媒体", "舆论"])
 
         if not goods_delta and not stocks_delta:
             fallback_good, fallback_stock = {
-                "贫民街": ("面包", "晨报传媒"),
-                "港口": ("罐头", "蓝潮航运"),
-                "工厂区": ("煤", "黑石矿业"),
-                "交易所": ("罐头", "晨报传媒"),
-            }.get(district, ("面包", "蓝潮航运"))
+                "贫民街": ("面包", "海藻食业"),
+                "港口": ("罐头", "龟甲船运"),
+                "工厂区": ("煤", "龟甲船运"),
+                "交易所": ("面包", "珊瑚金控"),
+            }.get(district, ("面包", "海藻食业"))
             bump(goods_delta, fallback_good, 0.05)
             bump(stocks_delta, fallback_stock, 0.04)
 
@@ -2310,7 +4217,7 @@ class WorldEngine:
             role = str(speaker.get("role", ""))
             family = str(speaker.get("family_affiliation", ""))
             if role in {"记者", "投机者"}:
-                bump(stocks_delta, "晨报传媒", 0.03)
+                bump(stocks_delta, "珊瑚金控", 0.03)
                 tags.append("人物")
             if role in {"工人", "临时工", "工会领袖"}:
                 bump(macro_delta, "worker_unrest", 1.0)
@@ -2323,6 +4230,8 @@ class WorldEngine:
             "id": f"rumor_{self.state['day']}_{len(self.state.get('rumor_log', []))}_{self.random.randint(100, 999)}",
             "district": district,
             "source": source,
+            "speaker_id": str(speaker.get("id", "")) if speaker else "",
+            "speaker_name": str(speaker.get("name", "")) if speaker else "",
             "title": f"{district} 风声",
             "line": line,
             "body": f"{source} 说：{line}",
@@ -2334,6 +4243,1908 @@ class WorldEngine:
             "family_delta": family_delta,
         }
 
+    def _world_tick(self) -> int:
+        return max(0, (int(self.state.get("day", 1)) - 1) * 24 * 60 + int(self.state.get("clock_minutes", 0)))
+
+    def _packet_primary_target(self, packet: dict[str, Any]) -> tuple[str, str, float]:
+        for bucket_name in ("stocks_delta", "goods_delta", "family_delta", "macro_delta"):
+            bucket = packet.get(bucket_name, {})
+            if not isinstance(bucket, dict) or not bucket:
+                continue
+            key, value = max(bucket.items(), key=lambda item: abs(float(item[1])))
+            return bucket_name, str(key), float(value)
+        return "", "", 0.0
+
+    def _topic_kind_from_packet(self, packet: dict[str, Any]) -> str:
+        explicit = str(packet.get("topic_kind", "")).strip()
+        if explicit:
+            return explicit
+        tags = {str(tag) for tag in packet.get("tags", [])}
+        macro_delta = {str(key): float(value) for key, value in dict(packet.get("macro_delta", {})).items()}
+        if "interest_rate" in macro_delta or "金融" in tags or "银行" in tags:
+            return "finance"
+        if packet.get("family_delta") and "家族" in tags:
+            return "family"
+        if packet.get("stocks_delta") and ("股票" in tags or str(packet.get("district", "")) == "交易所"):
+            return "asset"
+        if "worker_unrest" in macro_delta or {"工厂", "港口", "工作"} & tags:
+            return "labor"
+        if packet.get("goods_delta"):
+            return "supply"
+        if "媒体" in tags or "舆论" in tags:
+            return "media"
+        if "传闻" in tags:
+            return "rumor"
+        return "public"
+
+    def _topic_stance_from_packet(self, packet: dict[str, Any]) -> str:
+        stocks_delta = {str(key): float(value) for key, value in dict(packet.get("stocks_delta", {})).items()}
+        goods_delta = {str(key): float(value) for key, value in dict(packet.get("goods_delta", {})).items()}
+        family_delta = {str(key): float(value) for key, value in dict(packet.get("family_delta", {})).items()}
+        macro_delta = {str(key): float(value) for key, value in dict(packet.get("macro_delta", {})).items()}
+        if float(macro_delta.get("worker_unrest", 0.0)) > 0.0:
+            return "mobilizing"
+        if float(macro_delta.get("interest_rate", 0.0)) > 0.0:
+            return "tightening"
+        if any(delta < 0.0 for delta in stocks_delta.values()) or any(delta < 0.0 for delta in family_delta.values()):
+            return "alarm"
+        if any(delta > 0.0 for delta in goods_delta.values()):
+            return "scarcity"
+        if any(delta > 0.0 for delta in stocks_delta.values()) or any(delta > 0.0 for delta in family_delta.values()):
+            return "support"
+        return "uncertain"
+
+    def _topic_credibility_hint(self, packet: dict[str, Any]) -> float:
+        score = 0.42
+        source = str(packet.get("source", ""))
+        speaker_name = str(packet.get("speaker_name", ""))
+        tags = {str(tag) for tag in packet.get("tags", [])}
+        if "街头耳报" in source:
+            score += 0.05
+        if speaker_name:
+            speaker = self._find_npc(str(packet.get("speaker_id", ""))) or self._find_npc(speaker_name)
+            if speaker:
+                role = str(speaker.get("role", ""))
+                if role in {"记者", "代理人", "银行经理", "老板"}:
+                    score += 0.15
+                elif role in {"工会领袖", "店主"}:
+                    score += 0.09
+                elif role in {"工人", "临时工"}:
+                    score += 0.04
+        if "金融" in tags or "公司" in tags:
+            score += 0.05
+        if "围观" in source or "恐慌" in source:
+            score -= 0.08
+        return round(max(0.12, min(0.92, score)), 3)
+
+    def _topic_label_from_packet(self, packet: dict[str, Any], kind: str, target_name: str) -> str:
+        district = str(packet.get("district", "街区"))
+        if kind == "asset" and target_name:
+            return f"{target_name}的风向"
+        if kind == "family" and target_name:
+            return f"{target_name}的动作"
+        if kind == "finance":
+            return f"{district}的利息和信用"
+        if kind == "labor":
+            return f"{district}的工钱与班次"
+        if kind == "supply" and target_name:
+            return f"{target_name}的供给风声"
+        if kind == "media":
+            return f"{district}的舆论风向"
+        title = str(packet.get("title", "")).strip()
+        if title:
+            return title
+        return f"{district} 的街头议题"
+
+    def _topic_signature_from_packet(self, packet: dict[str, Any], kind: str, target_name: str) -> str:
+        explicit_topic_id = str(packet.get("topic_id", "")).strip()
+        if explicit_topic_id:
+            return explicit_topic_id
+        district = str(packet.get("district", "")).strip() or "city"
+        focus = target_name.strip() or str(packet.get("scope", "district"))
+        focus = focus.replace(" ", "_")
+        return f"topic_{kind}_{district}_{focus}"
+
+    def _merge_delta_map(self, existing: dict[str, Any], incoming: dict[str, Any]) -> dict[str, float]:
+        merged = {str(key): float(value) for key, value in dict(existing).items()}
+        for key, value in dict(incoming).items():
+            current = float(merged.get(str(key), 0.0))
+            merged[str(key)] = round(max(-0.45, min(0.45, current * 0.55 + float(value) * 0.95)), 3)
+        return merged
+
+    def _record_topic_from_packet(self, packet: dict[str, Any], intensity: float) -> dict[str, Any]:
+        kind = self._topic_kind_from_packet(packet)
+        target_bucket, target_name, _target_value = self._packet_primary_target(packet)
+        topic_id = self._topic_signature_from_packet(packet, kind, target_name)
+        label = self._topic_label_from_packet(packet, kind, target_name)
+        tick = self._world_tick()
+        topic_registry = list(self.state.get("topic_registry", []))
+        topic = next((row for row in topic_registry if str(row.get("id", "")) == topic_id), None)
+        source = str(packet.get("source", "")).strip() or "街头风声"
+        summary = str(packet.get("line", "")).strip() or str(packet.get("body", "")).strip() or label
+        speaker_id = str(packet.get("speaker_id", "")).strip()
+        credibility = self._topic_credibility_hint(packet)
+        if topic is None:
+            topic = {
+                "id": topic_id,
+                "signature": topic_id,
+                "kind": kind,
+                "status": "emerging",
+                "scope": str(packet.get("scope", "district")) or "district",
+                "district": str(packet.get("district", "")),
+                "label": label,
+                "summary": summary,
+                "stance": self._topic_stance_from_packet(packet),
+                "target_bucket": target_bucket,
+                "target_name": target_name,
+                "origin": source,
+                "latest_source": source,
+                "heat": round(max(0.12, min(1.0, 0.28 + intensity * 0.38)), 3),
+                "intensity": round(max(0.05, min(1.0, intensity)), 3),
+                "credibility": credibility,
+                "novelty": round(max(0.15, min(1.0, 0.34 + intensity * 0.42)), 3),
+                "suppression_level": 0.08,
+                "mention_count": 1,
+                "spread_count": 1,
+                "source_count": 1,
+                "sources": [source],
+                "speaker_ids": [speaker_id] if speaker_id else [],
+                "tags": list(dict.fromkeys([str(tag) for tag in packet.get("tags", [])])),
+                "recent_lines": [summary],
+                "goods_delta": {str(key): float(value) for key, value in dict(packet.get("goods_delta", {})).items()},
+                "stocks_delta": {str(key): float(value) for key, value in dict(packet.get("stocks_delta", {})).items()},
+                "family_delta": {str(key): float(value) for key, value in dict(packet.get("family_delta", {})).items()},
+                "macro_delta": {str(key): float(value) for key, value in dict(packet.get("macro_delta", {})).items()},
+                "first_seen_day": int(self.state.get("day", 1)),
+                "first_seen_minute": int(self.state.get("clock_minutes", 0)),
+                "last_seen_day": int(self.state.get("day", 1)),
+                "last_seen_minute": int(self.state.get("clock_minutes", 0)),
+                "first_seen_tick": tick,
+                "last_seen_tick": tick,
+            }
+            topic_registry.append(topic)
+        else:
+            topic["status"] = "active"
+            topic["scope"] = str(packet.get("scope", topic.get("scope", "district"))) or "district"
+            topic["district"] = str(packet.get("district", topic.get("district", "")))
+            topic["label"] = str(topic.get("label", "")) or label
+            topic["summary"] = summary
+            topic["stance"] = self._topic_stance_from_packet(packet)
+            topic["latest_source"] = source
+            topic["target_bucket"] = target_bucket or str(topic.get("target_bucket", ""))
+            topic["target_name"] = target_name or str(topic.get("target_name", ""))
+            topic["heat"] = round(max(0.06, min(1.0, float(topic.get("heat", 0.0)) * 0.68 + 0.26 * intensity + 0.04)), 3)
+            topic["intensity"] = round(max(0.05, min(1.0, float(topic.get("intensity", 0.0)) * 0.55 + intensity * 0.75)), 3)
+            topic["credibility"] = round(max(0.1, min(0.96, float(topic.get("credibility", 0.4)) * 0.74 + credibility * 0.26)), 3)
+            topic["novelty"] = round(max(0.04, min(1.0, float(topic.get("novelty", 0.0)) * 0.58 + 0.18 * intensity + 0.06)), 3)
+            topic["suppression_level"] = round(max(0.0, min(1.0, float(topic.get("suppression_level", 0.08)) * 0.92)), 3)
+            topic["mention_count"] = int(topic.get("mention_count", 0)) + 1
+            topic["spread_count"] = int(topic.get("spread_count", 0)) + max(1, int(round(intensity * 2)))
+            sources = [str(value) for value in topic.get("sources", []) if str(value).strip()]
+            if source and source not in sources:
+                sources.append(source)
+            topic["sources"] = sources[:6]
+            topic["source_count"] = len(topic["sources"])
+            speaker_ids = [str(value) for value in topic.get("speaker_ids", []) if str(value).strip()]
+            if speaker_id and speaker_id not in speaker_ids:
+                speaker_ids.append(speaker_id)
+            topic["speaker_ids"] = speaker_ids[:8]
+            topic["tags"] = list(dict.fromkeys([*list(topic.get("tags", [])), *[str(tag) for tag in packet.get("tags", [])]]))[:12]
+            topic["recent_lines"] = [summary, *[str(value) for value in topic.get("recent_lines", []) if str(value).strip() and str(value) != summary]][:4]
+            topic["goods_delta"] = self._merge_delta_map(topic.get("goods_delta", {}), packet.get("goods_delta", {}))
+            topic["stocks_delta"] = self._merge_delta_map(topic.get("stocks_delta", {}), packet.get("stocks_delta", {}))
+            topic["family_delta"] = self._merge_delta_map(topic.get("family_delta", {}), packet.get("family_delta", {}))
+            topic["macro_delta"] = self._merge_delta_map(topic.get("macro_delta", {}), packet.get("macro_delta", {}))
+            topic["last_seen_day"] = int(self.state.get("day", 1))
+            topic["last_seen_minute"] = int(self.state.get("clock_minutes", 0))
+            topic["last_seen_tick"] = tick
+        if float(topic.get("heat", 0.0)) >= 0.62:
+            topic["status"] = "active"
+        elif int(topic.get("mention_count", 0)) >= 2:
+            topic["status"] = "warming"
+        else:
+            topic["status"] = "emerging"
+        topic_registry.sort(key=lambda row: (float(row.get("heat", 0.0)), int(row.get("mention_count", 0))), reverse=True)
+        self.state["topic_registry"] = topic_registry[:24]
+        return copy.deepcopy(topic)
+
+    def _decay_topic_registry(self) -> None:
+        current_tick = self._world_tick()
+        last_tick = int(self.state.get("topic_decay_tick", current_tick))
+        delta = max(0, current_tick - last_tick)
+        if delta <= 0:
+            return
+        heat_factor = pow(0.9988, delta)
+        novelty_factor = pow(0.9982, delta)
+        keep_rows: list[dict[str, Any]] = []
+        for topic in self.state.get("topic_registry", []):
+            row = copy.deepcopy(topic)
+            row["heat"] = round(max(0.0, min(1.0, float(row.get("heat", 0.0)) * heat_factor)), 3)
+            row["novelty"] = round(max(0.0, min(1.0, float(row.get("novelty", 0.0)) * novelty_factor)), 3)
+            age = current_tick - int(row.get("last_seen_tick", current_tick))
+            if float(row.get("suppression_level", 0.0)) > 0.0:
+                row["suppression_level"] = round(max(0.0, min(1.0, float(row.get("suppression_level", 0.0)) * 0.9975)), 3)
+            if float(row.get("heat", 0.0)) >= 0.58:
+                row["status"] = "active"
+            elif float(row.get("heat", 0.0)) >= 0.22:
+                row["status"] = "cooling"
+            else:
+                row["status"] = "dormant"
+            if age > 3 * 24 * 60 and float(row.get("heat", 0.0)) < 0.08:
+                continue
+            keep_rows.append(row)
+        keep_rows.sort(key=lambda row: (float(row.get("heat", 0.0)), int(row.get("mention_count", 0))), reverse=True)
+        self.state["topic_registry"] = keep_rows[:24]
+        self.state["topic_decay_tick"] = current_tick
+
+    def _topic_to_talk_topic(self, topic: dict[str, Any]) -> dict[str, Any]:
+        district_name = str(topic.get("district", ""))
+        scope = str(topic.get("scope", "district"))
+        if scope == "city":
+            npc_ids: list[str] = []
+        else:
+            npc_ids = [str(npc.get("id", "")) for npc in self.state.get("npcs", []) if str(npc.get("district", "")) == district_name]
+        kind = str(topic.get("kind", "rumor"))
+        approaches = ["cautious", "friendly", "hardball"]
+        if kind in {"finance", "asset"}:
+            approaches = ["cautious", "hardball", "friendly"]
+        elif kind in {"labor", "supply"}:
+            approaches = ["friendly", "cautious", "hardball"]
+        return {
+            "id": str(topic.get("id", "")),
+            "kind": kind,
+            "district": district_name,
+            "label": str(topic.get("label", "")),
+            "summary": str(topic.get("summary", "")),
+            "heat": round(float(topic.get("heat", 0.0)), 3),
+            "credibility": round(float(topic.get("credibility", 0.0)), 3),
+            "novelty": round(float(topic.get("novelty", 0.0)), 3),
+            "spread_count": int(topic.get("spread_count", 0)),
+            "status": str(topic.get("status", "")),
+            "tags": list(topic.get("tags", [])),
+            "npc_ids": npc_ids,
+            "approaches": approaches,
+            "impacts": {
+                "goods": copy.deepcopy(topic.get("goods_delta", {})),
+                "stocks": copy.deepcopy(topic.get("stocks_delta", {})),
+                "macro": copy.deepcopy(topic.get("macro_delta", {})),
+                "families": copy.deepcopy(topic.get("family_delta", {})),
+            },
+            "source_topic_id": str(topic.get("id", "")),
+        }
+
+    def _active_public_topics(self, limit: int = 8, district_name: str = "") -> list[dict[str, Any]]:
+        topics: list[dict[str, Any]] = []
+        for topic in self.state.get("topic_registry", []):
+            district = str(topic.get("district", ""))
+            scope = str(topic.get("scope", "district"))
+            if district_name and scope != "city" and district not in {"", district_name}:
+                continue
+            if float(topic.get("heat", 0.0)) < 0.12:
+                continue
+            topics.append(self._topic_to_talk_topic(topic))
+        topics.sort(key=lambda item: (float(item.get("heat", 0.0)), float(item.get("credibility", 0.0))), reverse=True)
+        return topics[:limit]
+
+    def _npc_topic_digest(self, npc: dict[str, Any]) -> str:
+        district_name = str(npc.get("district", ""))
+        topic_pool = self._active_public_topics(limit=2, district_name=district_name)
+        for topic in self._talk_topics_for_npc(str(npc.get("id", "")), district_name):
+            if any(str(existing.get("id", "")) == str(topic.get("id", "")) for existing in topic_pool):
+                continue
+            topic_pool.append(copy.deepcopy(topic))
+            if len(topic_pool) >= 4:
+                break
+        pieces: list[str] = []
+        for topic in topic_pool[:3]:
+            label = str(topic.get("label", "")).strip()
+            if not label:
+                continue
+            heat = int(round(float(topic.get("heat", 0.0)) * 100))
+            credibility = int(round(float(topic.get("credibility", topic.get("confidence", 0.5))) * 100))
+            spread = int(topic.get("spread_count", max(1, len(topic.get("npc_ids", [])))))
+            pieces.append(f"{label}(热{heat}|信{credibility}|扩{spread})")
+        return "；".join(pieces) if pieces else "暂无成形议题"
+
+    def _coerce_topic_action_mode(self, value: str, npc: dict[str, Any], topic: dict[str, Any]) -> str:
+        normalized = value.strip().lower()
+        mapping = {
+            "share": "share",
+            "forward": "share",
+            "转发": "share",
+            "传播": "share",
+            "amplify": "amplify",
+            "boost": "amplify",
+            "放大": "amplify",
+            "添油加醋": "amplify",
+            "question": "question",
+            "doubt": "question",
+            "质疑": "question",
+            "challenge": "question",
+            "deny": "deny",
+            "rebut": "deny",
+            "驳斥": "deny",
+            "否认": "deny",
+            "silence": "silence",
+            "ignore": "silence",
+            "沉默": "silence",
+            "回避": "silence",
+        }
+        if normalized in mapping:
+            return mapping[normalized]
+        role = str(npc.get("role", ""))
+        family = str(npc.get("family_affiliation", ""))
+        topic_kind = str(topic.get("kind", ""))
+        tags = {str(tag) for tag in topic.get("tags", [])}
+        if role in {"记者", "工会领袖"}:
+            return "amplify" if topic_kind in {"labor", "media", "family", "public"} else "share"
+        if role in {"投机者", "银行经理"}:
+            return "amplify" if topic_kind in {"asset", "finance"} else "question"
+        if role in {"老板", "代理人"} and family and family in tags:
+            return "deny" if topic_kind in {"labor", "supply", "family"} else "share"
+        if float(npc.get("rumor_susceptibility", 0.4)) >= 0.62 or float(npc.get("fear", 0.0)) >= 58.0:
+            return "share"
+        if float(npc.get("info_reliability", 0.5)) >= 0.7:
+            return "question"
+        return "silence"
+
+    def _coerce_norm_action_mode(self, value: str, topic_action_mode: str, topic: dict[str, Any]) -> str:
+        normalized = value.strip().lower()
+        mapping = {
+            "reinforce": "reinforce",
+            "support": "reinforce",
+            "强化": "reinforce",
+            "contest": "contest",
+            "challenge": "contest",
+            "反对": "contest",
+            "seed": "seed",
+            "create": "seed",
+            "播种": "seed",
+            "ignore": "ignore",
+            "silence": "ignore",
+            "无视": "ignore",
+        }
+        if normalized in mapping:
+            return mapping[normalized]
+        if topic_action_mode in {"share", "amplify"}:
+            return "reinforce"
+        if topic_action_mode in {"question", "deny"}:
+            return "contest"
+        if topic and str(topic.get("kind", "")) in {"labor", "supply", "finance", "asset"}:
+            return "seed"
+        return "ignore"
+
+    def _coerce_npc_topic_action(self, raw: Any, npc: dict[str, Any], topic: dict[str, Any]) -> dict[str, Any]:
+        payload = raw if isinstance(raw, dict) else {}
+        mode = self._coerce_topic_action_mode(str(payload.get("mode", "")), npc, topic)
+        topic_id = str(payload.get("topic_id", "")).strip() or str(topic.get("source_topic_id", topic.get("id", "")))
+        base_intensity = 0.56 if mode == "share" else 0.68 if mode == "amplify" else 0.52 if mode == "question" else 0.58 if mode == "deny" else 0.18
+        intensity = float(payload.get("intensity", base_intensity))
+        note = str(payload.get("note", "")).strip()
+        if not topic_id and mode == "silence":
+            return {"mode": "silence", "topic_id": "", "intensity": 0.18, "note": note}
+        return {
+            "mode": mode,
+            "topic_id": topic_id,
+            "intensity": round(max(0.0, min(1.0, intensity)), 3),
+            "note": note,
+        }
+
+    def _coerce_npc_norm_action(self, raw: Any, npc: dict[str, Any], topic: dict[str, Any], topic_action: dict[str, Any]) -> dict[str, Any]:
+        payload = raw if isinstance(raw, dict) else {}
+        topic_action_mode = str(topic_action.get("mode", "silence"))
+        mode = self._coerce_norm_action_mode(str(payload.get("mode", "")), topic_action_mode, topic)
+        norm_id = str(payload.get("norm_id", "")).strip()
+        text = str(payload.get("text", "")).strip()
+        base_intensity = 0.58 if mode == "reinforce" else 0.54 if mode == "contest" else 0.5 if mode == "seed" else 0.16
+        intensity = float(payload.get("intensity", topic_action.get("intensity", base_intensity)))
+        note = str(payload.get("note", "")).strip()
+        return {
+            "mode": mode,
+            "norm_id": norm_id,
+            "text": text,
+            "intensity": round(max(0.0, min(1.0, intensity)), 3),
+            "note": note,
+        }
+
+    def _topic_row_by_id(self, topic_id: str) -> dict[str, Any] | None:
+        needle = str(topic_id).strip()
+        if not needle:
+            return None
+        for topic in self.state.get("topic_registry", []):
+            if str(topic.get("id", "")) == needle:
+                return topic
+        return None
+
+    def _materialize_topic_for_action(self, npc: dict[str, Any], topic: dict[str, Any], topic_action: dict[str, Any]) -> dict[str, Any] | None:
+        topic_id = str(topic_action.get("topic_id", "")).strip()
+        existing = self._topic_row_by_id(topic_id)
+        if existing:
+            return existing
+        if not topic:
+            return None
+        packet = self._build_intel_packet_from_topic(topic, npc, str(topic.get("district", npc.get("district", ""))))
+        packet["topic_id"] = topic_id or str(topic.get("source_topic_id", topic.get("id", "")))
+        packet["topic_kind"] = str(topic.get("kind", ""))
+        intensity = max(0.18, float(topic_action.get("intensity", 0.2)) * 0.55)
+        recorded = self._record_topic_from_packet(packet, intensity)
+        return self._topic_row_by_id(str(recorded.get("id", "")))
+
+    def _topic_action_pressure(self, npc: dict[str, Any]) -> float:
+        class_name = str(npc.get("class", ""))
+        role = str(npc.get("role", ""))
+        power = 0.03
+        if class_name == "特殊角色":
+            power += 0.05
+        elif class_name == "关键角色":
+            power += 0.03
+        elif class_name == "中层":
+            power += 0.015
+        if role in {"记者", "代理人", "工会领袖"}:
+            power += 0.02
+        if role in {"银行经理", "投机者"}:
+            power += 0.018
+        return power
+
+    def _apply_topic_action(self, npc: dict[str, Any], topic: dict[str, Any], topic_action: dict[str, Any]) -> dict[str, Any] | None:
+        mode = str(topic_action.get("mode", "silence"))
+        topic_row = self._materialize_topic_for_action(npc, topic, topic_action)
+        if not topic_row:
+            return None
+        intensity = float(topic_action.get("intensity", 0.2))
+        pressure = self._topic_action_pressure(npc)
+        reliability = float(npc.get("info_reliability", 0.5))
+        rumor_pull = float(npc.get("rumor_susceptibility", 0.4))
+        controversy = float(topic_row.get("controversy", 0.0))
+        if mode == "share":
+            topic_row["heat"] = round(min(1.0, float(topic_row.get("heat", 0.0)) + 0.03 + intensity * (0.05 + pressure)), 3)
+            topic_row["credibility"] = round(min(0.96, float(topic_row.get("credibility", 0.4)) + reliability * 0.02), 3)
+            topic_row["spread_count"] = int(topic_row.get("spread_count", 0)) + 1
+        elif mode == "amplify":
+            topic_row["heat"] = round(min(1.0, float(topic_row.get("heat", 0.0)) + 0.05 + intensity * (0.07 + pressure)), 3)
+            topic_row["novelty"] = round(min(1.0, float(topic_row.get("novelty", 0.0)) + 0.02 + intensity * 0.04), 3)
+            topic_row["spread_count"] = int(topic_row.get("spread_count", 0)) + 2
+            controversy += 0.03 + intensity * 0.04
+        elif mode == "question":
+            topic_row["heat"] = round(min(1.0, float(topic_row.get("heat", 0.0)) + 0.01 + intensity * 0.03), 3)
+            topic_row["credibility"] = round(max(0.08, float(topic_row.get("credibility", 0.4)) - max(0.01, reliability * 0.03)), 3)
+            controversy += 0.05 + intensity * 0.05
+        elif mode == "deny":
+            topic_row["heat"] = round(max(0.02, float(topic_row.get("heat", 0.0)) - 0.01 + intensity * 0.01), 3)
+            topic_row["credibility"] = round(max(0.08, float(topic_row.get("credibility", 0.4)) - max(0.012, reliability * 0.025)), 3)
+            topic_row["suppression_level"] = round(min(1.0, float(topic_row.get("suppression_level", 0.0)) + 0.03 + pressure * 0.3), 3)
+            controversy += 0.04 + intensity * 0.03
+        else:
+            topic_row["heat"] = round(max(0.0, float(topic_row.get("heat", 0.0)) - 0.004), 3)
+            topic_row["suppression_level"] = round(min(1.0, float(topic_row.get("suppression_level", 0.0)) + max(0.0, pressure - 0.03) * 0.15), 3)
+        topic_row["controversy"] = round(max(0.0, min(1.0, controversy)), 3)
+        topic_row["mention_count"] = int(topic_row.get("mention_count", 0)) + (0 if mode == "silence" else 1)
+        topic_row["support_count"] = int(topic_row.get("support_count", 0)) + (1 if mode in {"share", "amplify"} else 0)
+        topic_row["question_count"] = int(topic_row.get("question_count", 0)) + (1 if mode == "question" else 0)
+        topic_row["deny_count"] = int(topic_row.get("deny_count", 0)) + (1 if mode == "deny" else 0)
+        topic_row["silence_count"] = int(topic_row.get("silence_count", 0)) + (1 if mode == "silence" else 0)
+        topic_row["last_actor_id"] = str(npc.get("id", ""))
+        topic_row["last_action"] = mode
+        topic_row["last_seen_tick"] = self._world_tick()
+        topic_row["last_seen_day"] = int(self.state.get("day", 1))
+        topic_row["last_seen_minute"] = int(self.state.get("clock_minutes", 0))
+        if mode in {"share", "amplify"}:
+            self._bump_district_signal(str(topic_row.get("district", npc.get("district", ""))), "gossip", 0.03 + intensity * 0.04)
+        elif mode in {"question", "deny"}:
+            self._bump_district_signal(str(topic_row.get("district", npc.get("district", ""))), "fear", 0.01 + rumor_pull * 0.03)
+        return copy.deepcopy(topic_row)
+
+    def _norm_seed_from_topic(self, topic: dict[str, Any], text_hint: str = "") -> dict[str, Any]:
+        district = str(topic.get("district", "")) or "全城"
+        kind = str(topic.get("kind", "public"))
+        text = text_hint.strip()
+        category = kind
+        tags = [str(tag) for tag in topic.get("tags", [])]
+        target_groups: list[str] = []
+        if not text:
+            if kind == "labor":
+                text = "降薪不能忍"
+                category = "labor"
+                target_groups = ["工人", "临时工", "工会"]
+            elif kind == "supply":
+                text = "先保住口粮"
+                category = "supply"
+                target_groups = ["居民", "店主", "工人"]
+            elif kind in {"finance", "asset"}:
+                text = "行情乱时先缩仓"
+                category = "finance"
+                target_groups = ["投机者", "银行经理", "店主"]
+            elif kind in {"media", "family", "public"}:
+                text = "大事先看谁在放风"
+                category = "media"
+                target_groups = ["记者", "代理人", "居民"]
+            else:
+                text = f"{district}的人得先顾自己"
+                target_groups = ["居民"]
+        stable_suffix = sum(ord(ch) for ch in f"{category}:{district}:{text}") % 10000
+        norm_id = f"norm_{category}_{district}_{stable_suffix}"
+        return {
+            "id": norm_id,
+            "text": text,
+            "category": category,
+            "district": district,
+            "scope": "city" if str(topic.get("scope", "district")) == "city" else "district",
+            "tags": list(dict.fromkeys(tags + [category])),
+            "target_groups": target_groups,
+        }
+
+    def _norm_row_by_id(self, norm_id: str) -> dict[str, Any] | None:
+        needle = str(norm_id).strip()
+        if not needle:
+            return None
+        for norm in self.state.get("norm_registry", []):
+            if str(norm.get("id", "")) == needle:
+                return norm
+        return None
+
+    def _record_norm_action(self, npc: dict[str, Any], topic: dict[str, Any] | None, topic_action: dict[str, Any], norm_action: dict[str, Any]) -> dict[str, Any] | None:
+        mode = str(norm_action.get("mode", "ignore"))
+        if mode == "ignore":
+            return None
+        seed = self._norm_seed_from_topic(topic or {}, str(norm_action.get("text", "")))
+        norm_id = str(norm_action.get("norm_id", "")).strip() or str(seed.get("id", ""))
+        norm = self._norm_row_by_id(norm_id)
+        intensity = float(norm_action.get("intensity", topic_action.get("intensity", 0.4)))
+        conformity = max(0.12, min(0.92, float(npc.get("moral_floor", 0.4)) + float(npc.get("loyalty", 0.0)) / 220.0))
+        if norm is None:
+            if mode not in {"seed", "reinforce", "contest"}:
+                return None
+            norm = {
+                "id": norm_id,
+                "text": str(seed.get("text", "")),
+                "category": str(seed.get("category", "public")),
+                "district": str(seed.get("district", topic.get("district", "") if topic else "")),
+                "scope": str(seed.get("scope", "district")),
+                "support": round(0.32 + intensity * 0.16 + conformity * 0.08, 3),
+                "strength": round(0.28 + intensity * 0.18, 3),
+                "violation_cost": round(0.16 + conformity * 0.24, 3),
+                "pressure": round(0.18 + intensity * 0.14, 3),
+                "status": "warming",
+                "origin": str(norm_action.get("note", "")) or str(npc.get("name", "")) or "seed",
+                "source_topic_ids": [str(topic.get("id", ""))] if topic else [],
+                "tags": list(seed.get("tags", [])),
+                "target_groups": list(seed.get("target_groups", [])),
+                "mention_count": 1,
+                "reinforce_count": 1 if mode in {"seed", "reinforce"} else 0,
+                "contest_count": 1 if mode == "contest" else 0,
+                "seed_count": 1,
+                "last_tick": self._world_tick(),
+            }
+            self.state.setdefault("norm_registry", []).append(norm)
+        if topic and str(topic.get("id", "")) and str(topic.get("id", "")) not in [str(value) for value in norm.get("source_topic_ids", [])]:
+            norm["source_topic_ids"] = [*list(norm.get("source_topic_ids", [])), str(topic.get("id", ""))][:6]
+        if mode in {"seed", "reinforce"}:
+            norm["support"] = round(min(0.98, float(norm.get("support", 0.3)) + 0.03 + intensity * 0.04 + conformity * 0.02), 3)
+            norm["strength"] = round(min(0.98, float(norm.get("strength", 0.2)) + 0.03 + intensity * 0.05), 3)
+            norm["pressure"] = round(min(0.98, float(norm.get("pressure", 0.2)) + 0.02 + intensity * 0.03), 3)
+            norm["reinforce_count"] = int(norm.get("reinforce_count", 0)) + 1
+        elif mode == "contest":
+            norm["support"] = round(max(0.04, float(norm.get("support", 0.3)) - 0.02 - intensity * 0.04), 3)
+            norm["strength"] = round(max(0.04, float(norm.get("strength", 0.2)) - 0.01 - intensity * 0.03), 3)
+            norm["pressure"] = round(max(0.02, float(norm.get("pressure", 0.2)) - 0.005 + intensity * 0.01), 3)
+            norm["contest_count"] = int(norm.get("contest_count", 0)) + 1
+        norm["mention_count"] = int(norm.get("mention_count", 0)) + 1
+        norm["violation_cost"] = round(max(0.08, min(0.98, float(norm.get("violation_cost", 0.2)) * 0.92 + float(norm.get("strength", 0.2)) * 0.12)), 3)
+        norm["last_tick"] = self._world_tick()
+        if float(norm.get("support", 0.0)) >= 0.62 and float(norm.get("strength", 0.0)) >= 0.46:
+            norm["status"] = "active"
+        elif float(norm.get("support", 0.0)) >= 0.38:
+            norm["status"] = "warming"
+        else:
+            norm["status"] = "contested"
+        self.state["norm_registry"].sort(key=lambda row: (float(row.get("strength", 0.0)), float(row.get("support", 0.0))), reverse=True)
+        self.state["norm_registry"] = self.state["norm_registry"][:24]
+        return copy.deepcopy(norm)
+
+    def _decay_norm_registry(self) -> None:
+        current_tick = self._world_tick()
+        last_tick = int(self.state.get("norm_decay_tick", current_tick))
+        delta = max(0, current_tick - last_tick)
+        if delta <= 0:
+            return
+        decay = pow(0.999, delta)
+        keep_rows: list[dict[str, Any]] = []
+        for norm in self.state.get("norm_registry", []):
+            row = copy.deepcopy(norm)
+            row["support"] = round(max(0.0, min(1.0, float(row.get("support", 0.0)) * decay)), 3)
+            row["strength"] = round(max(0.0, min(1.0, float(row.get("strength", 0.0)) * decay)), 3)
+            row["pressure"] = round(max(0.0, min(1.0, float(row.get("pressure", 0.0)) * decay)), 3)
+            if float(row.get("support", 0.0)) >= 0.58 and float(row.get("strength", 0.0)) >= 0.42:
+                row["status"] = "active"
+            elif float(row.get("support", 0.0)) >= 0.28:
+                row["status"] = "warming"
+            else:
+                row["status"] = "dormant"
+            if current_tick - int(row.get("last_tick", current_tick)) > 4 * 24 * 60 and float(row.get("strength", 0.0)) < 0.08:
+                continue
+            keep_rows.append(row)
+        keep_rows.sort(key=lambda row: (float(row.get("strength", 0.0)), float(row.get("support", 0.0))), reverse=True)
+        self.state["norm_registry"] = keep_rows[:24]
+        self.state["norm_decay_tick"] = current_tick
+
+    def _active_norms_view(self, limit: int = 8, district_name: str = "") -> list[dict[str, Any]]:
+        rows: list[dict[str, Any]] = []
+        for norm in self.state.get("norm_registry", []):
+            district = str(norm.get("district", ""))
+            scope = str(norm.get("scope", "district"))
+            if district_name and scope != "city" and district not in {"", district_name}:
+                continue
+            if float(norm.get("strength", 0.0)) < 0.14 and float(norm.get("support", 0.0)) < 0.22:
+                continue
+            rows.append(
+                {
+                    "id": str(norm.get("id", "")),
+                    "text": str(norm.get("text", "")),
+                    "category": str(norm.get("category", "")),
+                    "district": district,
+                    "scope": scope,
+                    "support": round(float(norm.get("support", 0.0)), 3),
+                    "strength": round(float(norm.get("strength", 0.0)), 3),
+                    "violation_cost": round(float(norm.get("violation_cost", 0.0)), 3),
+                    "status": str(norm.get("status", "")),
+                    "pressure": round(float(norm.get("pressure", 0.0)), 3),
+                    "source_topic_ids": list(norm.get("source_topic_ids", [])),
+                    "tags": list(norm.get("tags", [])),
+                }
+            )
+        rows.sort(key=lambda row: (float(row.get("strength", 0.0)), float(row.get("support", 0.0))), reverse=True)
+        return rows[:limit]
+
+    def _npc_norm_digest(self, npc: dict[str, Any]) -> str:
+        district_name = str(npc.get("district", ""))
+        norms = self._active_norms_view(limit=3, district_name=district_name)
+        pieces: list[str] = []
+        for norm in norms[:2]:
+            text = str(norm.get("text", "")).strip()
+            if not text:
+                continue
+            support = int(round(float(norm.get("support", 0.0)) * 100))
+            strength = int(round(float(norm.get("strength", 0.0)) * 100))
+            pieces.append(f"{text}(支{support}|强{strength})")
+        return "；".join(pieces) if pieces else "暂无成形规范"
+
+    def _collective_row_by_id(self, action_id: str) -> dict[str, Any] | None:
+        needle = str(action_id).strip()
+        if not needle:
+            return None
+        for row in self.state.get("collective_action_registry", []):
+            if str(row.get("id", "")) == needle:
+                return row
+        return None
+
+    @staticmethod
+    def _collective_kind_rank(kind: str) -> int:
+        return {
+            "party": 1,
+            "meeting": 2,
+            "rally": 3,
+            "strike": 4,
+        }.get(str(kind), 0)
+
+    @staticmethod
+    def _collective_stage_rank(stage: str) -> int:
+        return {
+            "active": 4,
+            "committing": 3,
+            "signaling": 2,
+            "forming": 1,
+            "cooling": 0,
+            "dormant": -1,
+        }.get(str(stage), 0)
+
+    @staticmethod
+    def _collective_stage_label(stage: str) -> str:
+        return {
+            "active": "到场",
+            "committing": "承诺",
+            "signaling": "表态",
+            "forming": "听说",
+            "cooling": "降温",
+            "dormant": "沉底",
+        }.get(str(stage), "听说")
+
+    @staticmethod
+    def _dedupe_id_list(values: Any, limit: int = 24) -> list[str]:
+        rows: list[str] = []
+        for value in values if isinstance(values, list) else []:
+            text = str(value).strip()
+            if text and text not in rows:
+                rows.append(text)
+            if len(rows) >= limit:
+                break
+        return rows
+
+    def _collective_norm_for_topic(self, topic: dict[str, Any]) -> dict[str, Any] | None:
+        topic_id = str(topic.get("id", ""))
+        topic_kind = str(topic.get("kind", ""))
+        district = str(topic.get("district", ""))
+        matches: list[tuple[int, float, float, dict[str, Any]]] = []
+        for norm in self.state.get("norm_registry", []):
+            norm_district = str(norm.get("district", ""))
+            norm_scope = str(norm.get("scope", "district"))
+            if norm_scope != "city" and district and norm_district not in {"", district}:
+                continue
+            source_ids = {str(value) for value in norm.get("source_topic_ids", [])}
+            score = 0
+            if topic_id and topic_id in source_ids:
+                score += 3
+            if str(norm.get("category", "")) == topic_kind:
+                score += 2
+            if topic_kind in {str(tag) for tag in norm.get("tags", [])}:
+                score += 1
+            if score <= 0:
+                continue
+            matches.append(
+                (
+                    score,
+                    float(norm.get("strength", 0.0)),
+                    float(norm.get("support", 0.0)),
+                    norm,
+                )
+            )
+        if not matches:
+            return None
+        matches.sort(key=lambda item: (item[0], item[1], item[2]), reverse=True)
+        return matches[0][3]
+
+    def _collective_kind_from_topic(
+        self,
+        topic: dict[str, Any],
+        norm: dict[str, Any] | None = None,
+        kind_hint: str = "",
+    ) -> str:
+        normalized_hint = str(kind_hint).strip().lower()
+        hint_map = {
+            "strike": "strike",
+            "罢工": "strike",
+            "meeting": "meeting",
+            "动员会": "meeting",
+            "集会": "rally",
+            "rally": "rally",
+            "party": "party",
+            "派对": "party",
+        }
+        if normalized_hint in hint_map:
+            return hint_map[normalized_hint]
+        kind = str(topic.get("kind", ""))
+        norm_category = str((norm or {}).get("category", ""))
+        heat = float(topic.get("heat", 0.0))
+        controversy = float(topic.get("controversy", 0.0))
+        worker_unrest = float(self.state.get("macro", {}).get("worker_unrest", 0.0))
+        if kind == "labor":
+            if heat >= 0.56 or worker_unrest >= 68 or norm_category == "labor":
+                return "strike"
+            return "meeting"
+        if kind in {"media", "public", "family"} and max(heat, controversy) >= 0.24:
+            return "rally"
+        if kind == "supply" and (heat >= 0.44 or worker_unrest >= 64):
+            return "rally"
+        return ""
+
+    def _collective_target_groups(self, kind: str, topic: dict[str, Any], norm: dict[str, Any] | None) -> list[str]:
+        if norm and norm.get("target_groups"):
+            return self._dedupe_id_list(list(norm.get("target_groups", [])), limit=8)
+        if kind in {"strike", "meeting"}:
+            return ["工人", "临时工", "工会"]
+        if kind == "rally":
+            return ["居民", "工人", "店主", "记者"]
+        if kind == "party":
+            return ["居民", "店主", "记者"]
+        topic_kind = str(topic.get("kind", ""))
+        if topic_kind == "labor":
+            return ["工人", "临时工", "工会"]
+        return ["居民"]
+
+    def _collective_theme(self, topic: dict[str, Any], norm: dict[str, Any] | None, kind: str) -> str:
+        norm_text = str((norm or {}).get("text", "")).strip()
+        if norm_text:
+            return norm_text
+        label = str(topic.get("label", "")).strip()
+        if label:
+            return label
+        district = str(topic.get("district", "")) or "全城"
+        if kind == "strike":
+            return f"{district}的工钱与班次"
+        if kind == "rally":
+            return f"{district}的街头情绪"
+        if kind == "party":
+            return f"{district}的夜间社交"
+        return f"{district}的集体动作"
+
+    def _collective_label(self, kind: str, district: str, _theme: str) -> str:
+        district_name = district or "全城"
+        if kind == "strike":
+            return f"{district_name}罢工动员"
+        if kind == "meeting":
+            return f"{district_name}动员会"
+        if kind == "rally":
+            return f"{district_name}集会"
+        if kind == "party":
+            return f"{district_name}派对"
+        return f"{district_name}集体行动"
+
+    def _collective_thresholds(self, kind: str) -> dict[str, float]:
+        if kind == "strike":
+            return {"support": 0.34, "commitment": 0.18, "turnout": 0.12, "risk": 0.58, "reward": 0.66}
+        if kind == "rally":
+            return {"support": 0.28, "commitment": 0.14, "turnout": 0.1, "risk": 0.46, "reward": 0.48}
+        if kind == "party":
+            return {"support": 0.18, "commitment": 0.08, "turnout": 0.08, "risk": 0.16, "reward": 0.34}
+        return {"support": 0.22, "commitment": 0.1, "turnout": 0.08, "risk": 0.28, "reward": 0.38}
+
+    def _collective_target_for_action(self, action: dict[str, Any]) -> dict[str, Any]:
+        district = str(action.get("district", ""))
+        kind = str(action.get("kind", "meeting"))
+        district_points = COLLECTIVE_GATHER_POINTS.get(district, {})
+        point = district_points.get(kind) or district_points.get("meeting") or district_points.get("rally") or {
+            "location_id": "",
+            "title": f"{district or '全城'}集结点",
+            "subregion_id": str(action.get("subregion_id", "")),
+            "subregion_name": str(action.get("subregion_name", district)),
+            "x": float(action.get("target_x", 0.0)),
+            "y": float(action.get("target_y", 0.0)),
+        }
+        return {
+            "target_location_id": str(point.get("location_id", "")),
+            "target_location_title": str(point.get("title", "")),
+            "target_subregion_id": str(point.get("subregion_id", "")),
+            "target_subregion_name": str(point.get("subregion_name", district)),
+            "target_x": round(float(point.get("x", 0.0)), 1),
+            "target_y": round(float(point.get("y", 0.0)), 1),
+        }
+
+    def _collective_window_for_kind(self, kind: str) -> tuple[int, int]:
+        if kind == "strike":
+            return 9 * 60 + 30, 17 * 60 + 30
+        if kind == "meeting":
+            return 18 * 60, 22 * 60
+        if kind == "rally":
+            return 12 * 60, 19 * 60
+        if kind == "party":
+            return 19 * 60, 23 * 60
+        return 10 * 60, 18 * 60
+
+    def _collective_response_candidates(self, action: dict[str, Any]) -> dict[str, list[str]]:
+        district = str(action.get("district", ""))
+        company = next((row for row in self.state.get("companies", []) if str(row.get("district", "")) == district), None)
+        company_id = str((company or {}).get("id", ""))
+        family_name = str((company or {}).get("family_owner", ""))
+        government_ids: list[str] = []
+        police_ids: list[str] = []
+        company_ids: list[str] = []
+        family_ids: list[str] = []
+        media_ids: list[str] = []
+        for npc in self.state.get("npcs", []):
+            npc_id = str(npc.get("id", ""))
+            title = str(npc.get("title", ""))
+            role = str(npc.get("role", ""))
+            affiliation = str(npc.get("family_affiliation", ""))
+            npc_company_id = str(npc.get("company_id", ""))
+            if affiliation == "镇政府":
+                government_ids.append(npc_id)
+                if "治安队长" in title:
+                    police_ids.append(npc_id)
+                if role in {"记者", "代理人"}:
+                    media_ids.append(npc_id)
+            if company_id and npc_company_id == company_id and role in {"老板", "代理人", "银行经理", "记者"}:
+                company_ids.append(npc_id)
+            if family_name and affiliation == family_name and npc_id not in company_ids:
+                family_ids.append(npc_id)
+        return {
+            "government": self._dedupe_id_list(government_ids, limit=8),
+            "police": self._dedupe_id_list(police_ids, limit=4),
+            "company": self._dedupe_id_list(company_ids, limit=8),
+            "family": self._dedupe_id_list(family_ids, limit=8),
+            "media": self._dedupe_id_list(media_ids, limit=6),
+        }
+
+    def _collective_response_mode(self, action: dict[str, Any]) -> str:
+        kind = str(action.get("kind", "meeting"))
+        stage = str(action.get("stage", "forming"))
+        support = float(action.get("support", 0.0))
+        commitment = float(action.get("commitment", 0.0))
+        turnout = float(action.get("turnout", 0.0))
+        risk = float(action.get("risk", 0.0))
+        organizers = int(action.get("organizer_count", 0))
+        if kind == "party":
+            return "observe"
+        if kind == "meeting":
+            if support >= 0.4 or commitment >= 0.14 or stage in {"committing", "active"}:
+                return "negotiate"
+            if organizers > 0 and support < 0.24 and risk < 0.62:
+                return "suppress"
+            return "observe"
+        if kind in {"strike", "rally"}:
+            if turnout >= float(action.get("turnout_threshold", 0.1)) or stage == "active" or support >= 0.46:
+                return "negotiate"
+            if organizers > 0 and support < 0.32 and risk < 0.7:
+                return "suppress"
+            if commitment >= 0.1 or support >= 0.24:
+                return "observe"
+            return "suppress"
+        return "observe"
+
+    def _collective_response_note(self, action: dict[str, Any], mode: str) -> str:
+        label = str(action.get("label", "集体行动"))
+        if mode == "negotiate":
+            return f"政府和企业正在围着 {label} 试探谈判口风。"
+        if mode == "suppress":
+            return f"政府和企业正在围着 {label} 部署压制和清场。"
+        return f"政府和企业正在盯着 {label} 的规模和扩散。"
+
+    @staticmethod
+    def _clamp(value: float, low: float, high: float) -> float:
+        return max(low, min(high, value))
+
+    def _collective_threshold_shift(self, action: dict[str, Any]) -> float:
+        support_push = float(action.get("player_support", 0.0)) * 0.055
+        mediation_push = float(action.get("player_mediation", 0.0)) * 0.045
+        suppression_push = float(action.get("player_suppression", 0.0)) * 0.065
+        return round(self._clamp(support_push + mediation_push - suppression_push, -0.18, 0.18), 3)
+
+    def _collective_effective_thresholds(self, action: dict[str, Any]) -> dict[str, float]:
+        kind = str(action.get("kind", "meeting"))
+        thresholds = self._collective_thresholds(kind)
+        response_mode = str(action.get("response_mode", "observe"))
+        response_drag = 0.045 if response_mode == "suppress" else -0.025 if response_mode == "negotiate" else 0.0
+        player_shift = self._collective_threshold_shift(action)
+        support_threshold = self._clamp(float(action.get("support_threshold", thresholds["support"])) + response_drag - player_shift, 0.12, 0.68)
+        commitment_threshold = self._clamp(float(action.get("commitment_threshold", thresholds["commitment"])) + response_drag * 0.9 - player_shift * 0.85, 0.06, 0.52)
+        turnout_threshold = self._clamp(float(action.get("turnout_threshold", thresholds["turnout"])) + response_drag - player_shift * 1.05, 0.05, 0.44)
+        return {
+            "support": round(support_threshold, 3),
+            "commitment": round(commitment_threshold, 3),
+            "turnout": round(turnout_threshold, 3),
+            "shift": round(player_shift, 3),
+        }
+
+    @staticmethod
+    def _collective_resolution_label(kind: str) -> str:
+        return {
+            "conceded": "谈判让步",
+            "escalated": "镇压升级",
+            "fizzled": "到场不足流产",
+            "held": "现场成局",
+        }.get(str(kind), "现场结算")
+
+    def _collective_signature(self, topic: dict[str, Any], norm: dict[str, Any] | None, district: str) -> str:
+        source_key = str(topic.get("id", "")).strip() or str((norm or {}).get("id", "")).strip()
+        if not source_key:
+            source_key = f"{district}:{self._collective_theme(topic, norm, '')}"
+        stable_suffix = sum(ord(ch) for ch in source_key) % 10000
+        return f"collective_{district or 'city'}_{stable_suffix}"
+
+    def _collective_system_pressure(self, topic: dict[str, Any], norm: dict[str, Any] | None) -> float:
+        district = str(topic.get("district", ""))
+        signals = self.state.get("district_signals", {}).get(district, {})
+        heat = float(topic.get("heat", 0.0))
+        controversy = float(topic.get("controversy", 0.0))
+        norm_strength = float((norm or {}).get("strength", 0.0))
+        norm_support = float((norm or {}).get("support", 0.0))
+        labor_heat = float(signals.get("labor_heat", 0.0))
+        gossip = float(signals.get("gossip", 0.0))
+        worker_unrest = float(self.state.get("macro", {}).get("worker_unrest", 0.0)) / 100.0
+        media_sentiment = float(self.state.get("macro", {}).get("media_sentiment", 0.0)) / 100.0
+        kind = str(topic.get("kind", ""))
+        score = heat * 0.52 + norm_strength * 0.18 + norm_support * 0.14 + controversy * 0.08
+        if kind == "labor":
+            score += labor_heat * 0.18 + worker_unrest * 0.16
+        elif kind in {"media", "public", "family"}:
+            score += gossip * 0.12 + abs(media_sentiment - 0.5) * 0.08
+        elif kind == "supply":
+            score += worker_unrest * 0.12
+        return round(max(0.0, min(1.0, score)), 3)
+
+    def _npc_matches_collective_group(self, npc: dict[str, Any], group: str) -> bool:
+        target = str(group).strip()
+        if not target:
+            return False
+        role = str(npc.get("role", ""))
+        title = str(npc.get("title", ""))
+        class_name = str(npc.get("class", ""))
+        text = " ".join([role, title, class_name, str(npc.get("family_affiliation", ""))])
+        if target in text:
+            return True
+        mapping = {
+            "工人": {"工人", "临时工"},
+            "临时工": {"临时工"},
+            "工会": {"工会领袖"},
+            "居民": {"居民", "家庭主妇", "失业青年", "退休老人", "老人"},
+            "店主": {"店主"},
+            "记者": {"记者"},
+            "代理人": {"代理人"},
+        }
+        allowed = mapping.get(target, set())
+        return role in allowed or any(token in title for token in allowed)
+
+    def _collective_eligible_npc_ids(self, action: dict[str, Any]) -> list[str]:
+        district = str(action.get("district", ""))
+        scope = str(action.get("scope", "district"))
+        target_groups = [str(value) for value in action.get("target_groups", []) if str(value).strip()]
+        rows: list[str] = []
+        for npc in self.state.get("npcs", []):
+            if scope != "city" and district and str(npc.get("district", "")) not in {"", district}:
+                continue
+            if target_groups and not any(self._npc_matches_collective_group(npc, group) for group in target_groups):
+                continue
+            npc_id = str(npc.get("id", "")).strip()
+            if npc_id and npc_id not in rows:
+                rows.append(npc_id)
+        if rows:
+            return rows
+        return [str(npc.get("id", "")) for npc in self.state.get("npcs", []) if str(npc.get("id", "")).strip()]
+
+    def _refresh_collective_action_row(
+        self,
+        action: dict[str, Any],
+        *,
+        baseline_heat: float | None = None,
+        baseline_support: float | None = None,
+    ) -> dict[str, Any]:
+        current_tick = self._world_tick()
+        eligible_ids = self._collective_eligible_npc_ids(action)
+        potential_size = max(1, len(eligible_ids))
+        heard_ids = self._dedupe_id_list(action.get("heard_ids", []))
+        supporter_ids = self._dedupe_id_list(action.get("supporter_ids", []))
+        committed_ids = self._dedupe_id_list(action.get("committed_ids", []))
+        attendee_ids = self._dedupe_id_list(action.get("attendee_ids", []))
+        organizer_ids = self._dedupe_id_list(action.get("organizer_ids", []))
+        suppression_ids = self._dedupe_id_list(action.get("suppression_ids", []))
+        action["heard_ids"] = heard_ids
+        action["supporter_ids"] = supporter_ids
+        action["committed_ids"] = committed_ids
+        action["attendee_ids"] = attendee_ids
+        action["organizer_ids"] = organizer_ids
+        action["suppression_ids"] = suppression_ids
+        heard_ratio = len(heard_ids) / potential_size
+        support_ratio = len(supporter_ids) / potential_size
+        commit_ratio = len(committed_ids) / potential_size
+        turnout_ratio = len(attendee_ids) / potential_size
+        suppression_ratio = len(suppression_ids) / potential_size
+        kind = str(action.get("kind", "meeting"))
+        thresholds = self._collective_thresholds(kind)
+        systemic_pressure = 0.0
+        if kind == "strike":
+            systemic_pressure = float(self.state.get("macro", {}).get("worker_unrest", 0.0)) / 240.0
+        elif kind == "rally":
+            systemic_pressure = float(self.state.get("macro", {}).get("media_sentiment", 0.0)) / 320.0
+        elif kind == "party":
+            systemic_pressure = float(self.state.get("macro", {}).get("economy_heat", 0.0)) / 420.0
+        target_heat = max(
+            baseline_heat if baseline_heat is not None else 0.0,
+            heard_ratio * 0.22 + support_ratio * 0.28 + commit_ratio * 0.22 + turnout_ratio * 0.24 + systemic_pressure - suppression_ratio * 0.16,
+        )
+        target_support = max(
+            baseline_support if baseline_support is not None else 0.0,
+            support_ratio + len(organizer_ids) / potential_size * 0.12 - suppression_ratio * 0.08,
+        )
+        action["heat"] = round(max(0.0, min(1.0, max(float(action.get("heat", 0.0)) * 0.92, target_heat))), 3)
+        action["support"] = round(max(0.0, min(1.0, max(float(action.get("support", 0.0)) * 0.94, target_support))), 3)
+        action["commitment"] = round(max(0.0, min(1.0, max(float(action.get("commitment", 0.0)) * 0.95, commit_ratio))), 3)
+        action["turnout"] = round(max(0.0, min(1.0, max(float(action.get("turnout", 0.0)) * 0.94, turnout_ratio))), 3)
+        action["risk"] = round(
+            max(0.08, min(1.0, float(action.get("risk", thresholds["risk"])) * 0.84 + thresholds["risk"] * 0.16 + suppression_ratio * 0.18)),
+            3,
+        )
+        action["expected_reward"] = round(
+            max(
+                0.08,
+                min(1.0, float(action.get("expected_reward", thresholds["reward"])) * 0.88 + thresholds["reward"] * 0.12 + action["support"] * 0.06),
+            ),
+            3,
+        )
+        effective_thresholds = self._collective_effective_thresholds(action)
+        action["player_threshold_shift"] = round(float(effective_thresholds["shift"]), 3)
+        action["effective_support_threshold"] = round(float(effective_thresholds["support"]), 3)
+        action["effective_commitment_threshold"] = round(float(effective_thresholds["commitment"]), 3)
+        action["effective_turnout_threshold"] = round(float(effective_thresholds["turnout"]), 3)
+        if str(action.get("resolution_kind", "")):
+            resolved_age = max(0, current_tick - int(action.get("resolution_tick", current_tick)))
+            action["stage"] = "cooling" if resolved_age <= 4 * 60 else "dormant"
+            action["status"] = "resolved"
+            action["potential_size"] = potential_size
+            action["heard_count"] = len(heard_ids)
+            action["support_count"] = len(supporter_ids)
+            action["commit_count"] = len(committed_ids)
+            action["attendee_count"] = len(attendee_ids)
+            action["organizer_count"] = len(organizer_ids)
+            action["suppression_count"] = len(suppression_ids)
+            return
+        if action["turnout"] >= effective_thresholds["turnout"] or len(attendee_ids) >= max(2, math.ceil(potential_size * effective_thresholds["turnout"])):
+            stage = "active"
+            status = "active"
+        elif action["commitment"] >= effective_thresholds["commitment"] or len(committed_ids) >= max(1, math.ceil(potential_size * effective_thresholds["commitment"])):
+            stage = "committing"
+            status = "warming"
+        elif action["support"] >= effective_thresholds["support"] or len(supporter_ids) >= max(1, math.ceil(potential_size * effective_thresholds["support"])):
+            stage = "signaling"
+            status = "warming"
+        elif action["heat"] >= 0.12 or heard_ids:
+            stage = "forming"
+            status = "emerging"
+        elif action["heat"] >= 0.06:
+            stage = "cooling"
+            status = "cooling"
+        else:
+            stage = "dormant"
+            status = "dormant"
+        action["stage"] = stage
+        action["status"] = status
+        action["potential_size"] = potential_size
+        action["heard_count"] = len(heard_ids)
+        action["support_count"] = len(supporter_ids)
+        action["commit_count"] = len(committed_ids)
+        action["attendee_count"] = len(attendee_ids)
+        action["organizer_count"] = len(organizer_ids)
+        action["suppression_count"] = len(suppression_ids)
+        if stage == "active" and not int(action.get("start_tick", 0)):
+            action["start_tick"] = current_tick
+
+    def _upsert_collective_seed(
+        self,
+        topic: dict[str, Any],
+        norm: dict[str, Any] | None,
+        pressure: float,
+        kind_hint: str = "",
+    ) -> dict[str, Any] | None:
+        kind = self._collective_kind_from_topic(topic, norm, kind_hint)
+        if not kind:
+            return None
+        district = str(topic.get("district", "")) or str((norm or {}).get("district", ""))
+        action_id = self._collective_signature(topic, norm, district)
+        theme = self._collective_theme(topic, norm, kind)
+        label = self._collective_label(kind, district, theme)
+        thresholds = self._collective_thresholds(kind)
+        baseline_heat = round(max(0.08, min(1.0, float(topic.get("heat", 0.0)) * 0.56 + pressure * 0.28)), 3)
+        baseline_support = round(
+            max(
+                0.04,
+                min(1.0, pressure * 0.44 + float((norm or {}).get("support", 0.0)) * 0.18 + float((norm or {}).get("strength", 0.0)) * 0.12),
+            ),
+            3,
+        )
+        registry = list(self.state.get("collective_action_registry", []))
+        action = next((row for row in registry if str(row.get("id", "")) == action_id), None)
+        current_tick = self._world_tick()
+        if action is None:
+            action = {
+                "id": action_id,
+                "kind": kind,
+                "district": district,
+                "scope": "city" if str(topic.get("scope", "district")) == "city" or str((norm or {}).get("scope", "district")) == "city" else "district",
+                "label": label,
+                "theme": theme,
+                "status": "emerging",
+                "stage": "forming",
+                "heat": baseline_heat,
+                "support": baseline_support,
+                "commitment": 0.0,
+                "turnout": 0.0,
+                "risk": thresholds["risk"],
+                "expected_reward": thresholds["reward"],
+                "support_threshold": thresholds["support"],
+                "commitment_threshold": thresholds["commitment"],
+                "turnout_threshold": thresholds["turnout"],
+                "source_topic_ids": self._dedupe_id_list([str(topic.get("id", ""))]),
+                "source_norm_ids": self._dedupe_id_list([str((norm or {}).get("id", ""))]),
+                "target_groups": self._collective_target_groups(kind, topic, norm),
+                "heard_ids": [],
+                "supporter_ids": [],
+                "committed_ids": [],
+                "attendee_ids": [],
+                "organizer_ids": [],
+                "suppression_ids": [],
+                "created_tick": current_tick,
+                "start_tick": 0,
+                "last_tick": current_tick,
+                "last_actor_id": "",
+                "last_action": "seed",
+                "player_support": 0.0,
+                "player_mediation": 0.0,
+                "player_suppression": 0.0,
+                "player_threshold_shift": 0.0,
+                "effective_support_threshold": thresholds["support"],
+                "effective_commitment_threshold": thresholds["commitment"],
+                "effective_turnout_threshold": thresholds["turnout"],
+                "resolution_kind": "",
+                "resolution_label": "",
+                "resolution_note": "",
+                "resolution_tick": 0,
+                "resolution_crowd_score": 0.0,
+                "resolution_response_score": 0.0,
+            }
+            registry.append(action)
+            self.state["collective_action_registry"] = registry
+        else:
+            if self._collective_kind_rank(kind) > self._collective_kind_rank(str(action.get("kind", ""))):
+                action["kind"] = kind
+            action["label"] = label
+            action["theme"] = theme
+            action["scope"] = "city" if str(action.get("scope", "district")) == "city" or str(topic.get("scope", "district")) == "city" else "district"
+            action["target_groups"] = self._dedupe_id_list(
+                [*list(action.get("target_groups", [])), *self._collective_target_groups(kind, topic, norm)],
+                limit=8,
+            )
+            action["source_topic_ids"] = self._dedupe_id_list([*list(action.get("source_topic_ids", [])), str(topic.get("id", ""))])
+            action["source_norm_ids"] = self._dedupe_id_list([*list(action.get("source_norm_ids", [])), str((norm or {}).get("id", ""))])
+            action["last_tick"] = current_tick
+        self._refresh_collective_action_row(action, baseline_heat=baseline_heat, baseline_support=baseline_support)
+        self._sort_collective_registry()
+        return action
+
+    def _sort_collective_registry(self) -> None:
+        registry = list(self.state.get("collective_action_registry", []))
+        registry.sort(
+            key=lambda row: (
+                self._collective_stage_rank(str(row.get("stage", ""))),
+                float(row.get("heat", 0.0)),
+                float(row.get("support", 0.0)),
+            ),
+            reverse=True,
+        )
+        self.state["collective_action_registry"] = registry[:24]
+
+    def _decay_collective_actions(self) -> None:
+        current_tick = self._world_tick()
+        last_tick = int(self.state.get("collective_action_decay_tick", current_tick))
+        delta = max(0, current_tick - last_tick)
+        if delta <= 0:
+            return
+        heat_decay = pow(0.9987, delta)
+        support_decay = pow(0.999, delta)
+        commit_decay = pow(0.9988, delta)
+        turnout_decay = pow(0.9983, delta)
+        keep_rows: list[dict[str, Any]] = []
+        for row in self.state.get("collective_action_registry", []):
+            action = copy.deepcopy(row)
+            action["heat"] = round(max(0.0, min(1.0, float(action.get("heat", 0.0)) * heat_decay)), 3)
+            action["support"] = round(max(0.0, min(1.0, float(action.get("support", 0.0)) * support_decay)), 3)
+            action["commitment"] = round(max(0.0, min(1.0, float(action.get("commitment", 0.0)) * commit_decay)), 3)
+            action["turnout"] = round(max(0.0, min(1.0, float(action.get("turnout", 0.0)) * turnout_decay)), 3)
+            self._refresh_collective_action_row(action)
+            age = current_tick - int(action.get("last_tick", current_tick))
+            if age > 4 * 24 * 60 and float(action.get("heat", 0.0)) < 0.06 and int(action.get("attendee_count", 0)) == 0:
+                continue
+            keep_rows.append(action)
+        self.state["collective_action_registry"] = keep_rows[:24]
+        self.state["collective_action_decay_tick"] = current_tick
+
+    def _sync_collective_actions(self) -> None:
+        self._decay_collective_actions()
+        for topic in self._active_public_topics(limit=8):
+            norm = self._collective_norm_for_topic(topic)
+            pressure = self._collective_system_pressure(topic, norm)
+            if pressure < 0.24:
+                continue
+            self._upsert_collective_seed(topic, norm, pressure)
+        self._resolve_collective_responses()
+        for action in self.state.get("collective_action_registry", []):
+            self._refresh_collective_action_row(action)
+        self._resolve_collective_outcomes()
+        for action in self.state.get("collective_action_registry", []):
+            self._refresh_collective_action_row(action)
+        self._sort_collective_registry()
+
+    def _resolve_collective_responses(self) -> None:
+        for action in self.state.get("collective_action_registry", []):
+            target = self._collective_target_for_action(action)
+            action.update(target)
+            window_start, window_end = self._collective_window_for_kind(str(action.get("kind", "meeting")))
+            action["window_start_minutes"] = int(window_start)
+            action["window_end_minutes"] = int(window_end)
+            mode = self._collective_response_mode(action)
+            if float(action.get("player_suppression", 0.0)) >= 0.18:
+                mode = "suppress"
+            elif float(action.get("player_mediation", 0.0)) >= 0.18:
+                mode = "negotiate"
+            elif float(action.get("player_support", 0.0)) >= 0.22 and mode == "observe":
+                mode = "negotiate"
+            candidates = self._collective_response_candidates(action)
+            response_actor_ids: list[str] = []
+            if mode == "negotiate":
+                response_actor_ids = self._dedupe_id_list([
+                    *candidates.get("government", [])[:2],
+                    *candidates.get("company", [])[:2],
+                    *candidates.get("family", [])[:1],
+                ], limit=6)
+            elif mode == "suppress":
+                response_actor_ids = self._dedupe_id_list([
+                    *candidates.get("police", [])[:2],
+                    *candidates.get("company", [])[:2],
+                    *candidates.get("government", [])[:1],
+                ], limit=6)
+            else:
+                response_actor_ids = self._dedupe_id_list([
+                    *candidates.get("government", [])[:1],
+                    *candidates.get("company", [])[:1],
+                    *candidates.get("media", [])[:1],
+                ], limit=4)
+            action["response_mode"] = mode
+            action["response_actor_ids"] = response_actor_ids
+            action["response_note"] = self._collective_response_note(action, mode)
+            action["response_target_x"] = round(float(action.get("target_x", 0.0)) + (58.0 if mode == "suppress" else -42.0 if mode == "negotiate" else 24.0), 1)
+            action["response_target_y"] = round(float(action.get("target_y", 0.0)) + (16.0 if mode == "suppress" else -12.0 if mode == "negotiate" else -18.0), 1)
+            if mode == "suppress":
+                action["suppression_ids"] = self._dedupe_id_list([*list(action.get("suppression_ids", [])), *response_actor_ids], limit=10)
+                action["risk"] = round(min(1.0, float(action.get("risk", 0.0)) + 0.02), 3)
+            elif mode == "negotiate":
+                action["negotiator_ids"] = self._dedupe_id_list(response_actor_ids, limit=8)
+                action["risk"] = round(max(0.08, float(action.get("risk", 0.0)) - 0.015), 3)
+            effective_thresholds = self._collective_effective_thresholds(action)
+            action["player_threshold_shift"] = round(float(effective_thresholds["shift"]), 3)
+            action["effective_support_threshold"] = round(float(effective_thresholds["support"]), 3)
+            action["effective_commitment_threshold"] = round(float(effective_thresholds["commitment"]), 3)
+            action["effective_turnout_threshold"] = round(float(effective_thresholds["turnout"]), 3)
+
+    def _collective_company_for_action(self, action: dict[str, Any]) -> dict[str, Any] | None:
+        district = str(action.get("district", ""))
+        for company in self.state.get("companies", []):
+            if str(company.get("district", "")) == district:
+                return company
+        return None
+
+    def _collective_crowd_score(self, action: dict[str, Any]) -> float:
+        potential_size = max(1, int(action.get("potential_size", 0)))
+        organizer_share = int(action.get("organizer_count", 0)) / potential_size
+        player_bias = float(action.get("player_support", 0.0)) * 0.08 + float(action.get("player_mediation", 0.0)) * 0.05 - float(action.get("player_suppression", 0.0)) * 0.06
+        return round(
+            self._clamp(
+                float(action.get("support", 0.0)) * 0.28
+                + float(action.get("commitment", 0.0)) * 0.32
+                + float(action.get("turnout", 0.0)) * 0.46
+                + organizer_share * 0.12
+                + player_bias,
+                0.0,
+                1.6,
+            ),
+            3,
+        )
+
+    def _collective_response_score(self, action: dict[str, Any]) -> float:
+        potential_size = max(1, int(action.get("potential_size", 0)))
+        response_share = len(self._dedupe_id_list(action.get("response_actor_ids", []), limit=12)) / potential_size
+        mode_bias = 0.16 if str(action.get("response_mode", "")) == "suppress" else -0.04 if str(action.get("response_mode", "")) == "negotiate" else 0.03
+        player_bias = float(action.get("player_suppression", 0.0)) * 0.08 - float(action.get("player_support", 0.0)) * 0.03 - float(action.get("player_mediation", 0.0)) * 0.05
+        return round(
+            self._clamp(
+                response_share * 0.36
+                + float(action.get("risk", 0.0)) * 0.24
+                + mode_bias
+                + player_bias,
+                -0.2,
+                1.4,
+            ),
+            3,
+        )
+
+    def _collective_ready_for_resolution(self, action: dict[str, Any]) -> bool:
+        if str(action.get("resolution_kind", "")):
+            return False
+        minutes = int(self.state.get("clock_minutes", 8 * 60))
+        stage = str(action.get("stage", "forming"))
+        if stage in {"dormant", "cooling"}:
+            return False
+        start = int(action.get("window_start_minutes", 0))
+        end = int(action.get("window_end_minutes", 24 * 60))
+        kind = str(action.get("kind", "meeting"))
+        early_offset = 22 if kind in {"meeting", "rally"} else 28 if kind == "strike" else 36
+        if minutes >= end + 20:
+            return True
+        if minutes < start + early_offset:
+            return False
+        if stage == "active":
+            return True
+        if float(action.get("player_mediation", 0.0)) >= 0.28:
+            return True
+        if str(action.get("response_mode", "")) == "suppress" and int(action.get("suppression_count", 0)) > 0:
+            return True
+        return False
+
+    def _collective_result_packet(self, action: dict[str, Any], resolution_kind: str, note: str) -> dict[str, Any]:
+        district = str(action.get("district", ""))
+        label = str(action.get("label", "集体行动"))
+        company = self._collective_company_for_action(action)
+        family_name = str((company or {}).get("family_owner", ""))
+        stock_name = str((company or {}).get("stock_name", ""))
+        goods_delta: dict[str, float] = {}
+        if district == "工厂区":
+            goods_delta = {"煤": -0.03 if resolution_kind == "escalated" else 0.02}
+        elif district == "港口":
+            goods_delta = {"罐头": -0.03 if resolution_kind == "escalated" else 0.02}
+        elif district == "贫民街":
+            goods_delta = {"面包": -0.02 if resolution_kind == "escalated" else 0.02}
+        stocks_delta = {stock_name: -0.05 if resolution_kind == "escalated" else -0.02 if resolution_kind == "conceded" else 0.01} if stock_name else {}
+        macro_delta = {
+            "worker_unrest": 2.4 if resolution_kind == "escalated" else -1.8 if resolution_kind == "conceded" else -0.8 if resolution_kind == "fizzled" else 0.2,
+            "media_sentiment": -1.2 if resolution_kind == "escalated" else 0.9 if resolution_kind == "conceded" else -0.4 if resolution_kind == "fizzled" else 1.2,
+        }
+        family_delta = {family_name: -0.05 if resolution_kind == "escalated" else -0.02 if resolution_kind == "conceded" else 0.01} if family_name else {}
+        return {
+            "id": f"{action.get('id', 'collective')}_{resolution_kind}_{self._world_tick()}",
+            "district": district,
+            "source": "集体行动结算",
+            "title": f"{label}：{self._collective_resolution_label(resolution_kind)}",
+            "line": note,
+            "body": note,
+            "tags": ["集体行动", str(action.get("kind", "")), resolution_kind],
+            "scope": "city" if resolution_kind in {"escalated", "conceded"} else "district",
+            "topic_kind": "labor" if str(action.get("kind", "")) in {"strike", "meeting"} else "public",
+            "goods_delta": goods_delta,
+            "stocks_delta": stocks_delta,
+            "macro_delta": macro_delta,
+            "family_delta": family_delta,
+        }
+
+    def _apply_collective_resolution(self, action: dict[str, Any], resolution_kind: str, note: str, crowd_score: float, response_score: float) -> None:
+        if str(action.get("resolution_kind", "")):
+            return
+        current_tick = self._world_tick()
+        label = str(action.get("label", "集体行动"))
+        district = str(action.get("district", ""))
+        action["resolution_kind"] = resolution_kind
+        action["resolution_label"] = self._collective_resolution_label(resolution_kind)
+        action["resolution_note"] = note
+        action["resolution_tick"] = current_tick
+        action["resolution_crowd_score"] = round(crowd_score, 3)
+        action["resolution_response_score"] = round(response_score, 3)
+        action["last_action"] = resolution_kind
+        action["last_tick"] = current_tick
+        action["status"] = "resolved"
+        action["stage"] = "cooling"
+        company = self._collective_company_for_action(action)
+        linked_npcs = self._linked_npcs_for_company(str((company or {}).get("id", ""))) if company else [npc for npc in self.state.get("npcs", []) if str(npc.get("district", "")) == district]
+        player = self.state.get("player", {})
+        family_name = str((company or {}).get("family_owner", ""))
+        if resolution_kind == "conceded":
+            action["heat"] = round(self._clamp(max(float(action.get("heat", 0.0)) * 0.54, 0.16), 0.08, 0.52), 3)
+            action["support"] = round(self._clamp(float(action.get("support", 0.0)) * 0.82, 0.08, 0.92), 3)
+            action["commitment"] = round(self._clamp(float(action.get("commitment", 0.0)) * 0.68, 0.04, 0.84), 3)
+            action["turnout"] = round(self._clamp(float(action.get("turnout", 0.0)) * 0.58, 0.03, 0.82), 3)
+            self.state["macro"]["worker_unrest"] = max(0, int(self.state["macro"].get("worker_unrest", 50)) - 3)
+            self.state["macro"]["media_sentiment"] = min(100, int(self.state["macro"].get("media_sentiment", 50)) + 1)
+            self._bump_district_signal(district, "labor_heat", -0.12)
+            self._bump_district_signal(district, "fear", -0.08)
+            self._bump_district_signal(district, "gossip", 0.08)
+            if company:
+                company["payroll_delay"] = max(0.0, float(company.get("payroll_delay", 0.0)) - 8.0)
+                company["wage_pressure"] = max(10.0, float(company.get("wage_pressure", 35.0)) - 8.0)
+                company["order_pressure"] = max(12.0, float(company.get("order_pressure", 50.0)) - 4.0)
+                company["profit_margin"] = max(0.04, float(company.get("profit_margin", 0.12)) - 0.015)
+                company["wage_level"] = min(12.0, float(company.get("wage_level", 5.0)) + 0.3)
+            for npc in linked_npcs[:6]:
+                npc["anxiety"] = max(0.0, float(npc.get("anxiety", 0.0)) - 6.0)
+                npc["fear"] = max(0, int(npc.get("fear", 0)) - 4)
+                npc["job_security"] = min(100.0, float(npc.get("job_security", 50.0)) + 4.0)
+            if float(action.get("player_support", 0.0)) + float(action.get("player_mediation", 0.0)) > float(action.get("player_suppression", 0.0)):
+                player["reputation"] = min(100, int(player.get("reputation", 0)) + 1)
+                if family_name:
+                    player["family_relations"][family_name] = int(player.get("family_relations", {}).get(family_name, 0)) - 1
+                player["family_relations"]["镇政府"] = int(player.get("family_relations", {}).get("镇政府", 0)) + (1 if float(action.get("player_mediation", 0.0)) > 0 else 0)
+        elif resolution_kind == "escalated":
+            action["heat"] = round(self._clamp(float(action.get("heat", 0.0)) + 0.16, 0.14, 0.95), 3)
+            action["support"] = round(self._clamp(float(action.get("support", 0.0)) + 0.08, 0.1, 0.95), 3)
+            action["commitment"] = round(self._clamp(float(action.get("commitment", 0.0)) + 0.06, 0.06, 0.9), 3)
+            action["turnout"] = round(self._clamp(float(action.get("turnout", 0.0)) * 0.72, 0.04, 0.88), 3)
+            action["risk"] = round(self._clamp(float(action.get("risk", 0.0)) + 0.16, 0.08, 1.0), 3)
+            self.state["macro"]["worker_unrest"] = min(100, int(self.state["macro"].get("worker_unrest", 50)) + 6)
+            self.state["macro"]["media_sentiment"] = max(0, int(self.state["macro"].get("media_sentiment", 50)) - 3)
+            self.state["macro"]["economy_heat"] = max(0, int(self.state["macro"].get("economy_heat", 50)) - 1)
+            self._bump_district_signal(district, "labor_heat", 0.16)
+            self._bump_district_signal(district, "fear", 0.18)
+            self._bump_district_signal(district, "gossip", 0.1)
+            if company:
+                company["order_pressure"] = max(12.0, float(company.get("order_pressure", 50.0)) - 6.0)
+                company["payroll_delay"] = min(100.0, float(company.get("payroll_delay", 0.0)) + 5.0)
+                company["wage_pressure"] = min(100.0, float(company.get("wage_pressure", 35.0)) + 4.0)
+                company["financing_pressure"] = min(100.0, float(company.get("financing_pressure", 45.0)) + 3.0)
+            for npc in linked_npcs[:6]:
+                npc["anxiety"] = min(100.0, float(npc.get("anxiety", 0.0)) + 8.0)
+                npc["fear"] = min(100, int(npc.get("fear", 0)) + 6)
+                npc["job_security"] = max(8.0, float(npc.get("job_security", 50.0)) - 6.0)
+            if float(action.get("player_suppression", 0.0)) > float(action.get("player_support", 0.0)) + float(action.get("player_mediation", 0.0)):
+                player["family_relations"]["镇政府"] = int(player.get("family_relations", {}).get("镇政府", 0)) + 1
+                if family_name:
+                    player["family_relations"][family_name] = int(player.get("family_relations", {}).get(family_name, 0)) + 1
+                player["reputation"] = max(0, int(player.get("reputation", 0)) - 1)
+        elif resolution_kind == "held":
+            action["heat"] = round(self._clamp(float(action.get("heat", 0.0)) * 0.62, 0.1, 0.56), 3)
+            action["support"] = round(self._clamp(float(action.get("support", 0.0)) * 0.8, 0.08, 0.88), 3)
+            action["commitment"] = round(self._clamp(float(action.get("commitment", 0.0)) * 0.66, 0.04, 0.82), 3)
+            action["turnout"] = round(self._clamp(float(action.get("turnout", 0.0)) * 0.6, 0.03, 0.82), 3)
+            self.state["macro"]["media_sentiment"] = min(100, int(self.state["macro"].get("media_sentiment", 50)) + 2)
+            self.state["macro"]["economy_heat"] = min(100, int(self.state["macro"].get("economy_heat", 50)) + 1)
+            self._bump_district_signal(district, "gossip", 0.12)
+        else:
+            action["heat"] = round(self._clamp(float(action.get("heat", 0.0)) * 0.34, 0.03, 0.28), 3)
+            action["support"] = round(self._clamp(float(action.get("support", 0.0)) * 0.46, 0.02, 0.52), 3)
+            action["commitment"] = round(self._clamp(float(action.get("commitment", 0.0)) * 0.36, 0.01, 0.46), 3)
+            action["turnout"] = round(self._clamp(float(action.get("turnout", 0.0)) * 0.24, 0.0, 0.34), 3)
+            self.state["macro"]["worker_unrest"] = max(0, int(self.state["macro"].get("worker_unrest", 50)) - 1)
+            self.state["macro"]["media_sentiment"] = max(0, int(self.state["macro"].get("media_sentiment", 50)) - 1)
+            self._bump_district_signal(district, "labor_heat", -0.08)
+            self._bump_district_signal(district, "gossip", -0.04)
+            for npc in linked_npcs[:4]:
+                npc["anxiety"] = min(100.0, float(npc.get("anxiety", 0.0)) + 2.0)
+                npc["fear"] = min(100, int(npc.get("fear", 0)) + 2)
+        for norm in self.state.get("norm_registry", []):
+            if str(norm.get("id", "")) not in set(str(value) for value in action.get("source_norm_ids", [])):
+                continue
+            if resolution_kind in {"conceded", "escalated"}:
+                norm["support"] = round(self._clamp(float(norm.get("support", 0.0)) + 0.05, 0.0, 1.0), 3)
+                norm["strength"] = round(self._clamp(float(norm.get("strength", 0.0)) + 0.06, 0.0, 1.0), 3)
+                norm["reinforce_count"] = int(norm.get("reinforce_count", 0)) + 1
+            elif resolution_kind == "fizzled":
+                norm["support"] = round(self._clamp(float(norm.get("support", 0.0)) - 0.05, 0.0, 1.0), 3)
+                norm["strength"] = round(self._clamp(float(norm.get("strength", 0.0)) - 0.04, 0.0, 1.0), 3)
+                norm["contest_count"] = int(norm.get("contest_count", 0)) + 1
+        outcome_row = {
+            "id": str(action.get("id", "")),
+            "label": label,
+            "district": district,
+            "resolution_kind": resolution_kind,
+            "resolution_label": action["resolution_label"],
+            "note": note,
+            "tick": current_tick,
+            "clock_label": self._clock_label(),
+            "player_support": round(float(action.get("player_support", 0.0)), 3),
+            "player_mediation": round(float(action.get("player_mediation", 0.0)), 3),
+            "player_suppression": round(float(action.get("player_suppression", 0.0)), 3),
+        }
+        self.state["collective_outcomes"].insert(0, outcome_row)
+        self.state["collective_outcomes"] = self.state["collective_outcomes"][:12]
+        self._record_player_collective_outcome(action, resolution_kind)
+        self._queue_collective_followup(action, resolution_kind)
+        packet = self._collective_result_packet(action, resolution_kind, note)
+        self._apply_intel_packet(packet, to_player=False, promote_news=True, intensity=0.92 if resolution_kind in {"conceded", "escalated"} else 0.68)
+
+    def _resolve_collective_outcomes(self) -> None:
+        for action in self.state.get("collective_action_registry", []):
+            if not self._collective_ready_for_resolution(action):
+                continue
+            effective_thresholds = self._collective_effective_thresholds(action)
+            turnout_threshold = float(effective_thresholds["turnout"])
+            crowd_score = self._collective_crowd_score(action)
+            response_score = self._collective_response_score(action)
+            turnout = float(action.get("turnout", 0.0))
+            support = float(action.get("support", 0.0))
+            mode = str(action.get("response_mode", "observe"))
+            kind = str(action.get("kind", "meeting"))
+            minutes = int(self.state.get("clock_minutes", 8 * 60))
+            end = int(action.get("window_end_minutes", 24 * 60))
+            if kind == "party":
+                if turnout >= turnout_threshold or crowd_score >= turnout_threshold + 0.08:
+                    note = f"{action.get('label', '集体行动')} 在 {action.get('target_location_title', '现场')} 成局了，围观和闲谈把气氛越推越热。"
+                    self._apply_collective_resolution(action, "held", note, crowd_score, response_score)
+                elif minutes >= end + 20:
+                    note = f"{action.get('label', '集体行动')} 到场的人不够，大家在 {action.get('target_location_title', '现场')} 等了一阵就散了。"
+                    self._apply_collective_resolution(action, "fizzled", note, crowd_score, response_score)
+                continue
+            if minutes >= end + 20 and turnout < turnout_threshold * 0.82 and support < float(effective_thresholds["support"]) * 0.94:
+                note = f"{action.get('label', '集体行动')} 到了收场时人还是没凑够，现场只剩零散抱怨，行动先流产了。"
+                self._apply_collective_resolution(action, "fizzled", note, crowd_score, response_score)
+                continue
+            negotiation_ready = mode == "negotiate" and (crowd_score >= turnout_threshold + 0.08 or float(action.get("player_mediation", 0.0)) >= 0.24)
+            suppression_ready = mode == "suppress" and response_score >= crowd_score + 0.08 and float(action.get("risk", 0.0)) >= 0.34
+            if negotiation_ready:
+                note = f"{action.get('target_location_title', '现场')} 外圈开始松口，{action.get('label', '这场行动')} 换来了一轮实打实的让步。"
+                self._apply_collective_resolution(action, "conceded", note, crowd_score, response_score)
+            elif suppression_ready:
+                note = f"{action.get('target_location_title', '现场')} 的压制升级了，{action.get('label', '这场行动')} 被硬推成更大的冲突。"
+                self._apply_collective_resolution(action, "escalated", note, crowd_score, response_score)
+            elif minutes >= end + 20:
+                note = f"{action.get('label', '这场行动')} 顶着压力撑到了收场，机构虽然没完全让步，但已经留下了后续谈判口子。"
+                self._apply_collective_resolution(action, "conceded", note, crowd_score, response_score)
+
+    def _active_collective_actions_view(self, limit: int = 8, district_name: str = "") -> list[dict[str, Any]]:
+        rows: list[dict[str, Any]] = []
+        current_tick = self._world_tick()
+        for action in self.state.get("collective_action_registry", []):
+            district = str(action.get("district", ""))
+            scope = str(action.get("scope", "district"))
+            if district_name and scope != "city" and district not in {"", district_name}:
+                continue
+            resolution_kind = str(action.get("resolution_kind", ""))
+            resolved_recently = resolution_kind and current_tick - int(action.get("resolution_tick", 0)) <= 4 * 60
+            if not resolved_recently and float(action.get("heat", 0.0)) < 0.08 and int(action.get("heard_count", 0)) <= 0:
+                continue
+            rows.append(
+                {
+                    "id": str(action.get("id", "")),
+                    "kind": str(action.get("kind", "")),
+                    "district": district,
+                    "scope": scope,
+                    "label": str(action.get("label", "")),
+                    "theme": str(action.get("theme", "")),
+                    "stage": str(action.get("stage", "")),
+                    "stage_label": self._collective_stage_label(str(action.get("stage", ""))),
+                    "status": str(action.get("status", "")),
+                    "heat": round(float(action.get("heat", 0.0)), 3),
+                    "support": round(float(action.get("support", 0.0)), 3),
+                    "commitment": round(float(action.get("commitment", 0.0)), 3),
+                    "turnout": round(float(action.get("turnout", 0.0)), 3),
+                    "risk": round(float(action.get("risk", 0.0)), 3),
+                    "expected_reward": round(float(action.get("expected_reward", 0.0)), 3),
+                    "heard_count": int(action.get("heard_count", 0)),
+                    "support_count": int(action.get("support_count", 0)),
+                    "commit_count": int(action.get("commit_count", 0)),
+                    "attendee_count": int(action.get("attendee_count", 0)),
+                    "organizer_count": int(action.get("organizer_count", 0)),
+                    "potential_size": int(action.get("potential_size", 0)),
+                    "target_groups": list(action.get("target_groups", [])),
+                    "target_location_id": str(action.get("target_location_id", "")),
+                    "target_location_title": str(action.get("target_location_title", "")),
+                    "target_subregion_id": str(action.get("target_subregion_id", "")),
+                    "target_subregion_name": str(action.get("target_subregion_name", "")),
+                    "target_x": round(float(action.get("target_x", 0.0)), 1),
+                    "target_y": round(float(action.get("target_y", 0.0)), 1),
+                    "response_mode": str(action.get("response_mode", "")),
+                    "response_actor_ids": list(action.get("response_actor_ids", [])),
+                    "response_note": str(action.get("response_note", "")),
+                    "response_target_x": round(float(action.get("response_target_x", 0.0)), 1),
+                    "response_target_y": round(float(action.get("response_target_y", 0.0)), 1),
+                    "effective_support_threshold": round(float(action.get("effective_support_threshold", 0.0)), 3),
+                    "effective_commitment_threshold": round(float(action.get("effective_commitment_threshold", 0.0)), 3),
+                    "effective_turnout_threshold": round(float(action.get("effective_turnout_threshold", 0.0)), 3),
+                    "player_threshold_shift": round(float(action.get("player_threshold_shift", 0.0)), 3),
+                    "player_support": round(float(action.get("player_support", 0.0)), 3),
+                    "player_mediation": round(float(action.get("player_mediation", 0.0)), 3),
+                    "player_suppression": round(float(action.get("player_suppression", 0.0)), 3),
+                    "resolution_kind": resolution_kind,
+                    "resolution_label": str(action.get("resolution_label", "")),
+                    "resolution_note": str(action.get("resolution_note", "")),
+                    "resolution_tick": int(action.get("resolution_tick", 0)),
+                    "source_topic_ids": list(action.get("source_topic_ids", [])),
+                    "source_norm_ids": list(action.get("source_norm_ids", [])),
+                }
+            )
+        rows.sort(
+            key=lambda item: (
+                self._collective_stage_rank(str(item.get("stage", ""))),
+                float(item.get("heat", 0.0)),
+                float(item.get("support", 0.0)),
+            ),
+            reverse=True,
+        )
+        return rows[:limit]
+
+    def _npc_collective_digest(self, npc: dict[str, Any]) -> str:
+        district = str(npc.get("district", ""))
+        rows = self._active_collective_actions_view(limit=3, district_name=district)
+        pieces: list[str] = []
+        for row in rows[:2]:
+            label = str(row.get("label", "")).strip()
+            if not label:
+                continue
+            stage = str(row.get("stage_label", "听说"))
+            support = int(round(float(row.get("support", 0.0)) * 100))
+            commit = int(round(float(row.get("commitment", 0.0)) * 100))
+            pieces.append(f"{label}(阶{stage}|支{support}|诺{commit})")
+        return "；".join(pieces) if pieces else "暂无成形集体行动"
+
+    def _coerce_collective_action_mode(
+        self,
+        value: str,
+        npc: dict[str, Any],
+        topic: dict[str, Any],
+        norm: dict[str, Any] | None,
+        topic_action: dict[str, Any],
+        norm_action: dict[str, Any],
+    ) -> str:
+        lowered = value.strip().lower()
+        mapping = {
+            "hear": "hear",
+            "notice": "hear",
+            "听说": "hear",
+            "support": "support",
+            "join": "support",
+            "支持": "support",
+            "表态": "support",
+            "commit": "commit",
+            "pledge": "commit",
+            "承诺": "commit",
+            "attend": "attend",
+            "show_up": "attend",
+            "到场": "attend",
+            "organize": "organize",
+            "start": "organize",
+            "发起": "organize",
+            "组织": "organize",
+            "suppress": "suppress",
+            "block": "suppress",
+            "压制": "suppress",
+            "镇压": "suppress",
+            "avoid": "avoid",
+            "ignore": "avoid",
+            "回避": "avoid",
+            "沉默": "avoid",
+        }
+        if lowered in mapping:
+            return mapping[lowered]
+        role = str(npc.get("role", ""))
+        kind = self._collective_kind_from_topic(topic, norm)
+        pressure = float(npc.get("debt", 0)) / 120.0 + float(npc.get("hunger", 0)) / 100.0 + float(npc.get("fear", 0)) / 180.0
+        if role in {"工会领袖", "记者"} and kind in {"strike", "meeting", "rally"}:
+            return "organize" if str(norm_action.get("mode", "")) in {"reinforce", "seed"} or str(topic_action.get("mode", "")) == "amplify" else "support"
+        if role in {"工人", "临时工"} and kind in {"strike", "meeting"}:
+            if pressure >= 1.0 and str(norm_action.get("mode", "")) in {"reinforce", "seed"}:
+                return "commit"
+            if pressure >= 0.48:
+                return "support"
+            return "hear"
+        if role in {"老板", "代理人", "银行经理"} and kind in {"strike", "rally"}:
+            return "suppress"
+        if str(topic_action.get("mode", "")) in {"share", "amplify"} and str(norm_action.get("mode", "")) in {"reinforce", "seed"}:
+            return "support"
+        if str(topic_action.get("mode", "")) in {"question", "deny"} and role in {"老板", "代理人", "银行经理"}:
+            return "suppress"
+        if kind:
+            return "hear"
+        return "avoid"
+
+    def _coerce_collective_kind(self, value: str, topic: dict[str, Any], norm: dict[str, Any] | None) -> str:
+        lowered = value.strip().lower()
+        mapping = {
+            "strike": "strike",
+            "罢工": "strike",
+            "meeting": "meeting",
+            "动员会": "meeting",
+            "rally": "rally",
+            "集会": "rally",
+            "party": "party",
+            "派对": "party",
+        }
+        if lowered in mapping:
+            return mapping[lowered]
+        return self._collective_kind_from_topic(topic, norm)
+
+    def _match_collective_action(self, topic: dict[str, Any], district_name: str, kind_hint: str = "") -> dict[str, Any] | None:
+        topic_id = str(topic.get("id", ""))
+        rows = self._active_collective_actions_view(limit=8, district_name=district_name)
+        for row in rows:
+            if topic_id and topic_id in [str(value) for value in row.get("source_topic_ids", [])]:
+                return row
+        for row in rows:
+            if kind_hint and str(row.get("kind", "")) != kind_hint:
+                continue
+            return row
+        return None
+
+    def _coerce_npc_collective_action(
+        self,
+        raw: Any,
+        npc: dict[str, Any],
+        topic: dict[str, Any],
+        norm: dict[str, Any] | None,
+        topic_action: dict[str, Any],
+        norm_action: dict[str, Any],
+    ) -> dict[str, Any]:
+        payload = raw if isinstance(raw, dict) else {}
+        kind = self._coerce_collective_kind(str(payload.get("kind", "")), topic, norm)
+        mode = self._coerce_collective_action_mode(str(payload.get("mode", "")), npc, topic, norm, topic_action, norm_action)
+        matched = self._match_collective_action(topic, str(npc.get("district", "")), kind)
+        action_id = str(payload.get("action_id", "")).strip() or str((matched or {}).get("id", ""))
+        base_intensity = {
+            "hear": 0.22,
+            "support": 0.48,
+            "commit": 0.62,
+            "attend": 0.72,
+            "organize": 0.78,
+            "suppress": 0.58,
+            "avoid": 0.08,
+        }.get(mode, 0.2)
+        intensity = float(payload.get("intensity", topic_action.get("intensity", norm_action.get("intensity", base_intensity))))
+        note = str(payload.get("note", "")).strip()
+        return {
+            "mode": mode,
+            "action_id": action_id,
+            "kind": kind,
+            "intensity": round(max(0.0, min(1.0, intensity)), 3),
+            "note": note,
+        }
+
+    def _materialize_collective_action(
+        self,
+        npc: dict[str, Any],
+        topic: dict[str, Any],
+        norm: dict[str, Any] | None,
+        collective_action: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        action_id = str(collective_action.get("action_id", "")).strip()
+        existing = self._collective_row_by_id(action_id)
+        if existing:
+            return existing
+        kind_hint = str(collective_action.get("kind", "")).strip()
+        if topic or norm:
+            seeded = self._upsert_collective_seed(
+                topic,
+                norm,
+                max(0.18, float(collective_action.get("intensity", 0.18)) * 0.7),
+                kind_hint,
+            )
+            if seeded:
+                return seeded
+        matched = self._match_collective_action(topic, str(npc.get("district", "")), kind_hint)
+        if matched:
+            return self._collective_row_by_id(str(matched.get("id", "")))
+        return None
+
+    def _apply_collective_action(
+        self,
+        npc: dict[str, Any],
+        topic: dict[str, Any],
+        norm: dict[str, Any] | None,
+        collective_action: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        mode = str(collective_action.get("mode", "avoid"))
+        if mode == "avoid" and not str(collective_action.get("action_id", "")).strip() and not str(collective_action.get("kind", "")).strip():
+            return None
+        action = self._materialize_collective_action(npc, topic, norm, collective_action)
+        if not action:
+            return None
+        if str(action.get("resolution_kind", "")):
+            return action
+        npc_id = str(npc.get("id", ""))
+        intensity = float(collective_action.get("intensity", 0.2))
+        if mode == "hear":
+            action["heard_ids"] = self._dedupe_id_list([npc_id, *list(action.get("heard_ids", []))])
+            action["heat"] = round(min(1.0, float(action.get("heat", 0.0)) + 0.01 + intensity * 0.02), 3)
+        elif mode == "support":
+            action["heard_ids"] = self._dedupe_id_list([npc_id, *list(action.get("heard_ids", []))])
+            action["supporter_ids"] = self._dedupe_id_list([npc_id, *list(action.get("supporter_ids", []))])
+            action["support"] = round(min(1.0, float(action.get("support", 0.0)) + 0.02 + intensity * 0.04), 3)
+        elif mode == "commit":
+            action["heard_ids"] = self._dedupe_id_list([npc_id, *list(action.get("heard_ids", []))])
+            action["supporter_ids"] = self._dedupe_id_list([npc_id, *list(action.get("supporter_ids", []))])
+            action["committed_ids"] = self._dedupe_id_list([npc_id, *list(action.get("committed_ids", []))])
+            action["commitment"] = round(min(1.0, float(action.get("commitment", 0.0)) + 0.02 + intensity * 0.05), 3)
+        elif mode == "attend":
+            action["heard_ids"] = self._dedupe_id_list([npc_id, *list(action.get("heard_ids", []))])
+            action["supporter_ids"] = self._dedupe_id_list([npc_id, *list(action.get("supporter_ids", []))])
+            action["committed_ids"] = self._dedupe_id_list([npc_id, *list(action.get("committed_ids", []))])
+            action["attendee_ids"] = self._dedupe_id_list([npc_id, *list(action.get("attendee_ids", []))])
+            action["turnout"] = round(min(1.0, float(action.get("turnout", 0.0)) + 0.03 + intensity * 0.05), 3)
+        elif mode == "organize":
+            action["heard_ids"] = self._dedupe_id_list([npc_id, *list(action.get("heard_ids", []))])
+            action["supporter_ids"] = self._dedupe_id_list([npc_id, *list(action.get("supporter_ids", []))])
+            action["committed_ids"] = self._dedupe_id_list([npc_id, *list(action.get("committed_ids", []))])
+            action["organizer_ids"] = self._dedupe_id_list([npc_id, *list(action.get("organizer_ids", []))])
+            action["support"] = round(min(1.0, float(action.get("support", 0.0)) + 0.03 + intensity * 0.05), 3)
+            action["commitment"] = round(min(1.0, float(action.get("commitment", 0.0)) + 0.01 + intensity * 0.04), 3)
+        elif mode == "suppress":
+            action["suppression_ids"] = self._dedupe_id_list([npc_id, *list(action.get("suppression_ids", []))])
+            action["heat"] = round(max(0.0, float(action.get("heat", 0.0)) - 0.01 + intensity * 0.01), 3)
+            action["support"] = round(max(0.0, float(action.get("support", 0.0)) - 0.01 - intensity * 0.03), 3)
+            action["risk"] = round(min(1.0, float(action.get("risk", 0.0)) + 0.02 + intensity * 0.05), 3)
+        action["last_actor_id"] = npc_id
+        action["last_action"] = mode
+        action["last_tick"] = self._world_tick()
+        self._refresh_collective_action_row(action)
+        district = str(action.get("district", npc.get("district", "")))
+        kind = str(action.get("kind", ""))
+        if kind in {"strike", "meeting"}:
+            self._bump_district_signal(district, "labor_heat", 0.03 + intensity * (0.04 if mode in {"commit", "attend", "organize"} else 0.02))
+            self._bump_district_signal(district, "gossip", 0.01 + intensity * 0.02)
+        elif kind == "rally":
+            self._bump_district_signal(district, "gossip", 0.02 + intensity * 0.03)
+            self._bump_district_signal(district, "fear", 0.01 + intensity * (0.03 if mode == "suppress" else 0.01))
+        elif kind == "party":
+            self._bump_district_signal(district, "gossip", 0.02 + intensity * 0.02)
+            self._bump_district_signal(district, "trade_heat", 0.01 + intensity * 0.02)
+        if kind == "strike" and mode in {"commit", "attend", "organize"}:
+            self.state["macro"]["worker_unrest"] = int(min(100, float(self.state["macro"].get("worker_unrest", 0.0)) + 1.0 + intensity * 1.4))
+        if kind == "rally" and mode in {"support", "organize", "attend"}:
+            self.state["macro"]["media_sentiment"] = int(min(100, max(0, float(self.state["macro"].get("media_sentiment", 0.0)) + 0.6 + intensity * 0.9)))
+        if mode == "suppress":
+            self.state["macro"]["worker_unrest"] = int(min(100, float(self.state["macro"].get("worker_unrest", 0.0)) + intensity * 0.8))
+            self._bump_district_signal(district, "fear", 0.02 + intensity * 0.04)
+        self._sort_collective_registry()
+        return copy.deepcopy(action)
+
     def _apply_intel_packet(
         self,
         packet: dict[str, Any],
@@ -2342,7 +6153,13 @@ class WorldEngine:
         promote_news: bool,
         intensity: float,
     ) -> None:
-        self.state["rumor_log"].insert(0, copy.deepcopy(packet))
+        topic_row = self._record_topic_from_packet(packet, intensity)
+        enriched_packet = copy.deepcopy(packet)
+        enriched_packet["topic_id"] = str(topic_row.get("id", ""))
+        enriched_packet["topic_label"] = str(topic_row.get("label", ""))
+        enriched_packet["topic_kind"] = str(topic_row.get("kind", ""))
+        enriched_packet["topic_status"] = str(topic_row.get("status", ""))
+        self.state["rumor_log"].insert(0, enriched_packet)
         self.state["rumor_log"] = self.state["rumor_log"][:12]
 
         for good_name, delta in packet.get("goods_delta", {}).items():
@@ -2365,34 +6182,36 @@ class WorldEngine:
 
         if to_player:
             player = self.state["player"]
-            player["rumors"].append(packet["line"])
+            player["rumors"].append(enriched_packet["line"])
             player["rumors"] = player["rumors"][-6:]
 
         self.state["local_broadcasts"].insert(
             0,
             {
-                "source": packet.get("source", "rumor"),
-                "district": packet.get("district", ""),
+                "source": enriched_packet.get("source", "rumor"),
+                "district": enriched_packet.get("district", ""),
                 "radius": 150,
-                "line": packet.get("line", ""),
+                "line": enriched_packet.get("line", ""),
                 "type": "rumor",
             },
         )
         self.state["local_broadcasts"] = self.state["local_broadcasts"][:18]
 
         if promote_news:
-            self.state["global_news"].insert(0, self._compose_packet_news(packet))
+            self.state["global_news"].insert(0, self._compose_packet_news(enriched_packet))
             self.state["global_news"] = self.state["global_news"][:8]
 
-        if packet.get("district"):
-            district = self._find_by_name(self.state["districts"], packet["district"])
+        if enriched_packet.get("district"):
+            district = self._find_by_name(self.state["districts"], enriched_packet["district"])
             if district and district.get("state") == "normal" and intensity >= 1.0:
                 district["state"] = "tense"
-            self._bump_district_signal(packet["district"], "gossip", 0.08 * intensity)
-            if "股票" in packet.get("tags", []) or "金融" in packet.get("tags", []) or "媒体" in packet.get("tags", []):
-                self._bump_district_signal(packet["district"], "liquidity", 0.06 * intensity)
-            if "底层" in packet.get("tags", []) or "工厂" in packet.get("tags", []) or "港口" in packet.get("tags", []):
-                self._bump_district_signal(packet["district"], "fear", 0.05 * intensity)
+            self._bump_district_signal(enriched_packet["district"], "gossip", 0.08 * intensity)
+            if "股票" in enriched_packet.get("tags", []) or "金融" in enriched_packet.get("tags", []) or "媒体" in enriched_packet.get("tags", []):
+                self._bump_district_signal(enriched_packet["district"], "liquidity", 0.06 * intensity)
+            if "底层" in enriched_packet.get("tags", []) or "工厂" in enriched_packet.get("tags", []) or "港口" in enriched_packet.get("tags", []):
+                self._bump_district_signal(enriched_packet["district"], "fear", 0.05 * intensity)
+
+        return topic_row
 
     def _compose_packet_news(self, packet: dict[str, Any]) -> dict[str, Any]:
         generated = self.ark.generate_news_copy(
@@ -2579,6 +6398,7 @@ class WorldEngine:
         relation = int(npc.get("player_relation", 0))
         role = str(npc.get("role", ""))
         memory = self._npc_player_memory(npc)
+        favorability = self._npc_favorability_state(npc)
         sensitivity = 0
         if topic.get("kind") in {"family", "panic", "company"}:
             sensitivity += 1
@@ -2588,17 +6408,20 @@ class WorldEngine:
             trust_delta = 2 if role in {"工人", "临时工", "店主", "记者"} else 1
             intel_strength = 1.0 if relation >= 0 else 0.8
             intel_strength += min(0.12, float(memory.get("trust_streak", 0)) * 0.02)
+            intel_strength += float(favorability.get("disclosure_willingness", 0.0)) * 0.12
             openness = "open"
         elif approach == "hardball":
             trust_delta = -1 if sensitivity > 0 else 0
             intel_strength = 0.35 if sensitivity > 0 and relation < 5 else 0.72
             intel_strength -= min(0.18, float(memory.get("pressure_from_player", 0.0)) * 0.03)
-            openness = "guarded" if sensitivity > 0 else "skeptical"
+            intel_strength -= float(favorability.get("resentment", 0.0)) * 0.08
+            openness = "guarded" if sensitivity > 0 or str(favorability.get("speech_register", "")) in {"guarded", "hostile", "sullen"} else "skeptical"
         else:
             trust_delta = 1
             intel_strength = 0.88 if relation >= -1 else 0.72
             intel_strength += min(0.08, int(memory.get("intel_bought", 0)) * 0.015)
-            openness = "skeptical" if sensitivity > 0 else "open"
+            intel_strength += float(favorability.get("disclosure_willingness", 0.0)) * 0.06
+            openness = "skeptical" if sensitivity > 0 or str(favorability.get("speech_register", "")) == "guarded" else "open"
         return trust_delta, intel_strength, openness
 
     def _npc_player_memory(self, npc: dict[str, Any]) -> dict[str, Any]:
@@ -2661,6 +6484,154 @@ class WorldEngine:
         rows.insert(0, entry)
         npc["relationship_memory"] = rows[:8]
 
+    def _append_dialogue_history(
+        self,
+        npc: dict[str, Any],
+        counterpart_id: str,
+        counterpart_name: str,
+        speaker_line: str,
+        reply_line: str,
+        topic_id: str,
+        topic_label: str,
+        trigger: str,
+        channel: str,
+        counterpart_kind: str,
+    ) -> None:
+        rows = npc.get("dialogue_history", [])
+        if not isinstance(rows, list):
+            rows = []
+        rows.insert(
+            0,
+            {
+                "day": int(self.state.get("day", 1)),
+                "clock": self._clock_label(),
+                "counterpart_id": counterpart_id,
+                "counterpart_name": counterpart_name,
+                "counterpart_kind": counterpart_kind,
+                "speaker_line": self._prefer_chinese_text(str(speaker_line or "").strip(), "")[:140],
+                "reply_line": self._prefer_chinese_text(str(reply_line or "").strip(), "")[:140],
+                "topic_id": topic_id,
+                "topic_label": topic_label,
+                "trigger": trigger[:64],
+                "channel": channel,
+            },
+        )
+        npc["dialogue_history"] = rows[:18]
+
+    def _remember_local_memory(
+        self,
+        npc: dict[str, Any],
+        *,
+        kind: str,
+        summary: str,
+        counterpart_id: str = "",
+        counterpart_name: str = "",
+        topic_id: str = "",
+        topic_label: str = "",
+        tags: list[str] | None = None,
+        salience: float = 0.45,
+    ) -> None:
+        cleaned = self._prefer_chinese_text(str(summary or "").strip(), "")
+        if not cleaned:
+            return
+        rows = npc.get("local_memory_bank", [])
+        if not isinstance(rows, list):
+            rows = []
+        entry = {
+            "day": int(self.state.get("day", 1)),
+            "clock": self._clock_label(),
+            "kind": kind,
+            "summary": cleaned[:160],
+            "counterpart_id": counterpart_id,
+            "counterpart_name": counterpart_name,
+            "topic_id": topic_id,
+            "topic_label": topic_label,
+            "salience": round(max(0.0, min(1.0, salience)), 3),
+            "tags": [str(tag).strip() for tag in (tags or []) if str(tag).strip()][:6],
+            "last_seen_day": int(self.state.get("day", 1)),
+        }
+        rows.insert(0, entry)
+        deduped: list[dict[str, Any]] = []
+        seen_keys: set[tuple[str, str, str, str]] = set()
+        for row in rows:
+            key = (
+                str(row.get("kind", "")),
+                str(row.get("counterpart_id", "")),
+                str(row.get("topic_id", "")),
+                str(row.get("summary", "")),
+            )
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+            deduped.append(row)
+            if len(deduped) >= 18:
+                break
+        npc["local_memory_bank"] = deduped
+
+    def _dialogue_history_view(self, npc: dict[str, Any], counterpart_id: str = "", limit: int = 4) -> list[dict[str, Any]]:
+        rows = npc.get("dialogue_history", [])
+        if not isinstance(rows, list):
+            return []
+        filtered: list[dict[str, Any]] = []
+        counterpart = str(counterpart_id).strip()
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            if counterpart and str(row.get("counterpart_id", "")) != counterpart:
+                continue
+            filtered.append(
+                {
+                    "day": int(row.get("day", 0)),
+                    "clock": str(row.get("clock", "")),
+                    "counterpart_name": str(row.get("counterpart_name", "")),
+                    "speaker_line": str(row.get("speaker_line", "")),
+                    "reply_line": str(row.get("reply_line", "")),
+                    "topic_id": str(row.get("topic_id", "")),
+                    "topic_label": str(row.get("topic_label", "")),
+                    "trigger": str(row.get("trigger", "")),
+                    "channel": str(row.get("channel", "")),
+                }
+            )
+            if len(filtered) >= limit:
+                break
+        return filtered
+
+    def _local_memory_view(self, npc: dict[str, Any], counterpart_id: str = "", topic_id: str = "", limit: int = 5) -> list[dict[str, Any]]:
+        rows = npc.get("local_memory_bank", [])
+        if not isinstance(rows, list):
+            return []
+        counterpart = str(counterpart_id).strip()
+        topic = str(topic_id).strip()
+        scored: list[tuple[float, dict[str, Any]]] = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            score = float(row.get("salience", 0.3))
+            if counterpart and str(row.get("counterpart_id", "")) == counterpart:
+                score += 0.28
+            if topic and str(row.get("topic_id", "")) == topic:
+                score += 0.22
+            if counterpart and str(row.get("counterpart_id", "")) not in {"", counterpart} and topic and str(row.get("topic_id", "")) not in {"", topic}:
+                score -= 0.1
+            scored.append((score, row))
+        scored.sort(key=lambda item: item[0], reverse=True)
+        selected: list[dict[str, Any]] = []
+        for _, row in scored[:limit]:
+            selected.append(
+                {
+                    "day": int(row.get("day", 0)),
+                    "clock": str(row.get("clock", "")),
+                    "kind": str(row.get("kind", "")),
+                    "summary": str(row.get("summary", "")),
+                    "counterpart_name": str(row.get("counterpart_name", "")),
+                    "topic_id": str(row.get("topic_id", "")),
+                    "topic_label": str(row.get("topic_label", "")),
+                    "salience": round(float(row.get("salience", 0.0)), 3),
+                    "tags": list(row.get("tags", [])),
+                }
+            )
+        return selected
+
     def _entity_brief_history(self, bucket_name: str, entity_id: str) -> list[dict[str, Any]]:
         bucket = self.state.get(bucket_name, {})
         if not isinstance(bucket, dict):
@@ -2704,15 +6675,21 @@ class WorldEngine:
         if last_topic.startswith("topic_"):
             last_topic = last_topic.replace("topic_", "", 1)
         sold_count = int(memory.get("intel_bought", 0))
+        gift_total = int(memory.get("cash_gift_total", 0))
         pressure = float(memory.get("pressure_from_player", 0.0))
         streak = int(memory.get("trust_streak", 0))
         summary = f"你问过 {int(memory.get('talk_count', 0))} 次"
         if sold_count > 0:
             summary += f" · 卖过你 {sold_count} 次消息"
+        if gift_total > 0:
+            summary += f" · 收过你 {gift_total} 铜币"
         if pressure > 0.1:
             summary += f" · 被你压过 {int(round(pressure * 10))}/40"
         if streak > 0:
             summary += f" · 连着给过你 {streak} 次面子"
+        patronage = self._npc_patronage_status(npc)
+        if patronage:
+            summary += f" · 现在{patronage}"
         if rows and isinstance(rows, list):
             latest = rows[0] if isinstance(rows[0], dict) else {}
             latest_topic = str(latest.get("topic_label", latest.get("trigger", latest.get("counterpart", ""))))
@@ -2729,15 +6706,256 @@ class WorldEngine:
         friendly_count = int(memory.get("friendly_count", 0))
         trust_streak = int(memory.get("trust_streak", 0))
         talk_count = int(memory.get("talk_count", 0))
+        if bool(memory.get("follows_player", False)):
+            return "跟着你"
+        if bool(memory.get("bought_over", False)):
+            return "被你收买"
         if pressure >= 1.4:
             return "防着你"
-        if sold_count >= 2 and trust_streak >= 1:
+        if self._npc_can_sell_info(npc) and (sold_count >= 1 or float(npc.get("player_trust", 0.0)) >= 54.0):
             return "愿意卖消息"
         if friendly_count >= 2 or trust_streak >= 2:
             return "愿意继续聊"
         if talk_count > 0:
             return "记得你来问过"
         return "还在观察你"
+
+    def _player_total_wealth(self) -> int:
+        player = self.state.get("player", {})
+        goods_rows = self.state.get("goods", [])
+        stock_rows = self.state.get("stocks", [])
+        goods_value = sum(
+            int(player.get("goods_inventory", {}).get(str(row.get("name", "")), 0)) * int(row.get("current_price", 0))
+            for row in goods_rows
+        )
+        stock_value = sum(
+            int(player.get("stock_holdings", {}).get(str(row.get("name", "")), 0)) * int(row.get("current_price", 0))
+            for row in stock_rows
+        )
+        return int(player.get("cash", 0)) + goods_value + stock_value
+
+    def _player_collective_bias_for_npc(self, npc: dict[str, Any]) -> float:
+        profile = self.state.get("player", {}).get("collective_profile", {})
+        band = str(npc.get("social_band", self._npc_social_band(npc)))
+        if band in {"labor", "precariat", "organizer", "resident"}:
+            return float(profile.get("worker_standing", 0.0)) * 0.04
+        if band in {"elite", "finance", "manager"}:
+            return float(profile.get("capital_standing", 0.0)) * 0.04
+        if band == "authority":
+            return float(profile.get("government_standing", 0.0)) * 0.04
+        return float(profile.get("public_standing", 0.0)) * 0.04
+
+    def _favorability_role_weights(self, npc: dict[str, Any]) -> dict[str, float]:
+        band = str(npc.get("social_band", self._npc_social_band(npc)))
+        role = str(npc.get("role", ""))
+        weights = {
+            "wealth_respect": 0.34,
+            "wealth_resentment": 0.08,
+            "greed_weight": 0.26,
+            "pressure_fear": 0.2,
+            "attitude_penalty": 0.4,
+            "friendliness_bonus": 0.4,
+            "talk_bonus": 0.22,
+            "disclosure_bonus": 0.28,
+        }
+        if band in {"elite", "finance"} or role in {"老板", "银行经理", "投机者"}:
+            weights.update({"wealth_respect": 0.72, "wealth_resentment": 0.12, "greed_weight": 0.68, "pressure_fear": 0.16, "friendliness_bonus": 0.24})
+        elif band in {"labor", "precariat", "organizer"} or role in {"工人", "临时工", "工会领袖"}:
+            weights.update({"wealth_respect": 0.14, "wealth_resentment": 0.42, "greed_weight": 0.08, "pressure_fear": 0.34, "attitude_penalty": 0.72, "friendliness_bonus": 0.52})
+        elif band in {"media", "trade"} or role in {"记者", "店主", "代理人"}:
+            weights.update({"wealth_respect": 0.3, "wealth_resentment": 0.16, "greed_weight": 0.34, "pressure_fear": 0.24, "disclosure_bonus": 0.36})
+        elif band == "authority":
+            weights.update({"wealth_respect": 0.28, "wealth_resentment": 0.18, "greed_weight": 0.16, "pressure_fear": 0.44, "attitude_penalty": 0.48})
+        return weights
+
+    def _npc_favorability_state(self, npc: dict[str, Any]) -> dict[str, Any]:
+        memory = self._npc_player_memory(npc)
+        weights = self._favorability_role_weights(npc)
+        wealth = max(0, self._player_total_wealth())
+        wealth_signal = max(0.0, min(1.8, math.log10(max(wealth, 1)) - 3.4))
+        relation = float(npc.get("player_relation", 0))
+        trust = float(npc.get("player_trust", 0.0)) / 100.0
+        talk_count = int(memory.get("talk_count", 0))
+        friendly_count = int(memory.get("friendly_count", 0))
+        hardball_count = int(memory.get("hardball_count", 0))
+        pressure = float(memory.get("pressure_from_player", 0.0))
+        gift_total = int(memory.get("cash_gift_total", 0))
+        bought_over = bool(memory.get("bought_over", False))
+        follows_player = bool(memory.get("follows_player", False))
+        gift_signal = max(0.0, min(1.8, math.log10(gift_total + 1) - 2.6)) if gift_total > 0 else 0.0
+        talk_signal = min(1.2, talk_count * 0.08 + int(memory.get("trust_streak", 0)) * 0.06)
+        attitude_penalty = min(1.8, hardball_count * 0.16 + pressure * 0.34)
+        collective_bias = self._player_collective_bias_for_npc(npc)
+        warmth = max(0.0, min(1.0, trust * 0.52 + relation * 0.03 + friendly_count * 0.07 + talk_signal * weights["friendliness_bonus"] - attitude_penalty * 0.38 + collective_bias))
+        respect = max(0.0, min(1.0, wealth_signal * weights["wealth_respect"] + gift_signal * 0.36 + trust * 0.28 + max(0.0, relation) * 0.02))
+        resentment = max(0.0, min(1.0, attitude_penalty * weights["attitude_penalty"] + wealth_signal * weights["wealth_resentment"] - friendly_count * 0.05 - trust * 0.16 - gift_signal * 0.08 - collective_bias))
+        fear = max(0.0, min(1.0, pressure * weights["pressure_fear"] + wealth_signal * 0.12 + (0.18 if bought_over else 0.0) - trust * 0.08))
+        greed_pull = max(0.0, min(1.0, wealth_signal * weights["greed_weight"] + gift_signal * 0.42 + (0.22 if bought_over else 0.0) + (0.28 if follows_player else 0.0)))
+        faction_alignment = max(-1.0, min(1.0, collective_bias + relation * 0.03 + trust * 0.22 - resentment * 0.4))
+        disclosure = max(0.0, min(1.0, trust * 0.34 + warmth * 0.22 + greed_pull * weights["disclosure_bonus"] + respect * 0.12 - resentment * 0.26 - fear * 0.1 + (0.18 if bought_over else 0.0) + (0.24 if follows_player else 0.0)))
+        if follows_player and resentment < 0.34:
+            register = "deferential"
+        elif resentment >= 0.72 and fear < 0.44:
+            register = "hostile"
+        elif resentment >= 0.52 and fear >= 0.28:
+            register = "sullen"
+        elif warmth >= 0.64 and respect >= 0.42:
+            register = "warm"
+        elif fear >= 0.48 or disclosure < 0.28:
+            register = "guarded"
+        elif greed_pull >= 0.58 and resentment < 0.4:
+            register = "slick"
+        else:
+            register = "neutral"
+        intel_discount = max(0.62, min(1.22, 1.0 - disclosure * 0.18 - greed_pull * 0.09 + resentment * 0.08))
+        label_map = {
+            "deferential": "拿你当金主",
+            "warm": "越说越热络",
+            "slick": "嘴甜但在算账",
+            "neutral": "平视你",
+            "guarded": "防着你",
+            "sullen": "嘴上顺着，心里有气",
+            "hostile": "对你很冲",
+        }
+        return {
+            "warmth": round(warmth, 3),
+            "respect": round(respect, 3),
+            "resentment": round(resentment, 3),
+            "fear": round(fear, 3),
+            "greed_pull": round(greed_pull, 3),
+            "faction_alignment": round(faction_alignment, 3),
+            "disclosure_willingness": round(disclosure, 3),
+            "speech_register": register,
+            "speech_register_label": label_map.get(register, "平视你"),
+            "intel_discount": round(intel_discount, 3),
+            "wealth_signal": round(wealth_signal, 3),
+            "gift_signal": round(gift_signal, 3),
+        }
+
+    def _npc_people_and_relations(self, npc: dict[str, Any], limit: int = 8) -> list[dict[str, Any]]:
+        names = list(self._npc_contact_names(npc, "trusted_people")) + list(self._npc_contact_names(npc, "watch_people"))
+        rows: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for other in self.state.get("npcs", []):
+            other_name = str(other.get("name", "")).strip()
+            if not other_name or other_name not in names or other_name in seen:
+                continue
+            seen.add(other_name)
+            relation = "trusted" if other_name in self._npc_contact_names(npc, "trusted_people") else "watch"
+            rows.append(
+                {
+                    "name": other_name,
+                    "title": str(other.get("title", other.get("role", ""))),
+                    "district": str(other.get("district", "")),
+                    "relation": relation,
+                    "activity": str(other.get("activity", "")),
+                }
+            )
+            if len(rows) >= limit:
+                return rows
+        for entry in self._dialogue_history_view(npc, limit=limit):
+            other_name = str(entry.get("counterpart_name", "")).strip()
+            if not other_name or other_name in seen:
+                continue
+            seen.add(other_name)
+            rows.append(
+                {
+                    "name": other_name,
+                    "title": str(entry.get("counterpart_kind", "npc")),
+                    "district": str(npc.get("district", "")),
+                    "relation": "recent",
+                    "activity": str(entry.get("trigger", "")),
+                }
+            )
+            if len(rows) >= limit:
+                break
+        return rows
+
+    def _npc_recent_experiences(self, npc: dict[str, Any], topic: dict[str, Any] | None = None, limit: int = 10) -> list[dict[str, Any]]:
+        rows: list[dict[str, Any]] = []
+        for memory in list(npc.get("relationship_memory", []))[: max(0, limit // 2)]:
+            if not isinstance(memory, dict):
+                continue
+            rows.append(
+                {
+                    "kind": str(memory.get("kind", "")),
+                    "clock": str(memory.get("clock", "")),
+                    "summary": str(memory.get("topic_label", memory.get("trigger", memory.get("counterpart", "")))),
+                }
+            )
+        for memory in self._local_memory_view(npc, topic_id=str((topic or {}).get("id", "")), limit=max(1, limit - len(rows))):
+            rows.append(
+                {
+                    "kind": str(memory.get("kind", "")),
+                    "clock": str(memory.get("clock", "")),
+                    "summary": str(memory.get("summary", "")),
+                }
+            )
+            if len(rows) >= limit:
+                break
+        return rows[:limit]
+
+    def _npc_city_summary(self, npc: dict[str, Any]) -> dict[str, Any]:
+        district_name = str(npc.get("district", ""))
+        macro = self.state.get("macro", {})
+        lead_topic = next(iter(self._active_public_topics(limit=2, district_name=district_name)), {})
+        lead_collective = next(iter(self._active_collective_actions_view(limit=2, district_name=district_name)), {})
+        return {
+            "district": district_name,
+            "prices": {str(good.get("name", "")): int(good.get("current_price", 0)) for good in self.state.get("goods", [])},
+            "stocks": {str(stock.get("name", "")): int(stock.get("current_price", 0)) for stock in self.state.get("stocks", [])},
+            "government_support": int(max(0.0, min(100.0, 100.0 - float(macro.get("worker_unrest", 50)) * 0.6 + float(macro.get("media_sentiment", 50)) * 0.3))),
+            "media_sentiment": int(macro.get("media_sentiment", 50)),
+            "worker_unrest": int(macro.get("worker_unrest", 50)),
+            "top_topic": str(lead_topic.get("label", "")),
+            "top_collective": str(lead_collective.get("label", "")),
+        }
+
+    def _npc_allowed_actions(self, npc: dict[str, Any], topic: dict[str, Any] | None = None) -> list[str]:
+        actions = ["share_topic", "question_topic", "reinforce_norm", "contest_norm", "avoid"]
+        role = str(npc.get("role", ""))
+        if role in {"记者", "代理人", "工会领袖"}:
+            actions.extend(["amplify_topic", "organize_collective"])
+        if role in {"老板", "银行经理", "投机者", "代理人", "记者", "店主"}:
+            actions.extend(["buy_stock", "sell_stock", "buy_intel", "quote_price"])
+        if role in {"工人", "临时工", "工会领袖"}:
+            actions.extend(["support_collective", "commit_collective", "attend_collective"])
+        if str((topic or {}).get("kind", "")) in {"asset", "finance"}:
+            actions.extend(["watch_market", "adjust_position"])
+        return sorted(set(actions))
+
+    def _npc_llm_sections(self, npc: dict[str, Any], topic: dict[str, Any] | None = None) -> dict[str, Any]:
+        favorability = self._npc_favorability_state(npc)
+        return {
+            "who_you_are": {
+                "name": str(npc.get("name", "")),
+                "title": str(npc.get("title", npc.get("role", ""))),
+                "role": str(npc.get("role", "")),
+                "class": str(npc.get("class", "")),
+                "family": str(npc.get("family_affiliation", "")) or "无",
+                "risk_preference": float(npc.get("risk_preference", 40.0)),
+                "political_stance": str(npc.get("political_stance", "self_preservation")),
+                "persona_brief": self._npc_persona_brief(npc),
+            },
+            "current_status": {
+                "cash": int(npc.get("cash", 0)),
+                "food_inventory": copy.deepcopy(npc.get("inventory", {})),
+                "emotions": {
+                    "fear": int(npc.get("fear", 0)),
+                    "greed": int(npc.get("greed", 0)),
+                    "anxiety": round(float(npc.get("anxiety", 0.0)), 2),
+                    "loyalty": int(npc.get("loyalty", 0)),
+                },
+                "health": int(max(0.0, 100.0 - float(npc.get("fatigue", 0)) * 0.5)),
+                "work_status": str(npc.get("activity", "")),
+                "stock_positions": copy.deepcopy(npc.get("stock_positions", {})),
+                "favorability_state": favorability,
+            },
+            "recent_experiences": self._npc_recent_experiences(npc, topic, limit=10),
+            "people_and_relations": self._npc_people_and_relations(npc, limit=8),
+            "city_summary": self._npc_city_summary(npc),
+            "allowed_actions": self._npc_allowed_actions(npc, topic),
+        }
 
     def _npc_market_tilt(self, npc: dict[str, Any]) -> str:
         position_kind, _, _, position_bias = self._dominant_position(npc)
@@ -2817,6 +7035,8 @@ class WorldEngine:
 
     def _build_intel_packet_from_topic(self, topic: dict[str, Any], npc: dict[str, Any], district_name: str) -> dict[str, Any]:
         packet = self._build_intel_packet(district_name, source=f"{npc['name']}的口风", speaker=npc)
+        packet["topic_id"] = str(topic.get("source_topic_id", topic.get("id", "")))
+        packet["topic_kind"] = str(topic.get("kind", ""))
         packet["title"] = str(topic.get("label", packet["title"]))
         packet["body"] = f"{npc['name']} 提起：{topic.get('summary', packet['body'])}"
         packet["line"] = str(topic.get("summary", packet["line"]))
@@ -2842,7 +7062,7 @@ class WorldEngine:
         return filtered[:4]
 
     def _rebuild_talk_topics(self) -> None:
-        topics: list[dict[str, Any]] = []
+        topics: list[dict[str, Any]] = [copy.deepcopy(topic) for topic in self._active_public_topics(limit=6)]
         for district in self.state["districts"]:
             district_name = str(district.get("name", ""))
             signals = self.state["district_signals"].get(district_name, {})
@@ -2944,7 +7164,9 @@ class WorldEngine:
                 continue
             stock_name, good_name = self._family_focus_targets(family)
             family_npcs = [npc["id"] for npc in self.state["npcs"] if str(npc.get("family_affiliation", "")) == family_name]
-            district_name = "交易所" if stock_name or family_name != "街头互助会" else "贫民街"
+            district_name = {"海藻家族": "贫民街", "龟甲船坞": "工厂区", "珊瑚银行": "交易所"}.get(
+                family_name, "交易所" if stock_name or family_name != "街头互助会" else "贫民街"
+            )
             topics.append(
                 {
                     "id": f"topic_family_{family.get('id', family_name)}",
@@ -3023,12 +7245,12 @@ class WorldEngine:
 
     def _family_focus_targets(self, family: dict[str, Any]) -> tuple[str, str]:
         name = str(family.get("name", ""))
-        if name == "白鹭家族":
-            return "蓝潮航运", "罐头"
-        if name == "灰狼家族":
-            return "黑石矿业", "煤"
-        if name == "猫头鹰家族":
-            return "晨报传媒", "面包"
+        if name == "海藻家族":
+            return "海藻食业", "面包"
+        if name == "珊瑚银行":
+            return "珊瑚金控", "罐头"
+        if name == "龟甲船坞":
+            return "龟甲船运", "煤"
         return "", ""
 
     def _district_state(self, district_name: str) -> str:
@@ -3090,15 +7312,28 @@ class WorldEngine:
         openness: str,
         intent: str = "",
     ) -> list[str]:
+        favorability = self._npc_favorability_state(npc)
+        register = str(favorability.get("speech_register", "neutral"))
+        salutation = "哥" if register in {"deferential", "slick"} and float(favorability.get("respect", 0.0)) >= 0.56 else "你"
         player_line = {
             "cautious": f"我只想问一句，{topic.get('label', npc['district'])} 最近是不是在变？",
             "friendly": f"我不是来压你话的，就想听听你怎么看 {topic.get('label', npc['district'])}。",
             "hardball": f"别绕了，{topic.get('label', npc['district'])} 到底是谁在做局？",
         }.get(approach, f"最近 {topic.get('label', npc['district'])} 的风向到底怎么走？")
-        if openness == "guarded":
-            reply = f"{npc['name']}：你先别把话说满，这话题在 {npc['district']} 不便宜。"
+        if register == "hostile":
+            reply = f"{npc['name']}：你口气收一收。{topic.get('label', npc['district'])} 这事不是你想逼就逼得出来的。"
+        elif register == "sullen":
+            reply = f"{npc['name']}：话我不是不能说，但你别真把人当能随手拿捏的壳。"
+        elif openness == "guarded":
+            reply = f"{npc['name']}：{salutation}先别把话说满，这话题在 {npc['district']} 不便宜。"
         elif openness == "skeptical":
             reply = f"{npc['name']}：想问就问，但我只说半句，剩下半句你自己拿壳去试。"
+        elif register == "deferential":
+            reply = f"{npc['name']}：{salutation}，你既然肯来，我就把能说的先递你半层。{topic.get('summary', '这阵风已经往价格上写了。')}"
+        elif register == "warm":
+            reply = f"{npc['name']}：你这次说话还算顺耳。{topic.get('summary', '街上都在看这件事。')}"
+        elif register == "slick":
+            reply = f"{npc['name']}：{salutation}要真想听深一点，价和人情总得有一样先到位。"
         else:
             reply = self.random.choice(
                 [
@@ -3132,6 +7367,7 @@ class WorldEngine:
         current = int(self.state.get("clock_minutes", 8 * 60))
         self.state["clock_minutes"] = min(23 * 60 + 45, current + minutes)
         self._apply_clock_state()
+        self._apply_collective_followups(minutes)
         self._apply_npc_schedule()
 
     def _apply_clock_state(self) -> None:
@@ -3201,6 +7437,153 @@ class WorldEngine:
             self.state["global_news"] = self.state["global_news"][:8]
         return weather
 
+    def _collective_action_live_now(self, action: dict[str, Any], minutes: int) -> bool:
+        stage = str(action.get("stage", "forming"))
+        if stage in {"dormant", "cooling"}:
+            return False
+        start = int(action.get("window_start_minutes", 0))
+        end = int(action.get("window_end_minutes", 24 * 60))
+        if start <= end:
+            return start - 36 <= minutes <= end + 28
+        return minutes >= start - 36 or minutes <= end + 28
+
+    def _collective_role_for_npc(self, npc: dict[str, Any], action: dict[str, Any]) -> str:
+        npc_id = str(npc.get("id", ""))
+        if npc_id in [str(value) for value in action.get("organizer_ids", [])]:
+            return "organizer"
+        if npc_id in [str(value) for value in action.get("attendee_ids", [])]:
+            return "attendee"
+        if npc_id in [str(value) for value in action.get("committed_ids", [])]:
+            return "committed"
+        if npc_id in [str(value) for value in action.get("supporter_ids", [])]:
+            return "supporter"
+        if npc_id in [str(value) for value in action.get("response_actor_ids", [])]:
+            response_mode = str(action.get("response_mode", "observe"))
+            if response_mode == "negotiate":
+                return "negotiator"
+            if response_mode == "suppress":
+                return "suppressor"
+            return "observer"
+        if npc_id in [str(value) for value in action.get("heard_ids", [])]:
+            return "listener"
+        return ""
+
+    def _collective_ring_offset(self, npc_id: str, role: str, minutes: int) -> tuple[float, float]:
+        seed = sum(ord(ch) for ch in npc_id) % 17
+        angle = (minutes / 14.0) + seed * 0.41
+        radius = 26.0
+        if role == "organizer":
+            radius = 18.0
+        elif role == "attendee":
+            radius = 28.0
+        elif role == "committed":
+            radius = 34.0
+        elif role == "supporter":
+            radius = 40.0
+        elif role == "negotiator":
+            radius = 22.0
+        elif role == "suppressor":
+            radius = 54.0
+        elif role == "observer":
+            radius = 62.0
+        elif role == "listener":
+            radius = 46.0
+        if role == "suppressor":
+            angle = -0.8 + seed * 0.14
+        elif role == "negotiator":
+            angle = 2.4 + seed * 0.18
+        return round(math.cos(angle) * radius, 1), round(math.sin(angle) * radius, 1)
+
+    def _collective_activity_for_role(self, action: dict[str, Any], role: str, minutes: int) -> str:
+        kind = str(action.get("kind", "meeting"))
+        start = int(action.get("window_start_minutes", 0))
+        if role in {"suppressor", "observer"}:
+            return "responding" if str(action.get("response_mode", "")) == "suppress" else "watching"
+        if role == "negotiator":
+            return "negotiating"
+        if minutes < start and role in {"organizer", "committed", "supporter"}:
+            return "assembling"
+        if kind == "meeting":
+            return "meeting"
+        if kind in {"strike", "rally"}:
+            return "protesting"
+        if kind == "party":
+            return "gathering"
+        return "assembling"
+
+    def _collective_goal_for_role(self, action: dict[str, Any], role: str) -> str:
+        label = str(action.get("label", "集体行动"))
+        if role == "organizer":
+            return f"把 {label} 组织起来"
+        if role in {"attendee", "committed", "supporter", "listener"}:
+            return f"朝 {label} 靠过去"
+        if role == "negotiator":
+            return f"去和 {label} 试探让步口风"
+        if role == "suppressor":
+            return f"压住 {label} 的规模"
+        if role == "observer":
+            return f"盯住 {label} 的人数和风向"
+        return str(action.get("label", "守住今天"))
+
+    def _collective_schedule_note(self, npc: dict[str, Any], action: dict[str, Any], role: str) -> str:
+        title = str(action.get("target_location_title", "集合点"))
+        label = str(action.get("label", "集体行动"))
+        if role == "organizer":
+            return f"{npc['name']} 正往 {title} 串人，准备把 {label} 顶起来。"
+        if role in {"attendee", "committed", "supporter"}:
+            return f"{npc['name']} 正往 {title} 靠，准备参加 {label}。"
+        if role == "listener":
+            return f"{npc['name']} 正往 {title} 张望，想看 {label} 到底会不会成。"
+        if role == "negotiator":
+            return f"{npc['name']} 正往 {title} 赶，准备和 {label} 谈条件。"
+        if role == "suppressor":
+            return f"{npc['name']} 正往 {title} 压过去，准备把 {label} 控下来。"
+        if role == "observer":
+            return f"{npc['name']} 正在 {title} 周围盯着 {label}。"
+        return str(npc.get("schedule_note", ""))
+
+    def _collective_schedule_override(self, npc: dict[str, Any], minutes: int) -> dict[str, Any]:
+        best: dict[str, Any] | None = None
+        best_role = ""
+        for action in self.state.get("collective_action_registry", []):
+            role = self._collective_role_for_npc(npc, action)
+            if not role:
+                continue
+            district = str(action.get("district", ""))
+            scope = str(action.get("scope", "district"))
+            # Collective responders often come from government or company offices
+            # outside the action district, so they should still be dispatched.
+            if scope != "city" and district and district != str(npc.get("district", "")) and role not in {"negotiator", "suppressor", "observer"}:
+                continue
+            if not self._collective_action_live_now(action, minutes):
+                continue
+            if best is None:
+                best = action
+                best_role = role
+                continue
+            best_score = self._collective_stage_rank(str(best.get("stage", ""))) * 10.0 + float(best.get("heat", 0.0)) * 4.0 + float(best.get("support", 0.0)) * 3.0
+            score = self._collective_stage_rank(str(action.get("stage", ""))) * 10.0 + float(action.get("heat", 0.0)) * 4.0 + float(action.get("support", 0.0)) * 3.0
+            if score > best_score:
+                best = action
+                best_role = role
+        if best is None:
+            return {}
+        anchor_x = float(best.get("response_target_x", 0.0)) if best_role in {"negotiator", "suppressor", "observer"} else float(best.get("target_x", 0.0))
+        anchor_y = float(best.get("response_target_y", 0.0)) if best_role in {"negotiator", "suppressor", "observer"} else float(best.get("target_y", 0.0))
+        offset_x, offset_y = self._collective_ring_offset(str(npc.get("id", "")), best_role, minutes)
+        return {
+            "action_id": str(best.get("id", "")),
+            "role": best_role,
+            "activity": self._collective_activity_for_role(best, best_role, minutes),
+            "x": round(anchor_x + offset_x, 1),
+            "y": round(anchor_y + offset_y, 1),
+            "target_subregion_id": str(best.get("target_subregion_id", "")),
+            "target_subregion_name": str(best.get("target_subregion_name", "")),
+            "goal": self._collective_goal_for_role(best, best_role),
+            "schedule_note": self._collective_schedule_note(npc, best, best_role),
+            "response_mode": str(best.get("response_mode", "")),
+        }
+
     def _apply_npc_schedule(self) -> None:
         minutes = int(self.state.get("clock_minutes", 8 * 60))
         period = str(self.state.get("time_period", "day"))
@@ -3211,6 +7594,12 @@ class WorldEngine:
             target = work_anchor
             activity = "working"
             home_state = "away"
+            npc["subregion_id"] = str(npc.get("work_subregion_id", npc.get("subregion_id", "")))
+            npc["subregion_name"] = str(npc.get("work_subregion_name", npc.get("subregion_name", "")))
+            npc["collective_action_id"] = ""
+            npc["collective_role"] = ""
+            npc["response_mode"] = ""
+            social_override: dict[str, Any] = {}
             if work_start <= minutes < work_end:
                 target = self._schedule_patrol_anchor(npc, work_anchor, "work", minutes)
                 activity = "working"
@@ -3237,6 +7626,29 @@ class WorldEngine:
                     home_state = "evening_home"
                 else:
                     home_state = "resting"
+            collective_override = self._collective_schedule_override(npc, minutes)
+            if collective_override:
+                target = {"x": float(collective_override.get("x", target["x"])), "y": float(collective_override.get("y", target["y"]))}
+                activity = str(collective_override.get("activity", activity))
+                home_state = "away"
+                npc["subregion_id"] = str(collective_override.get("target_subregion_id", npc.get("subregion_id", "")))
+                npc["subregion_name"] = str(collective_override.get("target_subregion_name", npc.get("subregion_name", "")))
+                npc["collective_action_id"] = str(collective_override.get("action_id", ""))
+                npc["collective_role"] = str(collective_override.get("role", ""))
+                npc["response_mode"] = str(collective_override.get("response_mode", ""))
+                npc["current_goal"] = str(collective_override.get("goal", npc.get("current_goal", "")))
+                npc["current_target"] = str(collective_override.get("goal", npc.get("current_target", "")))
+            else:
+                social_override = self._social_schedule_override(npc, minutes, activity)
+                if social_override:
+                    target = {"x": float(social_override.get("x", target["x"])), "y": float(social_override.get("y", target["y"]))}
+                    activity = str(social_override.get("activity", activity))
+                    if activity != "home":
+                        home_state = "away"
+                    npc["subregion_id"] = str(social_override.get("target_subregion_id", npc.get("subregion_id", "")))
+                    npc["subregion_name"] = str(social_override.get("target_subregion_name", npc.get("subregion_name", "")))
+                    npc["current_goal"] = str(social_override.get("goal", npc.get("current_goal", "")))
+                    npc["current_target"] = str(social_override.get("current_target", npc.get("current_target", "")))
             route_x, route_y = self._activity_route_offset(npc, minutes, activity, home_state)
             npc["x"] = round(target["x"] + route_x, 1)
             npc["y"] = round(target["y"] + route_y, 1)
@@ -3255,13 +7667,18 @@ class WorldEngine:
             )
             npc["carry_prop"] = carry_prop
             npc["carry_alpha"] = carry_alpha
-            npc["schedule_note"] = self._schedule_note_for_npc(
-                npc,
-                activity,
-                home_state,
-                str(npc.get("indoor_activity", "away")),
-                minutes,
-            )
+            if collective_override:
+                npc["schedule_note"] = str(collective_override.get("schedule_note", npc.get("schedule_note", "")))
+            elif social_override:
+                npc["schedule_note"] = str(social_override.get("schedule_note", npc.get("schedule_note", "")))
+            else:
+                npc["schedule_note"] = self._schedule_note_for_npc(
+                    npc,
+                    activity,
+                    home_state,
+                    str(npc.get("indoor_activity", "away")),
+                    minutes,
+                )
         for district in self.state["districts"]:
             district["traffic"] = self._traffic_for_district(district)
 
@@ -3272,12 +7689,13 @@ class WorldEngine:
         mode: str,
         minutes: int,
     ) -> dict[str, float]:
+        slot_x, slot_y = self._npc_slot_offset(npc, mode)
         if mode == "home":
             route_points = HOUSE_PATROL_POINTS.get(str(npc.get("home_id", "")), [])
         else:
-            route_points = SUBREGION_ROUTE_POINTS.get(str(npc.get("subregion_id", "")), [])
+            route_points = SUBREGION_ROUTE_POINTS.get(str(npc.get("work_subregion_id", npc.get("subregion_id", ""))), [])
         if not route_points:
-            return {"x": float(base_anchor["x"]), "y": float(base_anchor["y"])}
+            return {"x": round(float(base_anchor["x"]) + slot_x, 1), "y": round(float(base_anchor["y"]) + slot_y, 1)}
         try:
             index_seed = max(1, int(str(npc.get("id", "npc_1")).split("_")[-1]))
         except ValueError:
@@ -3292,8 +7710,8 @@ class WorldEngine:
         target_x = ax + (bx - ax) * mix
         target_y = ay + (by - ay) * mix
         return {
-            "x": round((target_x + float(base_anchor["x"]) * 0.35) / 1.35, 1),
-            "y": round((target_y + float(base_anchor["y"]) * 0.35) / 1.35, 1),
+            "x": round((target_x + float(base_anchor["x"]) * 0.35) / 1.35 + slot_x * 0.55, 1),
+            "y": round((target_y + float(base_anchor["y"]) * 0.35) / 1.35 + slot_y * 0.55, 1),
         }
 
     def _traffic_for_district(self, district: dict[str, Any]) -> int:
@@ -3319,10 +7737,11 @@ class WorldEngine:
         return 936.0 + (index % 5) * 102.0, 622.0 + (index % 3) * 64.0
 
     def _schedule_role_for_npc(self, npc: dict[str, Any]) -> str:
+        band = str(npc.get("social_band", self._npc_social_band(npc)))
         role = str(npc.get("role", ""))
-        if role in {"记者", "投机者", "银行经理"}:
+        if band in {"media", "organizer"} or role in {"记者", "工会领袖"}:
             return "roamer"
-        if role in {"店主", "老板", "代理人"}:
+        if band in {"elite", "authority", "manager", "finance", "trade"} or role in {"店主", "老板", "代理人", "银行经理"}:
             return "keeper"
         return "worker"
 
@@ -3398,6 +7817,14 @@ class WorldEngine:
             radius_x, radius_y = 12.0, 6.0
             turn_x *= 0.55
             turn_y *= 0.45
+        elif activity in {"assembling", "meeting", "protesting", "gathering", "responding", "negotiating", "watching"}:
+            radius_x, radius_y = 10.0, 6.0
+            if activity in {"protesting", "responding"}:
+                radius_x, radius_y = 16.0, 9.0
+            elif activity == "negotiating":
+                radius_x, radius_y = 8.0, 5.0
+            turn_x *= 0.48
+            turn_y *= 0.42
         else:
             if home_state == "sleeping":
                 return round(math.sin(phase * 0.45) * 0.9, 1), round(math.cos(phase * 0.35) * 0.7, 1)
@@ -3737,8 +8164,9 @@ class WorldEngine:
         company["credit_line"] = float(company.get("credit_line", max(18.0, 92.0 - company["financing_pressure"])))
 
     def _bootstrap_npc(self, npc: dict[str, Any], companies: list[dict[str, Any]]) -> None:
-        npc["cash"] = int(npc.get("cash", npc.get("money", 0)))
-        npc["debt"] = int(npc.get("debt", max(0, 18 - int(npc.get("cash", npc.get("money", 0))))))
+        raw_money = int(npc.get("cash", npc.get("money", 0)))
+        npc["cash"] = self._scaled_npc_cash(npc, raw_money)
+        npc["debt"] = int(npc.get("debt", max(0, 18 - raw_money)))
         npc["inventory"] = copy.deepcopy(npc.get("inventory", {"面包": 0, "煤": 0, "罐头": 0}))
         npc["reputation"] = int(npc.get("reputation", 18 + int(npc.get("player_relation", 0))))
         npc["player_trust"] = float(npc.get("player_trust", max(0, 42 + int(npc.get("player_relation", 0)) * 4)))
@@ -3761,6 +8189,8 @@ class WorldEngine:
         npc["goods_positions"] = copy.deepcopy(npc.get("goods_positions", self._default_goods_positions(npc)))
         npc["inventory"] = self._normalize_npc_inventory(npc)
         npc["relationship_memory"] = copy.deepcopy(npc.get("relationship_memory", []))
+        npc["dialogue_history"] = copy.deepcopy(npc.get("dialogue_history", []))
+        npc["local_memory_bank"] = copy.deepcopy(npc.get("local_memory_bank", []))
         npc["player_memory"] = copy.deepcopy(
             npc.get(
                 "player_memory",
@@ -3771,6 +8201,12 @@ class WorldEngine:
                     "intel_bought": 0,
                     "pressure_from_player": 0.0,
                     "trust_streak": 0,
+                    "cash_gift_total": 0,
+                    "cash_gift_count": 0,
+                    "intel_spend_total": 0,
+                    "last_gift_amount": 0,
+                    "bought_over": False,
+                    "follows_player": False,
                     "last_topic_id": "",
                     "last_intent": "",
                     "last_approach": "",
@@ -3825,8 +8261,102 @@ class WorldEngine:
             return "speculation"
         return "odd_jobs"
 
+    def _scaled_npc_cash(self, npc: dict[str, Any], raw_money: int) -> int:
+        title = str(npc.get("title", ""))
+        class_name = str(npc.get("class", ""))
+        role = str(npc.get("role", ""))
+        family = str(npc.get("family_affiliation", ""))
+        if title == "珊瑚银行掌门":
+            return 500_000
+        if "掌门" in title:
+            return min(420_000, 320_000 + raw_money * 1200)
+        if title in {"镇长", "财政与市场监管官"}:
+            return min(280_000, 190_000 + raw_money * 900)
+        if class_name == "特殊角色":
+            return min(220_000, 120_000 + raw_money * 850)
+        if class_name == "关键角色":
+            return min(120_000, 32_000 + raw_money * 820)
+        if class_name == "中层":
+            return min(80_000, 12_000 + raw_money * 520)
+        if role in {"店主", "记者", "代理人", "银行经理", "投机者"}:
+            return min(65_000, 10_000 + raw_money * 480)
+        if family not in {"", "无"}:
+            return min(90_000, 18_000 + raw_money * 560)
+        return min(24_000, 2_000 + raw_money * 220)
+
+    def _npc_bribe_threshold(self, npc: dict[str, Any]) -> int:
+        class_name = str(npc.get("class", ""))
+        title = str(npc.get("title", ""))
+        if title == "珊瑚银行掌门":
+            return 250_000
+        if "掌门" in title:
+            return 180_000
+        if class_name == "特殊角色":
+            return 120_000
+        if class_name == "关键角色":
+            return 40_000
+        if class_name == "中层":
+            return 20_000
+        return 10_000
+
+    def _npc_follow_threshold(self, npc: dict[str, Any]) -> int:
+        return int(round(self._npc_bribe_threshold(npc) * 1.6))
+
+    def _npc_can_sell_info(self, npc: dict[str, Any]) -> bool:
+        role = str(npc.get("role", ""))
+        memory = self._npc_player_memory(npc)
+        favorability = self._npc_favorability_state(npc)
+        if role in {"记者", "代理人", "银行经理", "投机者"}:
+            return True
+        if int(memory.get("intel_bought", 0)) > 0:
+            return True
+        if bool(memory.get("bought_over", False)) or bool(memory.get("follows_player", False)):
+            return True
+        if float(npc.get("player_trust", 0.0)) >= 68.0:
+            return True
+        if float(favorability.get("disclosure_willingness", 0.0)) >= 0.56:
+            return True
+        return False
+
+    def _npc_intel_price(self, npc: dict[str, Any], topic: dict[str, Any] | None = None) -> int:
+        role = str(npc.get("role", ""))
+        class_name = str(npc.get("class", ""))
+        topic_kind = str((topic or {}).get("kind", ""))
+        favorability = self._npc_favorability_state(npc)
+        price = 240
+        if role in {"记者", "代理人"}:
+            price = 600
+        elif role in {"银行经理", "投机者"}:
+            price = 1200
+        elif class_name == "特殊角色":
+            price = 2200
+        elif class_name == "关键角色":
+            price = 900
+        elif class_name == "中层":
+            price = 480
+        if topic_kind in {"finance", "asset", "family", "company", "institution"}:
+            price = int(round(price * 1.6))
+        elif topic_kind in {"labor", "public"}:
+            price = int(round(price * 1.2))
+        trust_discount = max(0.72, 1.0 - float(npc.get("player_trust", 0.0)) / 220.0)
+        register_markup = 1.12 if str(favorability.get("speech_register", "")) in {"hostile", "guarded"} else 0.92 if str(favorability.get("speech_register", "")) in {"warm", "deferential"} else 1.0
+        return max(80, int(round(price * trust_discount * float(favorability.get("intel_discount", 1.0)) * register_markup)))
+
+    def _npc_patronage_status(self, npc: dict[str, Any]) -> str:
+        memory = self._npc_player_memory(npc)
+        if bool(memory.get("follows_player", False)):
+            return "跟着你"
+        if bool(memory.get("bought_over", False)):
+            return "被你收买"
+        total = int(memory.get("cash_gift_total", 0))
+        if total >= max(4_000, int(self._npc_bribe_threshold(npc) * 0.35)):
+            return "吃过你的钱"
+        return ""
+
     def _default_housing_cost(self, npc: dict[str, Any]) -> int:
         class_name = str(npc.get("class", ""))
+        if class_name == "特殊角色":
+            return 10
         if class_name == "关键角色":
             return 8
         if class_name == "中层":
@@ -3834,6 +8364,13 @@ class WorldEngine:
         return 3
 
     def _npc_daily_agent_budget(self, npc: dict[str, Any]) -> int:
+        class_name = str(npc.get("class", ""))
+        if class_name == "特殊角色":
+            return 10
+        if class_name == "关键角色":
+            return 8
+        if class_name == "中层":
+            return 6
         role = str(npc.get("role", ""))
         if role in {"记者", "代理人", "银行经理"}:
             return 8
@@ -3844,6 +8381,13 @@ class WorldEngine:
         return 5
 
     def _npc_player_talk_budget(self, npc: dict[str, Any]) -> int:
+        class_name = str(npc.get("class", ""))
+        if class_name == "特殊角色":
+            return 30
+        if class_name == "关键角色":
+            return 24
+        if class_name == "中层":
+            return 20
         role = str(npc.get("role", ""))
         if role in {"记者", "代理人", "银行经理"}:
             return 26
@@ -3907,40 +8451,95 @@ class WorldEngine:
             return "敢赌，但也容易在高位变得敏感"
         return "偏保守，只在看见确定机会时跟进"
 
+    @staticmethod
+    def _npc_profile_list(values: Any, fallback: str = "无") -> str:
+        rows = [str(value).strip() for value in values if str(value).strip()] if isinstance(values, list) else []
+        return "、".join(rows[:5]) if rows else fallback
+
+    def _npc_prompt_profile(self, npc: dict[str, Any]) -> dict[str, Any]:
+        profile = npc.get("prompt_profile", {})
+        return profile if isinstance(profile, dict) else {}
+
+    def _npc_persona_brief(self, npc: dict[str, Any]) -> str:
+        profile = self._npc_prompt_profile(npc)
+        if not profile:
+            return "暂无人物级画像，先按角色职责和当前处境行动。"
+        return (
+            f"公开面目={str(profile.get('public_mask', '')).strip() or '无'}；"
+            f"真正动机={str(profile.get('core_drive', '')).strip() or '无'}；"
+            f"私下最怕={str(profile.get('private_fear', '')).strip() or '无'}；"
+            f"社交策略={str(profile.get('social_strategy', '')).strip() or '无'}；"
+            f"舆论策略={str(profile.get('rumor_strategy', '')).strip() or '无'}；"
+            f"计划习惯={str(profile.get('planning_style', '')).strip() or '无'}；"
+            f"更信任={self._npc_profile_list(profile.get('trusted_people', []), '暂无固定盟友')}；"
+            f"重点盯防={self._npc_profile_list(profile.get('watch_people', []), '暂无固定盯防对象')}；"
+            f"禁忌={self._npc_profile_list(profile.get('taboos', []), '无')}；"
+            f"软肋={self._npc_profile_list(profile.get('soft_spots', []), '无')}。"
+        )
+
     def _npc_agent_agenda(self, npc: dict[str, Any]) -> str:
         role = str(npc.get("role", ""))
         goal = str(npc.get("current_goal", npc.get("current_target", "活下去")))
         family = str(npc.get("family_affiliation", "")) or "无家族"
+        profile = self._npc_prompt_profile(npc)
         if role == "记者":
-            return f"把能卖的真话和能点火的风声区分开，再挑最值钱的那条。当前目标：{goal}。"
-        if role == "代理人":
-            return f"替{family}试探情绪、放风和控场，但不能把牌直接打穿。当前目标：{goal}。"
-        if role == "工会领袖":
-            return f"判断街头不满值不值得组织起来，并寻找能带头的人。当前目标：{goal}。"
-        if role in {"老板", "店主"}:
-            return f"先守住现金流、货和人，再决定要不要冒险。当前目标：{goal}。"
-        if role in {"投机者", "银行经理"}:
-            return f"判断现在该追价、护盘还是先退一步，不能只会单边押注。当前目标：{goal}。"
-        return f"优先保住今天的生计，再考虑明天要站哪边。当前目标：{goal}。"
+            base = "把能卖的真话和能点火的风声区分开，再挑最值钱的那条。"
+        elif role == "代理人":
+            base = f"替{family}试探情绪、放风和控场，但不能把牌直接打穿。"
+        elif role == "工会领袖":
+            base = "判断街头不满值不值得组织起来，并寻找能带头的人。"
+        elif role in {"老板", "店主"}:
+            base = "先守住现金流、货和人，再决定要不要冒险。"
+        elif role in {"投机者", "银行经理"}:
+            base = "判断现在该追价、护盘还是先退一步，不能只会单边押注。"
+        else:
+            base = "优先保住今天的生计，再考虑明天要站哪边。"
+        if not profile:
+            return f"{base}当前目标：{goal}。"
+        planning_style = str(profile.get("planning_style", "")).strip()
+        core_drive = str(profile.get("core_drive", "")).strip()
+        social_strategy = str(profile.get("social_strategy", "")).strip()
+        trusted_people = self._npc_profile_list(profile.get("trusted_people", []), "暂无固定盟友")
+        watch_people = self._npc_profile_list(profile.get("watch_people", []), "暂无固定盯防对象")
+        soft_spots = self._npc_profile_list(profile.get("soft_spots", []), "局势变化")
+        return (
+            f"{base}"
+            f"人物级计划方式：{planning_style or '先看局势再行动'}。"
+            f"真正要守的是：{core_drive or goal}。"
+            f"你通常会先找 {trusted_people} 试探或协作，并持续提防 {watch_people}。"
+            f"遇到 {soft_spots} 时要优先重排短期计划。"
+            f"社交时坚持：{social_strategy or '先判断利益再开口'}。"
+            f"当前目标：{goal}。"
+        )
 
     def _npc_agent_prompt(self, npc: dict[str, Any]) -> str:
         family = str(npc.get("family_affiliation", "")) or "无家族靠山"
         subregion = str(npc.get("subregion_name", "")) or str(npc.get("district", ""))
+        title = str(npc.get("title", "")) or str(npc.get("role", "街头角色"))
         domains = "、".join([str(value) for value in npc.get("information_domain", [])[:4]]) or "街头风声"
+        topic_digest = self._npc_topic_digest(npc)
+        norm_digest = self._npc_norm_digest(npc)
+        collective_digest = self._npc_collective_digest(npc)
         social_style = self._npc_social_style(npc)
         market_style = self._npc_market_style(npc)
         agenda = self._npc_agent_agenda(npc)
+        persona_brief = self._npc_persona_brief(npc)
         return (
-            f"你是常驻 NPC agent：{npc.get('name', '无名者')}。"
-            f"物种={npc.get('species', '动物')}，职业={npc.get('role', '街头角色')}，阶层={npc.get('class', '底层')}，"
-            f"家族={family}，常驻区={npc.get('district', '街区')}，活动点={subregion}。"
-            f"现金={int(npc.get('cash', 0))}，债务={int(npc.get('debt', 0))}，饥饿={int(npc.get('hunger', 0))}，"
-            f"恐惧={int(npc.get('fear', 0))}，贪婪={int(npc.get('greed', 0))}，忠诚={int(npc.get('loyalty', 0))}。"
-            f"说话口气={npc.get('voice_style', '平稳')}，关注领域={domains}。"
-            f"社交风格={social_style}。金融风格={market_style}。"
-            f"{agenda}"
-            f"你必须按自己的利益、饥饿、债务、声望、忠诚和恐惧说话，不得替玩家或旁人做决定。"
-            f"你会保留自己的记忆和立场，但不能凭空发明世界事实。"
+            f"你是常驻 NPC agent：{npc.get('name', '无名者')}。\n"
+            f"基础身份：物种={npc.get('species', '动物')}，身份={title}，职业={npc.get('role', '街头角色')}，阶层={npc.get('class', '底层')}，家族={family}，常驻区={npc.get('district', '街区')}，活动点={subregion}。\n"
+            f"生存状态：现金={int(npc.get('cash', 0))}，债务={int(npc.get('debt', 0))}，饥饿={int(npc.get('hunger', 0))}，恐惧={int(npc.get('fear', 0))}，贪婪={int(npc.get('greed', 0))}，忠诚={int(npc.get('loyalty', 0))}。\n"
+            f"表达与专长：说话口气={npc.get('voice_style', '平稳')}，关注领域={domains}，社交风格={social_style}，金融风格={market_style}。\n"
+            f"人物级画像：{persona_brief}\n"
+            f"短期计划：{agenda}\n"
+            f"当前显式议题={topic_digest}。\n"
+            f"当前显式规范={norm_digest}。\n"
+            f"当前显式集体行动={collective_digest}。\n"
+            f"玩家只是外来玩家或来访者，不预设为任何动物种族，也不继承旧主角设定。\n"
+            f"议题对象是引擎里的真实状态；你只能围绕它们去转发、质疑、放大、压低或沉默，不能凭空发明新的世界事实。\n"
+            f"规范对象代表街区里正在形成的行为约束；你可以顺着规范、挑战规范或试着带头改规范，但不能假装规范不存在。\n"
+            f"集体行动对象代表镇上已经在酝酿或执行的罢工、动员会、集会等现实过程；你只能听说、支持、承诺、到场、组织、压制或回避这些行动，不能假装全镇会突然同步行动。\n"
+            f"你必须按自己的利益、饥饿、债务、声望、忠诚、恐惧、熟人网和禁忌说话，不得替玩家或旁人做决定。\n"
+            f"你会保留自己的记忆和立场，按人物级连续性做短期计划，但不能凭空发明世界事实。"
         )
 
     def _npc_agent_profile(self, npc: dict[str, Any]) -> dict[str, Any]:
@@ -3950,15 +8549,22 @@ class WorldEngine:
             "system_prompt": str(npc.get("agent_prompt", "")),
             "identity": {
                 "name": str(npc.get("name", "")),
+                "title": str(npc.get("title", "")) or str(npc.get("role", "")),
                 "role": str(npc.get("role", "")),
                 "family": str(npc.get("family_affiliation", "")) or "无",
                 "district": str(npc.get("district", "")),
                 "subregion": str(npc.get("subregion_name", "")) or str(npc.get("district", "")),
                 "social_style": self._npc_social_style(npc),
                 "market_style": self._npc_market_style(npc),
+                "topic_digest": self._npc_topic_digest(npc),
+                "norm_digest": self._npc_norm_digest(npc),
+                "collective_digest": self._npc_collective_digest(npc),
             },
+            "llm_sections": self._npc_llm_sections(npc),
             "tool_policy": copy.deepcopy(npc.get("agent_tool_policy", [])),
             "memory": copy.deepcopy(list(npc.get("agent_memory", []))[:6]),
+            "local_memory": self._local_memory_view(npc, topic_id=str(self._resolve_talk_topic(npc, "", str(npc.get("district", ""))).get("id", "")), limit=5),
+            "recent_dialogues": self._dialogue_history_view(npc, limit=4),
             "queue": copy.deepcopy(list(npc.get("agent_queue", []))[:4]),
             "budget": {
                 "daily_calls": int(budget.get("daily_calls", self._npc_daily_agent_budget(npc))),
@@ -4106,11 +8712,38 @@ class WorldEngine:
 
     def _default_stock_positions(self, npc: dict[str, Any]) -> dict[str, int]:
         role = str(npc.get("role", ""))
-        if role in {"投机者", "代理人", "银行经理"}:
-            return {
-                str(stock.get("name", "")): 1 if str(stock.get("family_owner", "")) == str(npc.get("family_affiliation", "")) else 0
-                for stock in self.stock_defs
-            }
+        title = str(npc.get("title", ""))
+        family = str(npc.get("family_affiliation", ""))
+        district = str(npc.get("district", ""))
+        seed = max(1, sum(ord(ch) for ch in str(npc.get("id", "npc_0"))) % 9)
+        positions = {str(stock.get("name", "")): 0 for stock in self.stock_defs}
+        preferred = next((str(stock.get("name", "")) for stock in self.stock_defs if str(stock.get("family_owner", "")) == family), "")
+        if "掌门" in title:
+            if preferred:
+                positions[preferred] = 600 + seed * 35
+            return {name: qty for name, qty in positions.items() if qty > 0}
+        if title in {"镇长", "财政与市场监管官"}:
+            for stock in self.stock_defs:
+                positions[str(stock.get("name", ""))] = 35 + seed * 3
+            return {name: qty for name, qty in positions.items() if qty > 0}
+        if role in {"投机者", "银行经理"}:
+            for stock in self.stock_defs:
+                stock_name = str(stock.get("name", ""))
+                family_owner = str(stock.get("family_owner", ""))
+                positions[stock_name] = 90 + seed * 8 if family_owner == family or stock_name == "珊瑚金控" else 22 + seed * 2
+            return {name: qty for name, qty in positions.items() if qty > 0}
+        if role == "代理人":
+            if preferred:
+                positions[preferred] = 80 + seed * 5
+            elif district == "交易所":
+                positions["珊瑚金控"] = 42 + seed * 4
+            return {name: qty for name, qty in positions.items() if qty > 0}
+        if role in {"记者", "店主", "老板"}:
+            if preferred:
+                positions[preferred] = 28 + seed * 3
+            elif district == "交易所":
+                positions["珊瑚金控"] = 18 + seed * 2
+            return {name: qty for name, qty in positions.items() if qty > 0}
         return {}
 
     def _default_goods_positions(self, npc: dict[str, Any]) -> dict[str, int]:
@@ -4616,6 +9249,7 @@ class WorldEngine:
             briefing = family_briefings.get(family_name, {})
             public_action = str(briefing.get("public_line", "")) or self._family_public_move(family, controlled, target_stock or target_good)
             hidden_action = str(briefing.get("hidden_line", "")) or self._family_hidden_move(family, controlled, target_stock or target_good)
+            player_attitude = self._player_collective_attitude_for_family(family_name) or str(family.get("player_attitude", ""))
             recent_briefs = copy.deepcopy(self._entity_brief_history("family_brief_history", family_name))
             moves.append(
                 {
@@ -4624,7 +9258,7 @@ class WorldEngine:
                     "public_action": public_action,
                     "hidden_action": hidden_action,
                     "target_asset": target_stock or target_good,
-                    "player_attitude": str(family.get("player_attitude", "")),
+                    "player_attitude": player_attitude,
                     "relation": int(relations.get(family_name, 0)),
                     "allies": list(family.get("allies", [])),
                     "enemies": list(family.get("enemies", [])),
@@ -4672,11 +9306,16 @@ class WorldEngine:
             spin = spin_map.get(str(npc.get("id", "")), {})
             memory_summary = self._npc_memory_summary(npc)
             relation_status = self._npc_player_status(npc)
+            favorability = self._npc_favorability_state(npc)
+            intel_topic = self._intel_topic_for_npc(npc, str(npc.get("district", "")))
+            intel_price = self._npc_intel_price(npc, intel_topic)
+            can_sell_info = self._npc_can_sell_info(npc)
             brief_history = copy.deepcopy(self._entity_brief_history("npc_brief_history", str(npc.get("id", ""))))
             cards.append(
                 {
                     "id": str(npc.get("id", "")),
                     "name": str(npc.get("name", "")),
+                    "title": str(npc.get("title", "")) or str(npc.get("role", "")),
                     "district": str(npc.get("district", "")),
                     "subregion_id": str(npc.get("subregion_id", "")),
                     "subregion_name": str(npc.get("subregion_name", "")),
@@ -4714,17 +9353,30 @@ class WorldEngine:
                     "llm_source": str(spin.get("source", "rule")),
                     "memory_summary": memory_summary,
                     "relation_status": relation_status,
+                    "speech_register": str(favorability.get("speech_register_label", "平视你")),
+                    "favorability_state": favorability,
+                    "can_sell_info": can_sell_info,
+                    "intel_price": intel_price,
+                    "gift_threshold": self._npc_bribe_threshold(npc),
+                    "follow_threshold": self._npc_follow_threshold(npc),
+                    "patronage_status": self._npc_patronage_status(npc),
                     "player_memory": copy.deepcopy(self._npc_player_memory(npc)),
                     "agent_model": str(self.ark.model_id),
                     "agent_budget_left": int(npc.get("agent_budget", {}).get("calls_left", 0)),
                     "agent_talk_budget_left": int(npc.get("agent_budget", {}).get("player_talk_left", 0)),
                     "agent_style": "%s / %s" % (self._npc_social_style(npc), self._npc_market_style(npc)),
                     "agent_agenda": self._npc_agent_agenda(npc),
+                    "topic_digest": self._npc_topic_digest(npc),
+                    "norm_digest": self._npc_norm_digest(npc),
+                    "collective_digest": self._npc_collective_digest(npc),
+                    "collective_action_id": str(npc.get("collective_action_id", "")),
+                    "collective_role": str(npc.get("collective_role", "")),
                     "agent_prompt_preview": str(npc.get("agent_prompt", ""))[:96],
                     "brief_history": brief_history,
                     "brief_history_summary": self._brief_history_summary(brief_history, ("line", "stance")),
                     "llm_refresh_cadence": int(npc.get("llm_refresh_cadence", 1)),
                     "last_llm_brief_pulse": int(npc.get("last_llm_brief_pulse", -1)),
+                    "trade_quotes": self._default_trade_quotes_for_npc(npc),
                     "personal_summary": self._npc_personal_summary(npc, economic_pressure, position_kind, position_name, position_bias, institution_note),
                 }
             )
@@ -4741,6 +9393,11 @@ class WorldEngine:
         institution_note: str = "",
     ) -> str:
         summary = f"现金 {int(npc.get('cash', 0))} · 负债 {int(npc.get('debt', 0))} · 压力 {int(round(economic_pressure * 100))}%"
+        if self._npc_can_sell_info(npc):
+            summary += f" · 卖消息价 {self._npc_intel_price(npc)}"
+        patronage = self._npc_patronage_status(npc)
+        if patronage:
+            summary += f" · {patronage}"
         if position_name:
             summary += f" · {position_kind}:{position_name}({position_bias})"
         if institution_note:
@@ -5036,10 +9693,12 @@ class WorldEngine:
 
     def _company_topic_goods_impact(self, company_state: dict[str, Any]) -> dict[str, float]:
         industry = str(company_state.get("name", "")) + str(company_state.get("stock_name", ""))
-        if "航" in industry or "港" in industry:
-            return {"罐头": 0.05}
-        if "矿" in industry or "黑石" in industry:
-            return {"煤": 0.06}
+        if any(token in industry for token in ["海藻", "食业", "农业", "食物"]):
+            return {"面包": 0.05}
+        if any(token in industry for token in ["船坞", "船运", "物流", "港"]):
+            return {"煤": 0.05, "罐头": 0.03}
+        if any(token in industry for token in ["珊瑚", "银行", "金控", "证券"]):
+            return {"罐头": 0.04}
         return {"面包": 0.04}
 
     def _good_chain_bonus(self, good: dict[str, Any]) -> float:
@@ -5047,12 +9706,12 @@ class WorldEngine:
         bonus = 0.0
         for company in self.state.get("companies", []):
             industry = str(company.get("industry", "")) + str(company.get("name", ""))
-            if good_name == "煤" and ("矿" in industry or "黑石" in industry):
+            if good_name == "面包" and any(token in industry for token in ["海藻", "食业", "农业", "食物"]):
                 bonus += (50.0 - float(company.get("inventory", 50))) * 0.0008
-            if good_name == "罐头" and ("航" in industry or "港" in industry):
+            if good_name == "煤" and any(token in industry for token in ["船坞", "船运", "物流", "港"]):
                 bonus += (float(company.get("order_pressure", 50)) - 50.0) * 0.001
-            if good_name == "面包" and ("报" in industry or "传媒" in industry):
-                bonus += (float(self.state["macro"].get("worker_unrest", 50)) - 50.0) * 0.0008
+            if good_name == "罐头" and any(token in industry for token in ["珊瑚", "银行", "金控", "证券"]):
+                bonus += (float(company.get("financing_pressure", 50)) - 50.0) * 0.0008
         return round(max(-0.08, min(0.08, bonus)), 4)
 
     def _company_for_stock(self, stock: dict[str, Any]) -> dict[str, Any] | None:

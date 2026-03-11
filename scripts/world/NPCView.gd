@@ -137,9 +137,12 @@ func apply_data(data: Dictionary, debug_enabled: bool) -> void:
 	if move_delta.length() > 2.0 and abs(move_delta.x) > 0.6:
 		facing_sign = -1.0 if move_delta.x < 0.0 else 1.0
 	name_label.text = str(data.get("name", ""))
+	var title := str(data.get("title", ""))
+	if title.is_empty():
+		title = str(data.get("role", ""))
 	role_label.text = "%s | %s | %s" % [
 		str(data.get("species", "")),
-		str(data.get("role", "")),
+		title,
 		_activity_text(str(data.get("activity", "")))
 	]
 	_apply_name_theme()
@@ -1407,6 +1410,14 @@ func _build_visual_profile(data: Dictionary) -> Dictionary:
 			profile["restless"] = float(profile["restless"]) + 0.3
 		"returning":
 			profile["pace"] = float(profile["pace"]) + 0.4
+		"assembling", "meeting", "gathering":
+			profile["pace"] = float(profile["pace"]) + 0.26
+			profile["restless"] = float(profile["restless"]) + 0.18
+		"protesting", "responding":
+			profile["pace"] = float(profile["pace"]) + 0.42
+			profile["restless"] = float(profile["restless"]) + 0.28
+		"negotiating", "watching":
+			profile["restless"] = float(profile["restless"]) + 0.12
 		"home":
 			profile["restless"] = max(0.0, float(profile["restless"]) - 0.25)
 
@@ -1483,6 +1494,20 @@ func _activity_text(value: String) -> String:
 			return "\u6536\u5de5"
 		"commuting":
 			return "\u8d76\u8def"
+		"assembling":
+			return "\u96c6\u7ed3"
+		"meeting":
+			return "\u52a8\u5458"
+		"protesting":
+			return "\u6297\u8bae"
+		"gathering":
+			return "\u805a\u96c6"
+		"responding":
+			return "\u63a7\u573a"
+		"negotiating":
+			return "\u8c08\u5224"
+		"watching":
+			return "\u56f4\u89c2"
 	return "\u95f2\u6643"
 
 

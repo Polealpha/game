@@ -68,8 +68,15 @@ class ArkClient:
             system_prompt=(
                 "你是《壳与市场》的 NPC 对话引擎。"
                 "你只负责生成一轮贴近身份的中文对话。"
+                "传入的 topic 与 active_topics 是引擎里的显式议题对象，只能围绕这些对象和已有记忆说话。"
+                "active_collective_actions 是镇上正在酝酿或执行的显式集体行动对象。"
+                "relationship_memory 里的 conversation_history 是这名角色和对方前几轮真实对话记录，local_memory 是角色本地记忆摘要。"
+                "favorability_state 是这名角色对玩家当前的显式好感/敬畏/敌意/贪婪/泄密意愿。"
+                "speaker_sections 或 listener_sections 里会给你六段结构输入：你是谁、你当前状况、你最近经历、你周围的人和关系、城市摘要、允许动作列表。"
+                "你必须优先延续这些历史，不要把每轮都当成第一次见面。"
                 "玩家台词必须原样复述到 lines[0]。"
-                "NPC 台词放到 lines[1]，必须结合职业、家族、债务、饥饿、立场和最近记忆来回答。"
+                "NPC 台词放到 lines[1]，必须结合职业、家族、债务、饥饿、立场、favorability_state 和最近记忆来回答。"
+                "如果 speech_register 偏奉承且 respect 很高，可以抬称呼；如果 resentment 很高，即使玩家有钱也可以出言不逊。"
                 "不能讲英文，不能解释规则，不能自称模型。"
             ),
             task_prompt=(
@@ -85,9 +92,15 @@ class ArkClient:
                 "trigger": payload.get("trigger", ""),
                 "player_input": payload.get("player_input", ""),
                 "topic": payload.get("topic", {}),
+                "active_topics": payload.get("active_topics", []),
+                "active_norms": payload.get("active_norms", []),
+                "active_collective_actions": payload.get("active_collective_actions", []),
                 "approach": payload.get("approach", "cautious"),
                 "intent": payload.get("intent", ""),
                 "truth_profile": payload.get("truth_profile", {}),
+                "favorability_state": payload.get("favorability_state", {}),
+                "speaker_sections": payload.get("speaker_sections", {}),
+                "listener_sections": payload.get("listener_sections", {}),
                 "relationship_memory": payload.get("relationship_memory", {}),
                 "scene_context": scene_observation.get("scene_context", {}),
             },
@@ -150,17 +163,38 @@ class ArkClient:
         scene_observation = payload.get("scene_observation", {})
         return self._request_json(
             task_type="npc_spin",
-            schema_hint='{"stance":"谨慎/乐观/恐慌/挑衅","truthfulness":0.56,"market_tilt":"bullish/bearish/neutral","lines":["一句角色说法"]}',
+            schema_hint=(
+                '{"emotions":{"anger":0.2,"anxiety":0.5,"hope":0.3},"beliefs_update":{"focus":"一句更新"},'
+                '"top_goals":["一句短期目标"],"social_message":"一句角色说法","stance":"谨慎/乐观/恐慌/挑衅","truthfulness":0.56,"market_tilt":"bullish/bearish/neutral",'
+                '"trade_decision":{"action":"buy/sell/hold","stock_name":"海藻食业","quantity":3,"confidence":0.62,"note":"为什么这么做"},'
+                '"topic_action":{"mode":"share/amplify/question/deny/silence","topic_id":"topic_x","intensity":0.62,"note":"为什么这么做"},'
+                '"norm_action":{"mode":"reinforce/contest/seed/ignore","norm_id":"norm_x","text":"规范文本","intensity":0.58,"note":"为什么这么做"},'
+                '"collective_action_attitude":{"mode":"hear/support/commit/attend/organize/suppress/avoid","action_id":"collective_x","kind":"strike/meeting/rally/party","intensity":0.63,"note":"为什么这么做"},'
+                '"intended_actions":{"topic_action":{"mode":"share","topic_id":"topic_x","intensity":0.62,"note":"为什么这么做"},"norm_action":{"mode":"reinforce","norm_id":"norm_x","text":"规范文本","intensity":0.58,"note":"为什么这么做"},"collective_action":{"mode":"support","action_id":"collective_x","kind":"meeting","intensity":0.52,"note":"为什么这么做"}}}'
+            ),
             system_prompt=(
-                "你只负责写一名 NPC 此刻会丢出的说法。"
+                "你只负责写一名 NPC 此刻的结构化心智输出。"
+                "传入的 topic 与 active_topics 是引擎里真实存在的议题对象。"
+                "传入的 active_norms 是当前街区里显式存在的社会规范对象。"
+                "传入的 active_collective_actions 是当前街区里显式存在的集体行动对象。"
+                "relationship_memory 里的 conversation_history 和 local_memory 是这名角色的本地记忆。"
+                "llm_sections 是这名角色的六段输入：你是谁、你当前状况、你最近经历、你周围的人和关系、城市摘要、允许动作列表。"
+                "你要沿着这些记忆延续口风、偏见、关系和短期计划，不能每分钟失忆。"
                 "语气必须符合该角色的职业、家族、债务、饥饿和街区位置。"
+                "你只能选择放大、转发、质疑、压低或回避这些议题，不能凭空创造新事实。"
+                "同时要返回 emotions、beliefs_update、top_goals、social_message、trade_decision、collective_action_attitude。"
+                "如果 intended_actions 存在，里面要把 topic_action、norm_action、collective_action 一并写出来。"
                 "只返回一个 JSON 对象。"
             ),
-            task_prompt="给出一条适合街头耳语或人物短句展示的中文说法。",
+            task_prompt="按六段输入返回一个结构化 JSON，对这名角色此刻的情绪、目标、社交表达、交易决定和集体行动态度做出选择。",
             state_prompt={
                 "npc": payload.get("npc", {}),
                 "agent_profile": payload.get("agent_profile", {}),
+                "llm_sections": payload.get("llm_sections", {}),
                 "topic": payload.get("topic", {}),
+                "active_topics": payload.get("active_topics", []),
+                "active_norms": payload.get("active_norms", []),
+                "active_collective_actions": payload.get("active_collective_actions", []),
                 "truth_profile": payload.get("truth_profile", {}),
                 "district_signals": payload.get("district_signals", {}),
                 "relationship_memory": payload.get("relationship_memory", {}),
@@ -178,6 +212,9 @@ class ArkClient:
             schema_hint='{"public_line":"公开动作","hidden_line":"暗线动作","focus":"焦点","signal":"steady/rising/falling"}',
             system_prompt=(
                 "你负责写家族简报。"
+                "只能根据输入里的显式议题对象、控制关系和压力状态来写。"
+                "active_norms 表示街区里当前在生效或被争议的行为规范。"
+                "active_collective_actions 表示街区里正在酝酿或执行的集体行动。"
                 "公开口风要像外放消息，暗线口风要像内部意图。"
                 "不能编造资产数字。"
             ),
@@ -185,6 +222,9 @@ class ArkClient:
             state_prompt={
                 "family": payload.get("family", {}),
                 "controlled_companies": payload.get("controlled_companies", []),
+                "active_topics": payload.get("active_topics", []),
+                "active_norms": payload.get("active_norms", []),
+                "active_collective_actions": payload.get("active_collective_actions", []),
                 "district_signals": payload.get("district_signals", {}),
                 "recent_briefs": payload.get("recent_briefs", []),
                 "scene_context": scene_observation.get("scene_context", {}),
@@ -200,11 +240,17 @@ class ArkClient:
             schema_hint='{"headline":"公司摘要","worker_note":"工人感受","risk_note":"风险提示","signal":"steady/rising/falling"}',
             system_prompt=(
                 "你负责写公司层简报。"
+                "只能根据输入里的显式议题对象、劳工状态和经营状态来写。"
+                "active_norms 表示街区里当前在生效或被争议的行为规范。"
+                "active_collective_actions 表示街区里正在酝酿或执行的集体行动。"
                 "只总结经营状态、劳工情绪和风险，不要编造不存在的财务数字。"
             ),
             task_prompt="根据公司状态写一条公司摘要、一条工人感受和一条风险提示，只返回一个 JSON 对象。",
             state_prompt={
                 "company": payload.get("company", {}),
+                "active_topics": payload.get("active_topics", []),
+                "active_norms": payload.get("active_norms", []),
+                "active_collective_actions": payload.get("active_collective_actions", []),
                 "district_signals": payload.get("district_signals", {}),
                 "recent_briefs": payload.get("recent_briefs", []),
                 "scene_context": scene_observation.get("scene_context", {}),
@@ -219,12 +265,18 @@ class ArkClient:
             task_type="pulse_brief",
             schema_hint=(
                 '{"pulse_summary":"一句总览","market_note":"一句市场提示","scene_focus":"一句场景焦点",'
-                '"npc_updates":[{"id":"npc_id","line":"一句口风","stance":"谨慎","market_tilt":"neutral"}],'
+                '"npc_updates":[{"id":"npc_id","line":"一句口风","social_message":"一句社会表达","stance":"谨慎","market_tilt":"neutral",'
+                '"emotions":{"anger":0.2,"anxiety":0.5,"hope":0.3},"beliefs_update":{"focus":"一句更新"},"top_goals":["一句短期目标"],'
+                '"trade_decision":{"action":"buy/sell/hold","stock_name":"海藻食业","quantity":3,"confidence":0.62,"note":"为什么这么做"},'
+                '"collective_action":{"mode":"hear","action_id":"collective_x","kind":"meeting","intensity":0.4,"note":"为什么"}}],'
                 '"family_updates":[{"name":"家族名","public_line":"公开动作","hidden_line":"暗线动作","focus":"焦点","signal":"steady"}],'
                 '"company_updates":[{"id":"company_id","headline":"一句状态","worker_note":"工人感受","risk_note":"风险提示","signal":"steady"}]}'
             ),
             system_prompt=(
                 "你是《壳与市场》的分钟级 AI 脉冲编辑。"
+                "topics 字段给出的显式议题对象是当前真实社会变量摘要。"
+                "norms 字段给出的显式规范对象是当前正在形成或被挑战的社会约束。"
+                "collective_actions 字段给出的显式集体行动对象是当前正在酝酿或执行的现实组织过程。"
                 "只总结当前已知状态，覆盖输入里的 NPC、家族和公司。"
                 "不要额外编造价格、余额或结局。"
             ),
@@ -234,6 +286,9 @@ class ArkClient:
                 "day": payload.get("day", 1),
                 "macro": payload.get("macro", {}),
                 "district_signals": payload.get("district_signals", {}),
+                "topics": payload.get("topics", []),
+                "norms": payload.get("norms", []),
+                "collective_actions": payload.get("collective_actions", []),
                 "player": payload.get("player", {}),
                 "goods": payload.get("goods", []),
                 "stocks": payload.get("stocks", []),
@@ -501,14 +556,61 @@ class ArkClient:
         lines = parsed.get("lines", [])
         if not isinstance(lines, list):
             lines = []
-        primary = self._sanitize_text(str(lines[0])) if lines else self._sanitize_text(str(parsed.get("line", "")))
+        social_message = self._sanitize_text(str(parsed.get("social_message", "")))
+        primary = self._sanitize_text(str(lines[0])) if lines else self._sanitize_text(str(parsed.get("line", ""))) or social_message
         if not primary:
             return {}
+        intended_actions_raw = parsed.get("intended_actions", {})
+        if not isinstance(intended_actions_raw, dict):
+            intended_actions_raw = {}
+        topic_action_raw = parsed.get("topic_action", {})
+        if not isinstance(topic_action_raw, dict):
+            topic_action_raw = intended_actions_raw.get("topic_action", {})
+        norm_action_raw = parsed.get("norm_action", {})
+        if not isinstance(norm_action_raw, dict):
+            norm_action_raw = intended_actions_raw.get("norm_action", {})
+        collective_action_raw = parsed.get("collective_action", parsed.get("collective_action_attitude", {}))
+        if not isinstance(collective_action_raw, dict):
+            collective_action_raw = intended_actions_raw.get("collective_action", {})
+        trade_decision_raw = parsed.get("trade_decision", {})
+        if not isinstance(trade_decision_raw, dict):
+            trade_decision_raw = {}
         return {
+            "emotions": parsed.get("emotions", {}) if isinstance(parsed.get("emotions", {}), dict) else {},
+            "beliefs_update": parsed.get("beliefs_update", {}) if isinstance(parsed.get("beliefs_update", {}), dict) else {},
+            "top_goals": [self._sanitize_text(str(value)) for value in parsed.get("top_goals", []) if self._sanitize_text(str(value))][:4] if isinstance(parsed.get("top_goals", []), list) else [],
             "stance": self._sanitize_text(str(parsed.get("stance", "谨慎"))) or "谨慎",
             "truthfulness": self._clamp_float(parsed.get("truthfulness", 0.52), 0.0, 1.0),
             "market_tilt": self._sanitize_market_tilt(str(parsed.get("market_tilt", "neutral"))),
             "lines": [primary],
+            "social_message": social_message or primary,
+            "trade_decision": {
+                "action": self._sanitize_text(str(trade_decision_raw.get("action", trade_decision_raw.get("mode", "hold")))).lower() or "hold",
+                "stock_name": self._sanitize_text(str(trade_decision_raw.get("stock_name", trade_decision_raw.get("target", "")))) or "",
+                "quantity": max(0, int(trade_decision_raw.get("quantity", trade_decision_raw.get("shares", 0)) or 0)),
+                "confidence": self._clamp_float(trade_decision_raw.get("confidence", 0.45), 0.0, 1.0),
+                "note": self._sanitize_text(str(trade_decision_raw.get("note", trade_decision_raw.get("reason", "")))) or "",
+            },
+            "topic_action": {
+                "mode": self._sanitize_topic_action_mode(str(topic_action_raw.get("mode", parsed.get("topic_action_mode", "")))),
+                "topic_id": self._sanitize_text(str(topic_action_raw.get("topic_id", parsed.get("topic_id", "")))) or "",
+                "intensity": self._clamp_float(topic_action_raw.get("intensity", parsed.get("topic_intensity", 0.56)), 0.0, 1.0),
+                "note": self._sanitize_text(str(topic_action_raw.get("note", parsed.get("topic_note", "")))) or "",
+            },
+            "norm_action": {
+                "mode": self._sanitize_norm_action_mode(str(norm_action_raw.get("mode", parsed.get("norm_action_mode", "")))),
+                "norm_id": self._sanitize_text(str(norm_action_raw.get("norm_id", parsed.get("norm_id", "")))) or "",
+                "text": self._sanitize_text(str(norm_action_raw.get("text", parsed.get("norm_text", "")))) or "",
+                "intensity": self._clamp_float(norm_action_raw.get("intensity", parsed.get("norm_intensity", 0.5)), 0.0, 1.0),
+                "note": self._sanitize_text(str(norm_action_raw.get("note", parsed.get("norm_note", "")))) or "",
+            },
+            "collective_action": {
+                "mode": self._sanitize_collective_action_mode(str(collective_action_raw.get("mode", parsed.get("collective_action_mode", "")))),
+                "action_id": self._sanitize_text(str(collective_action_raw.get("action_id", parsed.get("collective_action_id", "")))) or "",
+                "kind": self._sanitize_collective_kind(str(collective_action_raw.get("kind", parsed.get("collective_kind", "")))),
+                "intensity": self._clamp_float(collective_action_raw.get("intensity", parsed.get("collective_intensity", 0.48)), 0.0, 1.0),
+                "note": self._sanitize_text(str(collective_action_raw.get("note", parsed.get("collective_note", "")))) or "",
+            },
         }
 
     def _normalize_family_briefing(self, parsed: dict[str, Any]) -> dict[str, Any]:
@@ -556,19 +658,69 @@ class ArkClient:
         if not isinstance(rows, list):
             return []
         normalized: list[dict[str, Any]] = []
-        for row in rows[:20]:
+        for row in rows[:64]:
             if not isinstance(row, dict):
                 continue
             npc_id = str(row.get("id", "")).strip()
             line = self._sanitize_text(str(row.get("line", "")))
             if not npc_id or not line:
                 continue
+            intended_actions_raw = row.get("intended_actions", {})
+            if not isinstance(intended_actions_raw, dict):
+                intended_actions_raw = {}
+            trade_decision_raw = row.get("trade_decision", {})
+            if not isinstance(trade_decision_raw, dict):
+                trade_decision_raw = {}
+            topic_action_raw = row.get("topic_action", {})
+            if not isinstance(topic_action_raw, dict):
+                topic_action_raw = intended_actions_raw.get("topic_action", {})
+            norm_action_raw = row.get("norm_action", {})
+            if not isinstance(norm_action_raw, dict):
+                norm_action_raw = intended_actions_raw.get("norm_action", {})
+            collective_action_raw = row.get("collective_action", row.get("collective_action_attitude", {}))
+            if not isinstance(collective_action_raw, dict):
+                collective_action_raw = intended_actions_raw.get("collective_action", {})
             normalized.append(
                 {
                     "id": npc_id,
                     "line": line,
                     "stance": self._sanitize_text(str(row.get("stance", "谨慎"))) or "谨慎",
                     "market_tilt": self._sanitize_market_tilt(str(row.get("market_tilt", "neutral"))),
+                    "social_message": self._sanitize_text(str(row.get("social_message", line))) or line,
+                    "emotions": row.get("emotions", {}) if isinstance(row.get("emotions", {}), dict) else {},
+                    "beliefs_update": row.get("beliefs_update", {}) if isinstance(row.get("beliefs_update", {}), dict) else {},
+                    "top_goals": [
+                        self._sanitize_text(str(value))
+                        for value in row.get("top_goals", [])
+                        if self._sanitize_text(str(value))
+                    ][:4] if isinstance(row.get("top_goals", []), list) else [],
+                    "trade_decision": {
+                        "action": self._sanitize_text(str(trade_decision_raw.get("action", trade_decision_raw.get("mode", "hold")))).lower() or "hold",
+                        "stock_name": self._sanitize_text(str(trade_decision_raw.get("stock_name", trade_decision_raw.get("target", "")))) or "",
+                        "quantity": max(0, int(trade_decision_raw.get("quantity", trade_decision_raw.get("shares", 0)) or 0)),
+                        "confidence": self._clamp_float(trade_decision_raw.get("confidence", 0.45), 0.0, 1.0),
+                        "note": self._sanitize_text(str(trade_decision_raw.get("note", trade_decision_raw.get("reason", "")))) or "",
+                    },
+                    "topic_action": {
+                        "mode": self._sanitize_topic_action_mode(str(topic_action_raw.get("mode", row.get("topic_action_mode", "")))),
+                        "topic_id": self._sanitize_text(str(topic_action_raw.get("topic_id", row.get("topic_id", "")))) or "",
+                        "intensity": self._clamp_float(topic_action_raw.get("intensity", row.get("topic_intensity", 0.56)), 0.0, 1.0),
+                        "note": self._sanitize_text(str(topic_action_raw.get("note", row.get("topic_note", "")))) or "",
+                    },
+                    "norm_action": {
+                        "mode": self._sanitize_norm_action_mode(str(norm_action_raw.get("mode", row.get("norm_action_mode", "")))),
+                        "norm_id": self._sanitize_text(str(norm_action_raw.get("norm_id", row.get("norm_id", "")))) or "",
+                        "text": self._sanitize_text(str(norm_action_raw.get("text", row.get("norm_text", "")))) or "",
+                        "intensity": self._clamp_float(norm_action_raw.get("intensity", row.get("norm_intensity", 0.5)), 0.0, 1.0),
+                        "note": self._sanitize_text(str(norm_action_raw.get("note", row.get("norm_note", "")))) or "",
+                    },
+                    "collective_action": {
+                        "mode": self._sanitize_collective_action_mode(str(collective_action_raw.get("mode", row.get("collective_action_mode", "")))),
+                        "action_id": self._sanitize_text(str(collective_action_raw.get("action_id", row.get("collective_action_id", "")))) or "",
+                        "kind": self._sanitize_collective_kind(str(collective_action_raw.get("kind", row.get("collective_kind", "")))),
+                        "intensity": self._clamp_float(collective_action_raw.get("intensity", row.get("collective_intensity", 0.48)), 0.0, 1.0),
+                        "note": self._sanitize_text(str(collective_action_raw.get("note", row.get("collective_note", "")))) or "",
+                    },
                 }
             )
         return normalized
@@ -705,6 +857,99 @@ class ArkClient:
         if lowered in {"steady", "rising", "falling"}:
             return lowered
         return "steady"
+
+    @staticmethod
+    def _sanitize_topic_action_mode(value: str) -> str:
+        lowered = value.strip().lower()
+        mapping = {
+            "share": "share",
+            "forward": "share",
+            "转发": "share",
+            "传播": "share",
+            "amplify": "amplify",
+            "boost": "amplify",
+            "放大": "amplify",
+            "添油加醋": "amplify",
+            "question": "question",
+            "doubt": "question",
+            "质疑": "question",
+            "challenge": "question",
+            "deny": "deny",
+            "rebut": "deny",
+            "驳斥": "deny",
+            "否认": "deny",
+            "silence": "silence",
+            "ignore": "silence",
+            "沉默": "silence",
+            "回避": "silence",
+        }
+        return mapping.get(lowered, "")
+
+    @staticmethod
+    def _sanitize_norm_action_mode(value: str) -> str:
+        lowered = value.strip().lower()
+        mapping = {
+            "reinforce": "reinforce",
+            "support": "reinforce",
+            "强化": "reinforce",
+            "contest": "contest",
+            "challenge": "contest",
+            "反对": "contest",
+            "seed": "seed",
+            "create": "seed",
+            "播种": "seed",
+            "ignore": "ignore",
+            "silence": "ignore",
+            "无视": "ignore",
+        }
+        return mapping.get(lowered, "")
+
+    @staticmethod
+    def _sanitize_collective_action_mode(value: str) -> str:
+        lowered = value.strip().lower()
+        mapping = {
+            "hear": "hear",
+            "notice": "hear",
+            "听说": "hear",
+            "support": "support",
+            "join": "support",
+            "支持": "support",
+            "表态": "support",
+            "commit": "commit",
+            "pledge": "commit",
+            "承诺": "commit",
+            "attend": "attend",
+            "show_up": "attend",
+            "到场": "attend",
+            "organize": "organize",
+            "start": "organize",
+            "发起": "organize",
+            "组织": "organize",
+            "suppress": "suppress",
+            "block": "suppress",
+            "压制": "suppress",
+            "镇压": "suppress",
+            "avoid": "avoid",
+            "ignore": "avoid",
+            "回避": "avoid",
+            "沉默": "avoid",
+        }
+        return mapping.get(lowered, "")
+
+    @staticmethod
+    def _sanitize_collective_kind(value: str) -> str:
+        lowered = value.strip().lower()
+        mapping = {
+            "strike": "strike",
+            "罢工": "strike",
+            "meeting": "meeting",
+            "动员会": "meeting",
+            "rally": "rally",
+            "集会": "rally",
+            "party": "party",
+            "派对": "party",
+        }
+        return mapping.get(lowered, "")
 
     @staticmethod
     def _clamp_float(value: Any, minimum: float, maximum: float) -> float:

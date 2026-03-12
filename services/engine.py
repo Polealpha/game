@@ -226,7 +226,7 @@ class WorldEngine:
             for stock in self.stock_defs:
                 item = copy.deepcopy(stock)
                 item["current_price"] = item["base_price"]
-                item["market_sentiment"] = "平"
+                item["market_sentiment"] = "谨慎"
                 item["previous_close"] = int(item.get("base_price", 10))
                 item["reference_price"] = float(item.get("base_price", 10))
                 item["issued_shares"] = int(item.get("issued_shares", self._stock_issued_shares(item)))
@@ -238,6 +238,8 @@ class WorldEngine:
                 item["change_amount"] = 0
                 item["change_pct"] = 0.0
                 item["market_cap"] = int(item["issued_shares"] * item["current_price"])
+                item["display_name"] = str(item.get("display_name", item.get("name", "")))
+                item["ticker"] = str(item.get("ticker", item.get("id", ""))).upper()
                 stocks.append(item)
 
             families = copy.deepcopy(self.family_defs)
@@ -331,9 +333,11 @@ class WorldEngine:
                     "attitude_style": "respectful",
                     "last_talk_approach": "cautious",
                     "goods_inventory": {"面包": 1, "煤": 0, "罐头": 0},
-                    "stock_holdings": {"海藻食业": 0, "珊瑚金控": 0, "龟甲船运": 0},
+                    "stock_holdings": {"海藻重工": 0, "市政债券": 0, "龟甲物流": 0},
+                    "reputation_tracks": {"FC": 10, "FB": 5, "SN": 20},
+                    "shadow_reputation": {"S_WWI": 15, "S_DBH": 10, "S_NAC": 20, "SUI": 15, "ST": 1.0, "WL": 1},
                     "rumors": [],
-                    "family_relations": {"海藻家族": 0, "珊瑚银行": 0, "龟甲船坞": 0, "镇政府": 0, "街头互助会": 0},
+                    "family_relations": {"海藻资本": 0, "镇政府": 0, "龟甲家族": 0, "居民与底层": 0, "影子中枢": 0},
                     "collective_profile": {
                         "support_count": 0,
                         "mediate_count": 0,
@@ -358,6 +362,14 @@ class WorldEngine:
                 "stock_holder_registry": {},
                 "stock_exchange_feedback": "",
                 "stock_exchange_view": {},
+                "stock_price_history": {str(row["name"]): [int(row["current_price"])] * 24 for row in stocks},
+                "story_metrics": {
+                    "sam_revolution_fund": 0,
+                    "sam_tax_total": 0,
+                    "player_trading_fees": 0,
+                    "reputation": {"FC": 10, "FB": 5, "SN": 20},
+                    "shadow_reputation": {"S_WWI": 15, "S_DBH": 10, "S_NAC": 20, "SUI": 15, "ST": 1.0, "WL": 1},
+                },
                 "families": families,
                 "companies": companies,
                 "districts": districts,
@@ -2472,12 +2484,13 @@ class WorldEngine:
 
     def _stock_issued_shares(self, stock: dict[str, Any]) -> int:
         name = str(stock.get("name", ""))
-        if name == "海藻食业":
-            return 80_000
-        if name == "珊瑚金控":
-            return 72_000
-        if name == "龟甲船运":
-            return 76_000
+        ticker = str(stock.get("ticker", "")).upper()
+        if name in {"海藻重工", "海藻食业"} or ticker == "SWC":
+            return 120_000
+        if name in {"市政债券", "珊瑚金控"} or ticker == "AMB":
+            return 90_000
+        if name in {"龟甲物流", "龟甲船运"} or ticker == "TSL":
+            return 100_000
         return 60_000
 
     def _rebuild_stock_holder_registry(self) -> None:
@@ -2516,12 +2529,138 @@ class WorldEngine:
         start_minutes, end_minutes = self._stock_market_session_bounds()
         return f"{start_minutes // 60:02d}:{start_minutes % 60:02d}-{end_minutes // 60:02d}:{end_minutes % 60:02d}"
 
+    def _stock_by_ticker(self, ticker: str) -> dict[str, Any] | None:
+        needle = str(ticker).strip().upper()
+        if not needle:
+            return None
+        for stock in self.state.get("stocks", []):
+            if str(stock.get("ticker", "")).strip().upper() == needle:
+                return stock
+        return None
+
+    def _stock_view_name(self, stock: dict[str, Any]) -> str:
+        ticker = str(stock.get("ticker", "")).strip().upper()
+        display_name = str(stock.get("display_name", stock.get("name", ""))).strip()
+        if ticker and display_name and display_name.startswith(ticker):
+            return display_name
+        if ticker and display_name:
+            return f"{ticker} {display_name}"
+        return display_name or str(stock.get("name", ""))
+
+    def _story_metrics_state(self) -> dict[str, Any]:
+        metrics = self.state.setdefault("story_metrics", {})
+        metrics.setdefault("sam_revolution_fund", 0)
+        metrics.setdefault("sam_tax_total", 0)
+        metrics.setdefault("player_trading_fees", 0)
+        metrics.setdefault("reputation", {"FC": 10, "FB": 5, "SN": 20})
+        metrics.setdefault("shadow_reputation", {"S_WWI": 15, "S_DBH": 10, "S_NAC": 20, "SUI": 15, "ST": 1.0, "WL": 1})
+        return metrics
+
+    def _stock_account_tier(self) -> dict[str, Any]:
+        wealth = self._player_total_wealth()
+        if wealth > 50_000:
+            return {"label": "黄金级", "fee_rate": 0.12, "leverage": "1x-50x"}
+        if wealth > 10_000:
+            return {"label": "白银级", "fee_rate": 0.08, "leverage": "1x-30x"}
+        return {"label": "青铜级", "fee_rate": 0.05, "leverage": "1x-10x"}
+
+    def _append_stock_history_point(self, stock_name: str, price: int) -> None:
+        history_map = self.state.setdefault("stock_price_history", {})
+        series = list(history_map.get(stock_name, []))
+        series.append(int(price))
+        history_map[stock_name] = series[-24:]
+
+    def _record_stock_fee(self, trade_value: int, *, player_paid: bool) -> int:
+        if trade_value <= 0:
+            return 0
+        tier = self._stock_account_tier()
+        metrics = self._story_metrics_state()
+        shadow = dict(metrics.get("shadow_reputation", {}))
+        fee_rate = float(tier.get("fee_rate", 0.05))
+        sui = float(shadow.get("SUI", 15.0))
+        if sui >= 86:
+            fee_rate *= 1.45
+        elif sui >= 61:
+            fee_rate *= 1.2
+        fee = max(1, int(round(trade_value * fee_rate)))
+        metrics["sam_tax_total"] = int(metrics.get("sam_tax_total", 0)) + fee
+        metrics["sam_revolution_fund"] = int(metrics.get("sam_revolution_fund", 0)) + fee
+        if player_paid:
+            metrics["player_trading_fees"] = int(metrics.get("player_trading_fees", 0)) + fee
+        return fee
+
+    def _major_holders_for_stock(self, stock_name: str, limit: int = 3) -> list[dict[str, Any]]:
+        holders = list(self.state.get("stock_holder_registry", {}).get(stock_name, []))
+        holders.sort(key=lambda row: int(row.get("shares", 0)), reverse=True)
+        return [
+            {
+                "holder_name": str(row.get("holder_name", "")),
+                "holder_kind": str(row.get("holder_kind", "")),
+                "shares": int(row.get("shares", 0)),
+            }
+            for row in holders[:limit]
+        ]
+
+    def _derive_story_reputation(self) -> tuple[dict[str, int], dict[str, Any]]:
+        player = self.state.get("player", {})
+        profile = dict(player.get("collective_profile", {}))
+        worker = float(profile.get("worker_standing", 0.0))
+        public = float(profile.get("public_standing", 0.0))
+        capital = float(profile.get("capital_standing", 0.0))
+        government = float(profile.get("government_standing", 0.0))
+        key_bonus = {"FC": 0.0, "FB": 0.0, "SN": 0.0}
+        for npc in self.state.get("npcs", []):
+            memory = dict(npc.get("player_memory", {}))
+            trust = float(npc.get("player_trust", 0.0))
+            relation = float(npc.get("player_relation", 0))
+            bonus = max(0.0, trust * 0.04 + relation * 0.85 + int(memory.get("friendly_count", 0)) * 1.6)
+            faction = str(npc.get("shadow_faction", ""))
+            if faction == "FC":
+                key_bonus["FC"] += bonus
+            elif faction == "FB":
+                key_bonus["FB"] += bonus
+            elif faction == "SN":
+                key_bonus["SN"] += bonus
+        fc = int(max(0, min(100, round(10 + worker * 40 + public * 8 + key_bonus["FC"]))))
+        fb = int(max(0, min(100, round(5 + worker * 12 + capital * -6 + key_bonus["FB"]))))
+        sn = int(max(0, min(100, round(20 + public * 34 + government * 6 + key_bonus["SN"]))))
+        swc = self._stock_by_ticker("SWC") or {}
+        amb = self._stock_by_ticker("AMB") or {}
+        tsl = self._stock_by_ticker("TSL") or {}
+        swc_price = max(1, int(swc.get("current_price", swc.get("base_price", 150))))
+        amb_price = max(1, int(amb.get("current_price", amb.get("base_price", 80))))
+        tsl_price = max(1, int(tsl.get("current_price", tsl.get("base_price", 45))))
+        worker_unrest = float(self.state.get("macro", {}).get("worker_unrest", 50))
+        s_wwi = int(max(0, min(100, round(15 + fc * 0.62 + worker_unrest * 0.35 + max(0, (80 - swc_price)) * 0.22))))
+        s_dbh = int(max(0, min(100, round(10 + fb * 0.74 + max(0, 60 - tsl_price) * 0.3 + int(self._story_metrics_state().get("sam_revolution_fund", 0)) / 220))))
+        s_nac = int(max(0, min(100, round(20 + sn * 0.58 + max(0, (90 - amb_price)) * 0.16 + max(0, (swc_price - 140)) * 0.08))))
+        sui = round(s_wwi * 0.5 + s_dbh * 0.3 + s_nac * 0.2, 1)
+        st = round((swc_price / 150.0 * 0.6) + (80.0 / amb_price * 0.4), 2)
+        revolution_fund = int(self._story_metrics_state().get("sam_revolution_fund", 0))
+        wl = 4 if revolution_fund > 20_000 else 3 if revolution_fund > 8_000 else 2 if revolution_fund > 2_000 else 1
+        shadow = {
+            "S_WWI": s_wwi,
+            "S_DBH": s_dbh,
+            "S_NAC": s_nac,
+            "SUI": sui,
+            "ST": st,
+            "WL": wl,
+            "sam_revolution_fund": revolution_fund,
+            "police_side": "精英猎犬" if amb_price > 100 else "消极待命" if amb_price < 40 else "摇摆观望",
+            "market_risk": "临界点" if sui >= 86 else "动荡期" if sui >= 61 else "摩擦期" if sui >= 31 else "缄默期",
+        }
+        return {"FC": fc, "FB": fb, "SN": sn}, shadow
+
     def _build_stock_exchange_view(self) -> dict[str, Any]:
         player = self.state.get("player", {})
         holdings = {str(name): int(value) for name, value in dict(player.get("stock_holdings", {})).items()}
         stocks_view: list[dict[str, Any]] = []
         holdings_value = 0
         market_total = 0
+        metrics = self._story_metrics_state()
+        reputation = copy.deepcopy(metrics.get("reputation", {}))
+        shadow = copy.deepcopy(metrics.get("shadow_reputation", {}))
+        account_tier = self._stock_account_tier()
         for stock in self.state.get("stocks", []):
             stock_name = str(stock.get("name", ""))
             held = holdings.get(stock_name, 0)
@@ -2533,7 +2672,9 @@ class WorldEngine:
             stocks_view.append(
                 {
                     "id": str(stock.get("id", "")),
+                    "ticker": str(stock.get("ticker", "")),
                     "name": stock_name,
+                    "display_name": self._stock_view_name(stock),
                     "industry": str(stock.get("industry", "")),
                     "family_owner": str(stock.get("family_owner", "")),
                     "current_price": current_price,
@@ -2549,6 +2690,8 @@ class WorldEngine:
                     "float_turnover": round(float(stock.get("float_turnover", 0.0)), 4),
                     "net_cash_flow": round(float(stock.get("net_cash_flow", 0.0)), 2),
                     "market_sentiment": str(stock.get("market_sentiment", "")),
+                    "history": [int(value) for value in list(self.state.get("stock_price_history", {}).get(stock_name, []))[-24:]],
+                    "major_holders": self._major_holders_for_stock(stock_name, limit=3),
                 }
             )
         tape = [
@@ -2564,6 +2707,17 @@ class WorldEngine:
             for row in list(self.state.get("stock_trade_tape", []))[:8]
             if isinstance(row, dict)
         ]
+        sui = float(shadow.get("SUI", 15.0))
+        market_risk = str(shadow.get("market_risk", "缄默期"))
+        warnings: list[str] = []
+        if sui >= 86:
+            warnings.append("系统性风险极高：盘口可能出现临时熔断与黑天鹅抛压。")
+        elif sui >= 61:
+            warnings.append("动荡期：萨姆手续费上调，TSL 可能随机闪崩。")
+        elif sui >= 31:
+            warnings.append("摩擦期：SWC 保证金要求上升，盘口波动开始放大。")
+        if float(shadow.get("ST", 1.0)) > 1.5:
+            warnings.append("社会张力上升：底层生存压力正在反向压迫市场。")
         return {
             "market_open": self._stock_market_is_open(),
             "session_label": self._stock_market_session_label(),
@@ -2573,6 +2727,14 @@ class WorldEngine:
             "player_holdings_value": holdings_value,
             "player_total_wealth": self._player_total_wealth(),
             "market_total_value": market_total,
+            "account_tier": account_tier,
+            "sam_tax_total": int(metrics.get("sam_tax_total", 0)),
+            "player_trading_fees": int(metrics.get("player_trading_fees", 0)),
+            "revolution_fund": int(metrics.get("sam_revolution_fund", 0)),
+            "reputation": reputation,
+            "shadow_reputation": shadow,
+            "market_risk": market_risk,
+            "warnings": warnings,
             "stocks": stocks_view,
             "tape": tape,
         }
@@ -2599,6 +2761,7 @@ class WorldEngine:
             float(stock.get("trade_volume", 0)) / max(float(stock.get("free_float", 1)), 1.0),
             4,
         )
+        self._append_stock_history_point(str(stock.get("name", "")), int(stock["current_price"]))
 
     def _record_stock_trade(
         self,
@@ -2615,6 +2778,7 @@ class WorldEngine:
         stock = self._find_by_name(self.state.get("stocks", []), stock_name)
         if not stock:
             return
+        stock_name = str(stock.get("name", stock_name))
         quantity = max(1, int(quantity))
         total_amount = int(unit_price) * quantity
         stock["trade_volume"] = int(stock.get("trade_volume", 0)) + quantity
@@ -2705,6 +2869,7 @@ class WorldEngine:
         stock = self._find_by_name(self.state.get("stocks", []), stock_name)
         if not stock or action == "hold":
             return None
+        stock_name = str(stock.get("name", stock_name))
         holdings = {str(name): int(value) for name, value in dict(npc.get("stock_positions", {})).items()}
         unit_price = int(stock.get("current_price", 0))
         quantity = int(decision.get("quantity", 0))
@@ -2716,7 +2881,11 @@ class WorldEngine:
                 return None
             quantity = min(quantity, affordable)
             total_amount = unit_price * quantity
-            npc["cash"] = int(npc.get("cash", 0)) - total_amount
+            fee = self._record_stock_fee(total_amount, player_paid=False)
+            total_cost = total_amount + fee
+            if int(npc.get("cash", 0)) < total_cost:
+                return None
+            npc["cash"] = int(npc.get("cash", 0)) - total_cost
             holdings[stock_name] = holdings.get(stock_name, 0) + quantity
             self._record_stock_trade(actor_kind="npc", actor_id=str(npc.get("id", "")), actor_name=str(npc.get("name", "")), stock_name=stock_name, quantity=quantity, direction=1, unit_price=unit_price, source=source)
         else:
@@ -2726,7 +2895,8 @@ class WorldEngine:
             quantity = max(1, quantity or max(1, available // 3))
             quantity = min(quantity, available)
             total_amount = unit_price * quantity
-            npc["cash"] = int(npc.get("cash", 0)) + total_amount
+            fee = self._record_stock_fee(total_amount, player_paid=False)
+            npc["cash"] = int(npc.get("cash", 0)) + max(0, total_amount - fee)
             holdings[stock_name] = max(0, available - quantity)
             self._record_stock_trade(actor_kind="npc", actor_id=str(npc.get("id", "")), actor_name=str(npc.get("name", "")), stock_name=stock_name, quantity=quantity, direction=-1, unit_price=unit_price, source=source)
         npc["stock_positions"] = holdings
@@ -2759,6 +2929,7 @@ class WorldEngine:
         stock = self._find_by_name(self.state["stocks"], stock_name)
         if not stock:
             return ActionResult("没有这支股票。", self.snapshot())
+        stock_name = str(stock.get("name", stock_name))
         quantity = max(quantity, 1)
         cost = stock["current_price"] * quantity
         if direction > 0:
@@ -2811,20 +2982,24 @@ class WorldEngine:
         if not stock:
             self.state["stock_exchange_feedback"] = "没有这支股票。"
             return ActionResult("没有这支股票。", self.snapshot())
+        stock_name = str(stock.get("name", stock_name))
         if not self._stock_market_is_open():
             message = f"交易所当前闭市，可交易时段为 {self._stock_market_session_label()}。"
             self.state["stock_exchange_feedback"] = message
             return ActionResult(message, self.snapshot())
         quantity = max(quantity, 1)
-        cost = int(stock.get("current_price", 0)) * quantity
+        unit_price = int(stock.get("current_price", 0))
+        trade_value = unit_price * quantity
         if direction > 0:
-            if int(player.get("cash", 0)) < cost:
+            fee = self._record_stock_fee(trade_value, player_paid=True)
+            total_cost = trade_value + fee
+            if int(player.get("cash", 0)) < total_cost:
                 self.state["stock_exchange_feedback"] = "现金不足，无法完成买入。"
                 return ActionResult("现金不足。", self.snapshot())
-            player["cash"] = int(player.get("cash", 0)) - cost
+            player["cash"] = int(player.get("cash", 0)) - total_cost
             player["stock_holdings"][stock_name] = int(player["stock_holdings"].get(stock_name, 0)) + quantity
-            if stock_name == "珊瑚金控":
-                self._increment_task_progress("swing_trade_media", stock_name, quantity)
+            if str(stock.get("ticker", "")).upper() == "AMB":
+                self._increment_task_progress("swing_trade_media", str(stock.get("name", stock_name)), quantity)
             self.state["demo_metrics"]["stock_trades"] = int(self.state["demo_metrics"].get("stock_trades", 0)) + quantity
             self._record_stock_trade(
                 actor_kind="player",
@@ -2833,20 +3008,21 @@ class WorldEngine:
                 stock_name=stock_name,
                 quantity=quantity,
                 direction=1,
-                unit_price=int(stock.get("current_price", 0)),
+                unit_price=unit_price,
                 source="player_action",
             )
             self._bump_district_signal("交易所", "liquidity", 0.12 * quantity)
             self._bump_district_signal("交易所", "trade_heat", 0.08 * quantity)
             self._update_player_class()
-            self.state["stock_exchange_feedback"] = f"买入 {stock_name} x{quantity}，成交金额 {cost} 铜币。"
+            self.state["stock_exchange_feedback"] = f"买入 {stock_name} x{quantity}，成交额 {trade_value} 铜币，萨姆抽成 {fee}。"
             self._refresh_derived_views()
             return ActionResult(f"买入 {stock_name} x{quantity}。", self.snapshot())
         if int(player["stock_holdings"].get(stock_name, 0)) < quantity:
             self.state["stock_exchange_feedback"] = "持仓不足，无法完成卖出。"
             return ActionResult("持仓不足。", self.snapshot())
+        fee = self._record_stock_fee(trade_value, player_paid=True)
         player["stock_holdings"][stock_name] = int(player["stock_holdings"].get(stock_name, 0)) - quantity
-        player["cash"] = int(player.get("cash", 0)) + cost
+        player["cash"] = int(player.get("cash", 0)) + max(0, trade_value - fee)
         self.state["demo_metrics"]["stock_trades"] = int(self.state["demo_metrics"].get("stock_trades", 0)) + quantity
         self._record_stock_trade(
             actor_kind="player",
@@ -2855,13 +3031,13 @@ class WorldEngine:
             stock_name=stock_name,
             quantity=quantity,
             direction=-1,
-            unit_price=int(stock.get("current_price", 0)),
+            unit_price=unit_price,
             source="player_action",
         )
         self._bump_district_signal("交易所", "liquidity", 0.1 * quantity)
         self._bump_district_signal("交易所", "trade_heat", 0.06 * quantity)
         self._update_player_class()
-        self.state["stock_exchange_feedback"] = f"卖出 {stock_name} x{quantity}，回笼资金 {cost} 铜币。"
+        self.state["stock_exchange_feedback"] = f"卖出 {stock_name} x{quantity}，回笼资金 {max(0, trade_value - fee)} 铜币，萨姆抽成 {fee}。"
         self._refresh_derived_views()
         return ActionResult(f"卖出 {stock_name} x{quantity}。", self.snapshot())
 
@@ -4306,6 +4482,12 @@ class WorldEngine:
         self._update_player_class()
         collective_profile = copy.deepcopy(self._refresh_player_collective_profile())
         self.state["player_collective_profile"] = collective_profile
+        reputation_tracks, shadow_reputation = self._derive_story_reputation()
+        metrics = self._story_metrics_state()
+        metrics["reputation"] = copy.deepcopy(reputation_tracks)
+        metrics["shadow_reputation"] = copy.deepcopy(shadow_reputation)
+        self.state["player"]["reputation_tracks"] = copy.deepcopy(reputation_tracks)
+        self.state["player"]["shadow_reputation"] = copy.deepcopy(shadow_reputation)
         self.state["population_bias"] = self._build_population_bias()
         self._rebuild_company_states()
         self._rebuild_family_moves()
@@ -4404,6 +4586,15 @@ class WorldEngine:
                 f"{row.get('label', '')}:{row.get('resolution_label', '')}"
                 for row in self.state.get("collective_outcomes", [])[:2]
             ),
+            "reputation_brief": " / ".join(f"{key}:{value}" for key, value in reputation_tracks.items()),
+            "shadow_brief": " / ".join(
+                [
+                    f"SUI:{shadow_reputation.get('SUI', 15)}",
+                    f"ST:{shadow_reputation.get('ST', 1.0)}",
+                    f"WL:{shadow_reputation.get('WL', 1)}",
+                    f"警局:{shadow_reputation.get('police_side', '摇摆观望')}",
+                ]
+            ),
             "last_scene_capture_at": self.state.get("last_scene_capture_at", "未收到"),
         }
         player = self.state["player"]
@@ -4458,6 +4649,8 @@ class WorldEngine:
             "ai_focus": str(self.state.get("llm_pulse_summary", "")),
             "market_note": str(self.state.get("llm_market_note", "")),
             "market_tape": str(latest_trade.get("anonymous_label", "")),
+            "reputation_flash": self.state["macro_summary"]["reputation_brief"],
+            "shadow_flash": self.state["macro_summary"]["shadow_brief"],
         }
         self._snapshot_cache = copy.deepcopy(self.state)
 
@@ -6738,6 +6931,10 @@ class WorldEngine:
 
     def _apply_intraday_market_move(self, reason: str, decay: float) -> None:
         moved: list[str] = []
+        _, shadow = self._derive_story_reputation()
+        st = float(shadow.get("ST", 1.0))
+        sui = float(shadow.get("SUI", 15.0))
+        s_dbh = int(shadow.get("S_DBH", 10))
         for good in self.state["goods"]:
             pressure = float(self.state["market_pressure"]["goods"].get(good["name"], 0.0))
             if abs(pressure) < 0.015:
@@ -6758,7 +6955,19 @@ class WorldEngine:
             self.state["market_pressure"]["goods"][good["name"]] = pressure * decay
         for stock in self.state["stocks"]:
             pressure = float(self.state["market_pressure"]["stocks"].get(stock["name"], 0.0))
-            if abs(pressure) < 0.015:
+            ticker = str(stock.get("ticker", "")).upper()
+            story_bias = 0.0
+            if ticker == "SWC":
+                story_bias += 0.012 + max(0.0, st - 1.0) * 0.01
+                story_bias -= max(0.0, sui - 70.0) * 0.0007
+            elif ticker == "TSL":
+                story_bias += 0.016 if s_dbh > 60 else 0.0
+                story_bias -= max(0.0, sui - 72.0) * 0.0012
+            elif ticker == "AMB":
+                story_bias += 0.012 if sui < 35.0 else -0.012 - max(0.0, st - 1.3) * 0.01
+            effective_pressure = pressure + story_bias
+            if abs(effective_pressure) < 0.015:
+                self._append_stock_history_point(str(stock.get("name", "")), int(stock.get("current_price", 0)))
                 continue
             previous = int(stock["current_price"])
             reference_price = float(stock.get("reference_price", stock["current_price"]))
@@ -6766,13 +6975,14 @@ class WorldEngine:
             mispricing = (float(stock["current_price"]) - reference_price) / max(reference_price, 1.0)
             interest_drag = max(0.0, float(self.state.get("macro", {}).get("interest_rate", 4.0)) - 4.2) * 0.006
             profit_taking = max(0.0, mispricing - 0.18) * 0.24
-            factor = 1.0 + pressure * 0.14 + self.random.uniform(-0.012, 0.012) - mispricing * 0.16 - interest_drag - profit_taking
+            factor = 1.0 + effective_pressure * 0.14 + self.random.uniform(-0.012, 0.012) - mispricing * 0.16 - interest_drag - profit_taking
             factor = max(0.9, min(1.1, factor))
             stock["current_price"] = max(3, int(round(stock["current_price"] * factor)))
             stock["reference_price"] = round(reference_price * 0.992 + float(stock["current_price"]) * 0.008, 3)
             stock["market_sentiment"] = "乐观" if stock["current_price"] > previous else "恐慌" if stock["current_price"] < previous else "谨慎"
             if stock["current_price"] != previous:
                 moved.append(f"{stock['name']}{'涨' if stock['current_price'] > previous else '跌'}到{stock['current_price']}")
+            self._append_stock_history_point(str(stock.get("name", "")), int(stock["current_price"]))
             self.state["market_pressure"]["stocks"][stock["name"]] = pressure * decay
         if moved and reason in {"gather_info", "player_talk", "ai_pulse", "npc_conversation"}:
             self.state["global_news"].insert(
@@ -7446,6 +7656,7 @@ class WorldEngine:
     def _npc_city_summary(self, npc: dict[str, Any]) -> dict[str, Any]:
         district_name = str(npc.get("district", ""))
         macro = self.state.get("macro", {})
+        story_metrics = self._story_metrics_state()
         lead_topic = next(iter(self._active_public_topics(limit=2, district_name=district_name)), {})
         lead_collective = next(iter(self._active_collective_actions_view(limit=2, district_name=district_name)), {})
         district_bias = dict(self.state.get("population_bias", {}).get("districts", {}).get(district_name, {}))
@@ -7458,6 +7669,8 @@ class WorldEngine:
             "worker_unrest": int(macro.get("worker_unrest", 50)),
             "top_topic": str(lead_topic.get("label", "")),
             "top_collective": str(lead_collective.get("label", "")),
+            "reputation": copy.deepcopy(story_metrics.get("reputation", {})),
+            "shadow_reputation": copy.deepcopy(story_metrics.get("shadow_reputation", {})),
             "active_norms": self._active_norms_view(limit=3, district_name=district_name),
             "population_bias": district_bias,
         }
@@ -7478,6 +7691,7 @@ class WorldEngine:
     def _npc_llm_sections(self, npc: dict[str, Any], topic: dict[str, Any] | None = None) -> dict[str, Any]:
         favorability = self._npc_favorability_state(npc)
         profile = self._npc_prompt_profile(npc)
+        story_metrics = self._story_metrics_state()
         return {
             "who_you_are": {
                 "name": str(npc.get("name", "")),
@@ -7510,6 +7724,10 @@ class WorldEngine:
                 "work_status": str(npc.get("activity", "")),
                 "stock_positions": copy.deepcopy(npc.get("stock_positions", {})),
                 "favorability_state": favorability,
+                "story_metrics": {
+                    "reputation": copy.deepcopy(story_metrics.get("reputation", {})),
+                    "shadow_reputation": copy.deepcopy(story_metrics.get("shadow_reputation", {})),
+                },
                 "housing": {
                     "home_building_id": str(npc.get("home_building_id", npc.get("home_id", ""))),
                     "home_subregion_id": str(npc.get("home_subregion_id", "")),
@@ -7597,6 +7815,7 @@ class WorldEngine:
                 "stock_positions": copy.deepcopy(status.get("stock_positions", {})),
                 "speech_register": str(favorability.get("speech_register", "")),
                 "disclosure_willingness": float(favorability.get("disclosure_willingness", 0.0)),
+                "story_metrics": copy.deepcopy(status.get("story_metrics", {})),
             },
             "recent_experiences": {
                 "recent_events": recent_events,
@@ -7613,6 +7832,8 @@ class WorldEngine:
                 "stocks": copy.deepcopy(city.get("stocks", {})),
                 "top_topic": str(city.get("top_topic", "")),
                 "top_collective": str(city.get("top_collective", "")),
+                "reputation": copy.deepcopy(city.get("reputation", {})),
+                "shadow_reputation": copy.deepcopy(city.get("shadow_reputation", {})),
                 "active_norms": [
                     str(row.get("text", "")).strip()
                     for row in city.get("active_norms", [])
@@ -7924,8 +8145,15 @@ class WorldEngine:
         return "normal"
 
     def _find_by_name(self, rows: list[dict[str, Any]], name: str) -> dict[str, Any] | None:
+        needle = str(name).strip()
         for row in rows:
-            if row["name"] == name:
+            if row["name"] == needle:
+                return row
+            if str(row.get("display_name", "")).strip() == needle:
+                return row
+            if str(row.get("ticker", "")).strip().upper() == needle.upper():
+                return row
+            if needle in [str(value).strip() for value in row.get("legacy_names", [])]:
                 return row
         return None
 
@@ -9188,6 +9416,9 @@ class WorldEngine:
         topic_digest = self._npc_topic_digest(npc)
         norm_digest = self._npc_norm_digest(npc)
         collective_digest = self._npc_collective_digest(npc)
+        story_metrics = self._story_metrics_state()
+        rep = dict(story_metrics.get("reputation", {}))
+        shadow = dict(story_metrics.get("shadow_reputation", {}))
         social_style = self._npc_social_style(npc)
         market_style = self._npc_market_style(npc)
         agenda = self._npc_agent_agenda(npc)
@@ -9199,6 +9430,8 @@ class WorldEngine:
             f"表达与专长：说话口气={npc.get('voice_style', '平稳')}，关注领域={domains}，社交风格={social_style}，金融风格={market_style}。\n"
             f"人物级画像：{persona_brief}\n"
             f"短期计划：{agenda}\n"
+            f"城里硬指标：平民声望 FC={rep.get('FC', 10)} / FB={rep.get('FB', 5)} / SN={rep.get('SN', 20)}；"
+            f"影子指标 SUI={shadow.get('SUI', 15)} / ST={shadow.get('ST', 1.0)} / WL={shadow.get('WL', 1)} / 警局倾向={shadow.get('police_side', '摇摆观望')}。\n"
             f"当前显式议题={topic_digest}。\n"
             f"当前显式规范={norm_digest}。\n"
             f"当前显式集体行动={collective_digest}。\n"
@@ -9303,6 +9536,9 @@ class WorldEngine:
 
     def _npc_agent_prompt(self, npc: dict[str, Any]) -> str:
         profile = self._npc_prompt_profile(npc)
+        metrics = self._story_metrics_state()
+        reputation = dict(metrics.get("reputation", {}))
+        shadow = dict(metrics.get("shadow_reputation", {}))
         camp = str(npc.get("camp", npc.get("family_affiliation", "")) or "无阵营")
         route_alignment = str(npc.get("route_alignment", "") or "中立观望")
         family = str(npc.get("family_affiliation", "")) or "无"
@@ -9329,6 +9565,8 @@ class WorldEngine:
             f"关系网络：可信任的人={trusted}；重点盯防的人={watch}；关系钩子={hooks}；可被撬动点={leverage}。\n"
             f"触发规则：泄密条件={leaks}；背叛条件={betrayals}；组织行动条件={actions}；禁忌={taboos}；软肋={soft_spots}。\n"
             f"短期计划：{self._npc_agent_agenda(npc)}\n"
+            f"系统硬指标：FC={reputation.get('FC', 10)}；FB={reputation.get('FB', 5)}；SN={reputation.get('SN', 20)}；"
+            f"SUI={shadow.get('SUI', 15)}；ST={shadow.get('ST', 1.0)}；WL={shadow.get('WL', 1)}；警局倾向={shadow.get('police_side', '摇摆观望')}。\n"
             f"近期现实输入：显式议题={topic_digest}；显式规范={norm_digest}；显式集体行动={collective_digest}。\n"
             "对玩家的互动规则：玩家只是外来玩家或来访者，不预设玩家物种、血统或旧主角身份。你必须依据自己的利益、恐惧、阵营、关系和当前证据说话，不替玩家做决定。\n"
             "你不能凭空发明世界事实。你只能围绕引擎里已给出的事件、关系、价格、组织行动、谣言和制度约束去回应、试探、交易、压价、隐瞒、泄密、背叛或组织行动。\n"

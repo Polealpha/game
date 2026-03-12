@@ -707,22 +707,133 @@ func _draw_stock_exchange_scene() -> void:
 	draw_line(Vector2(678, 728), Vector2(678, 812), Color(1, 1, 1, 0.15), 2.0)
 	draw_rect(Rect2(112, 96, 320, 34), Color("11161d"), true)
 	draw_string(ThemeDB.fallback_font, Vector2(132, 121), "证券交易所内厅", HORIZONTAL_ALIGNMENT_LEFT, 260, 26, Color("f4e3bd"))
-	draw_string(ThemeDB.fallback_font, Vector2(844, 121), "行情室 / 情报墙 / 金库", HORIZONTAL_ALIGNMENT_LEFT, 340, 20, Color("d7cdb6"))
+	draw_string(ThemeDB.fallback_font, Vector2(772, 121), "走势图 / 主力席位 / 影子盘", HORIZONTAL_ALIGNMENT_LEFT, 420, 20, Color("d7cdb6"))
 
-	var board_rect := Rect2(860, 144, 286, 126)
-	draw_rect(board_rect, Color(0.05, 0.08, 0.1, 0.72), true)
+	var chart_rect := Rect2(110, 156, 676, 368)
+	draw_rect(chart_rect, Color(0.05, 0.08, 0.1, 0.78), true)
+	draw_rect(chart_rect, Color(0.8, 0.72, 0.48, 0.24), false, 2.0)
+	for step in range(1, 5):
+		var y := chart_rect.position.y + chart_rect.size.y * step / 5.0
+		draw_line(Vector2(chart_rect.position.x + 18, y), Vector2(chart_rect.end.x - 18, y), Color(1, 1, 1, 0.06), 1.0)
+	for step in range(1, 6):
+		var x := chart_rect.position.x + chart_rect.size.x * step / 6.0
+		draw_line(Vector2(x, chart_rect.position.y + 18), Vector2(x, chart_rect.end.y - 18), Color(1, 1, 1, 0.04), 1.0)
+	draw_string(ThemeDB.fallback_font, chart_rect.position + Vector2(18, 20), "REAL MARKET TAPE", HORIZONTAL_ALIGNMENT_LEFT, 220, 18, Color("f0dfbe"))
+	_draw_exchange_price_charts(chart_rect)
+
+	var board_rect := Rect2(812, 156, 324, 182)
+	draw_rect(board_rect, Color(0.05, 0.08, 0.1, 0.76), true)
 	draw_rect(board_rect, Color(0.75, 0.66, 0.42, 0.38), false, 2.0)
-	draw_string(ThemeDB.fallback_font, board_rect.position + Vector2(12, 18), "LIVE BOARD", HORIZONTAL_ALIGNMENT_LEFT, 120, 16, Color("f0dfbe"))
+	draw_string(ThemeDB.fallback_font, board_rect.position + Vector2(12, 18), "LIVE BOARD", HORIZONTAL_ALIGNMENT_LEFT, 180, 16, Color("f0dfbe"))
 	var board_rows: Array = exchange_hud_state.get("stocks", [])
 	for index in range(min(3, board_rows.size())):
 		var stock: Dictionary = board_rows[index]
 		var change_pct := float(stock.get("change_pct", 0.0)) * 100.0
-		var row_color := Color("d96d52") if change_pct > 0.01 else Color("74b58a") if change_pct < -0.01 else Color("d8b982")
-		var row_text := "%s %s %+0.2f%%" % [str(stock.get("name", "")), int(stock.get("current_price", 0)), change_pct]
-		draw_string(ThemeDB.fallback_font, board_rect.position + Vector2(12, 42 + index * 24), row_text, HORIZONTAL_ALIGNMENT_LEFT, 258, 16, row_color)
+		var row_color := _stock_color(change_pct)
+		var row_text := "%s  %s  %+0.2f%%" % [str(stock.get("ticker", stock.get("name", ""))), int(stock.get("current_price", 0)), change_pct]
+		draw_string(ThemeDB.fallback_font, board_rect.position + Vector2(12, 42 + index * 28), row_text, HORIZONTAL_ALIGNMENT_LEFT, 296, 16, row_color)
+		var holder_name := "暂无大户"
+		var holders: Array = stock.get("major_holders", [])
+		if not holders.is_empty():
+			holder_name = str(holders[0].get("holder_name", "暂无大户"))
+		draw_string(ThemeDB.fallback_font, board_rect.position + Vector2(12, 58 + index * 28), holder_name, HORIZONTAL_ALIGNMENT_LEFT, 296, 13, Color("c7bca0"))
 	var board_status := "MARKET OPEN" if bool(exchange_hud_state.get("market_open", true)) else "MARKET CLOSED"
-	draw_string(ThemeDB.fallback_font, board_rect.position + Vector2(12, 114), board_status, HORIZONTAL_ALIGNMENT_LEFT, 160, 15, Color("d7cdb6"))
-	draw_string(ThemeDB.fallback_font, board_rect.position + Vector2(168, 114), str(exchange_hud_state.get("clock_label", current_clock_label)), HORIZONTAL_ALIGNMENT_LEFT, 100, 15, Color("d7cdb6"))
+	draw_string(ThemeDB.fallback_font, board_rect.position + Vector2(12, 154), board_status, HORIZONTAL_ALIGNMENT_LEFT, 170, 15, Color("d7cdb6"))
+	draw_string(ThemeDB.fallback_font, board_rect.position + Vector2(184, 154), str(exchange_hud_state.get("clock_label", current_clock_label)), HORIZONTAL_ALIGNMENT_LEFT, 120, 15, Color("d7cdb6"))
+
+	var account_rect := Rect2(812, 352, 324, 170)
+	draw_rect(account_rect, Color(0.06, 0.07, 0.1, 0.76), true)
+	draw_rect(account_rect, Color(0.34, 0.65, 0.92, 0.32), false, 2.0)
+	_draw_exchange_metrics_block(account_rect)
+
+	var tape_rect := Rect2(110, 548, 1026, 154)
+	draw_rect(tape_rect, Color(0.04, 0.05, 0.08, 0.8), true)
+	draw_rect(tape_rect, Color(0.75, 0.66, 0.42, 0.2), false, 2.0)
+	draw_string(ThemeDB.fallback_font, tape_rect.position + Vector2(16, 20), "最近成交与风险预警", HORIZONTAL_ALIGNMENT_LEFT, 220, 18, Color("f0dfbe"))
+	_draw_exchange_tape_block(tape_rect)
+
+
+func _stock_color(change_pct: float) -> Color:
+	if change_pct > 0.01:
+		return Color("d96d52")
+	if change_pct < -0.01:
+		return Color("74b58a")
+	return Color("d8b982")
+
+
+func _draw_exchange_price_charts(chart_rect: Rect2) -> void:
+	var stocks: Array = exchange_hud_state.get("stocks", [])
+	if stocks.is_empty():
+		draw_string(ThemeDB.fallback_font, chart_rect.position + Vector2(24, 56), "暂无真实盘口数据", HORIZONTAL_ALIGNMENT_LEFT, 220, 18, Color("d7cdb6"))
+		return
+	var legend_y := chart_rect.position.y + 36.0
+	var palette: Array[Color] = [Color("d96d52"), Color("6fb4e8"), Color("8fd08f")]
+	for index in range(min(3, stocks.size())):
+		var stock: Dictionary = stocks[index]
+		var series: Array = stock.get("history", [])
+		var color: Color = palette[index]
+		var label := "%s %s" % [str(stock.get("ticker", "")), str(stock.get("display_name", stock.get("name", "")))]
+		draw_rect(Rect2(chart_rect.position.x + 22 + index * 214, legend_y - 10, 12, 12), color, true)
+		draw_string(ThemeDB.fallback_font, Vector2(chart_rect.position.x + 40 + index * 214, legend_y), label, HORIZONTAL_ALIGNMENT_LEFT, 190, 14, Color("e8dfc8"))
+		if series.size() < 2:
+			continue
+		var plot_rect: Rect2 = chart_rect.grow(-26)
+		plot_rect.position.y += 34
+		plot_rect.size.y -= 48
+		var min_price: float = float(series[0])
+		var max_price: float = float(series[0])
+		for value in series:
+			min_price = min(min_price, float(value))
+			max_price = max(max_price, float(value))
+		var spread: float = max(1.0, max_price - min_price)
+		var points: PackedVector2Array = PackedVector2Array()
+		for point_index in range(series.size()):
+			var x_ratio: float = float(point_index) / max(1.0, float(series.size() - 1))
+			var y_ratio: float = (float(series[point_index]) - min_price) / spread
+			points.append(Vector2(
+				plot_rect.position.x + x_ratio * plot_rect.size.x,
+				plot_rect.end.y - y_ratio * plot_rect.size.y
+			))
+		if points.size() >= 2:
+			draw_polyline(points, color, 3.0, true)
+			draw_circle(points[points.size() - 1], 4.0, color)
+		var change_pct := float(stock.get("change_pct", 0.0)) * 100.0
+		var stat := "%s  %+0.2f%%" % [int(stock.get("current_price", 0)), change_pct]
+		draw_string(ThemeDB.fallback_font, Vector2(chart_rect.end.x - 182, chart_rect.position.y + 28 + index * 18), stat, HORIZONTAL_ALIGNMENT_LEFT, 160, 14, color)
+
+
+func _draw_exchange_metrics_block(block_rect: Rect2) -> void:
+	var account_tier: Dictionary = exchange_hud_state.get("account_tier", {})
+	var reputation: Dictionary = exchange_hud_state.get("reputation", {})
+	var shadow: Dictionary = exchange_hud_state.get("shadow_reputation", {})
+	var lines := [
+		"账户等级 %s / %s" % [str(account_tier.get("label", "青铜级")), str(account_tier.get("leverage", "1x-10x"))],
+		"现金 %s  持仓 %s" % [int(exchange_hud_state.get("player_cash", 0)), int(exchange_hud_state.get("player_holdings_value", 0))],
+		"总资产 %s" % int(exchange_hud_state.get("player_total_wealth", 0)),
+		"革命税 %s / 总抽成 %s" % [int(exchange_hud_state.get("player_trading_fees", 0)), int(exchange_hud_state.get("sam_tax_total", 0))],
+		"FC %s  FB %s  SN %s" % [int(reputation.get("FC", 10)), int(reputation.get("FB", 5)), int(reputation.get("SN", 20))],
+		"SUI %s  ST %s  WL %s" % [shadow.get("SUI", 15), shadow.get("ST", 1.0), int(shadow.get("WL", 1))],
+		"警局 %s" % str(shadow.get("police_side", "摇摆观望")),
+		"风险 %s" % str(exchange_hud_state.get("market_risk", "缄默期")),
+	]
+	for index in range(lines.size()):
+		draw_string(ThemeDB.fallback_font, block_rect.position + Vector2(14, 22 + index * 18), lines[index], HORIZONTAL_ALIGNMENT_LEFT, 298, 15, Color("ddd4bf"))
+
+
+func _draw_exchange_tape_block(tape_rect: Rect2) -> void:
+	var tape: Array = exchange_hud_state.get("tape", [])
+	var warnings: Array = exchange_hud_state.get("warnings", [])
+	var line_y := tape_rect.position.y + 46.0
+	for row in tape.slice(0, min(4, tape.size())):
+		var text := str(row.get("anonymous_label", "刚才还没有新的成交。"))
+		draw_string(ThemeDB.fallback_font, Vector2(tape_rect.position.x + 18, line_y), text, HORIZONTAL_ALIGNMENT_LEFT, 620, 15, Color("d7cdb6"))
+		line_y += 18.0
+	if tape.is_empty():
+		draw_string(ThemeDB.fallback_font, Vector2(tape_rect.position.x + 18, line_y), "刚才还没有新的成交。", HORIZONTAL_ALIGNMENT_LEFT, 420, 15, Color("d7cdb6"))
+	var warning_y := tape_rect.position.y + 46.0
+	for warning in warnings.slice(0, min(3, warnings.size())):
+		draw_string(ThemeDB.fallback_font, Vector2(tape_rect.position.x + 650, warning_y), str(warning), HORIZONTAL_ALIGNMENT_LEFT, 350, 15, Color("dfb96d"))
+		warning_y += 18.0
 
 func _draw_floor() -> void:
 	draw_rect(Rect2(76, 120, 1168, 696), house_theme.get("floor", Color("5c432d")), true)

@@ -4434,24 +4434,29 @@ func _update_exchange_terminal(snapshot: Dictionary) -> void:
 	var clock_label := str(exchange_view.get("clock_label", "08:00"))
 	var feedback := _sanitize_visible_text(str(exchange_view.get("feedback", "")), "")
 	var market_open := bool(exchange_view.get("market_open", true))
-	var player_data := {
-		"cash": int(exchange_view.get("player_cash", 0)),
-	}
-	var total_stock_value := int(exchange_view.get("player_holdings_value", 0))
+	var account_tier: Dictionary = exchange_view.get("account_tier", {})
+	var reputation: Dictionary = exchange_view.get("reputation", {})
+	var shadow: Dictionary = exchange_view.get("shadow_reputation", {})
+	var warnings: Array = exchange_view.get("warnings", [])
 	var lines: Array[String] = []
 	for stock in stocks:
-		var stock_name := str(stock.get("name", ""))
+		var stock_name := str(stock.get("display_name", stock.get("name", "")))
 		var price := int(stock.get("current_price", 0))
 		var held := int(stock.get("held", 0))
 		var market_cap := int(stock.get("market_cap", 0))
 		var change_amount := int(stock.get("change_amount", 0))
 		var change_pct := float(stock.get("change_pct", 0.0)) * 100.0
+		var trade_volume := int(stock.get("trade_volume", 0))
+		var holders: Array = stock.get("major_holders", [])
+		var holder_parts: Array[String] = []
+		for holder in holders:
+			holder_parts.append("%s:%s" % [str(holder.get("holder_name", "")), int(holder.get("shares", 0))])
 		var change_color := "#d8b982"
 		if change_pct > 0.01:
 			change_color = "#d96d52"
 		elif change_pct < -0.01:
 			change_color = "#74b58a"
-		lines.append("[b]%s[/b]  现价 %s  持仓 %s\n[color=%s]涨跌 %+d / %+.2f%%[/color]  总市值 %s" % [
+		lines.append("[b]%s[/b]  现价 %s  持仓 %s\n[color=%s]涨跌 %+d / %+.2f%%[/color]  总市值 %s  成交量 %s\n主力席位 %s" % [
 			stock_name,
 			price,
 			held,
@@ -4459,31 +4464,43 @@ func _update_exchange_terminal(snapshot: Dictionary) -> void:
 			change_amount,
 			change_pct,
 			market_cap,
+			trade_volume,
+			" / ".join(holder_parts) if not holder_parts.is_empty() else "暂无大户",
 		])
-	exchange_terminal_summary.text = "[b]账户[/b] 现金 %s 铜币  持仓总值 %s\n[b]交易所状态[/b] 室内盘口与你的账本完全同步。\n%s" % [
-		int(player_data.get("cash", 0)),
-		total_stock_value,
-		"\n\n".join(lines),
-	]
 	var status_color := "#74b58a" if market_open else "#d96d52"
 	var status_line := "[color=%s]%s[/color]" % [status_color, "开市" if market_open else "休市"]
 	if not feedback.is_empty():
 		status_line += "  %s" % feedback
-	exchange_terminal_summary.text = "[b]账户[/b] 现金 %s 铜币  持仓总值 %s  总资产 %s\n[b]交易所状态[/b] %s  当前时间 %s  交易时段 %s\n%s" % [
+	var warning_lines: Array[String] = []
+	for warning in warnings.slice(0, min(2, warnings.size())):
+		warning_lines.append(" - %s" % str(warning))
+	exchange_terminal_summary.text = "[b]账户[/b] %s  杠杆 %s  现金 %s  持仓总值 %s  总资产 %s\n[b]交易所状态[/b] %s  当前时间 %s  交易时段 %s\n[b]革命税[/b] 玩家累计 %s  全市场累计 %s  起义军武装等级 WL %s\n[b]声望[/b] FC %s / FB %s / SN %s\n[b]影子盘[/b] SUI %s / ST %s / 风险 %s / 警局 %s\n%s%s" % [
+		str(account_tier.get("label", "青铜级")),
+		str(account_tier.get("leverage", "1x-10x")),
 		int(exchange_view.get("player_cash", 0)),
 		int(exchange_view.get("player_holdings_value", 0)),
 		int(exchange_view.get("player_total_wealth", 0)),
 		status_line,
 		clock_label,
 		session_label,
+		int(exchange_view.get("player_trading_fees", 0)),
+		int(exchange_view.get("sam_tax_total", 0)),
+		int(shadow.get("WL", 1)),
+		int(reputation.get("FC", 10)),
+		int(reputation.get("FB", 5)),
+		int(reputation.get("SN", 20)),
+		shadow.get("SUI", 15),
+		shadow.get("ST", 1.0),
+		str(exchange_view.get("market_risk", "缄默期")),
+		str(shadow.get("police_side", "摇摆观望")),
+		"\n".join(warning_lines) + "\n" if not warning_lines.is_empty() else "",
 		"\n\n".join(lines),
 	]
 	var tape_lines: Array[String] = []
 	for row in tape.slice(0, min(4, tape.size())):
-		tape_lines.append("• %s" % _sanitize_visible_text(str(row.get("anonymous_label", "")), "刚才还没有新的成交。"))
+		tape_lines.append("- %s" % _sanitize_visible_text(str(row.get("anonymous_label", "")), "刚才还没有新的成交。"))
 	if tape_lines.is_empty():
-		tape_lines.append("• 刚才还没有新的成交。")
-	exchange_terminal_tape.text = "[b]最近成交[/b]\n%s" % "\n".join(tape_lines)
+		tape_lines.append("- 刚才还没有新的成交。")
 	exchange_terminal_tape.text = "[b]最近成交[/b]\n%s" % "\n".join(tape_lines)
 	for child in exchange_terminal_actions.get_children():
 		child.queue_free()
@@ -4492,7 +4509,7 @@ func _update_exchange_terminal(snapshot: Dictionary) -> void:
 		var row := HBoxContainer.new()
 		row.add_theme_constant_override("separation", 8)
 		var row_label := Label.new()
-		row_label.text = stock_name
+		row_label.text = str(stock.get("ticker", stock_name))
 		row_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		row_label.add_theme_font_size_override("font_size", 16)
 		row_label.add_theme_color_override("font_color", Color("f0dfbe"))

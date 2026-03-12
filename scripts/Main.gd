@@ -132,6 +132,12 @@ var news_ticker_label := RichTextLabel.new()
 var interaction_badge_label := Label.new()
 var inspect_badge := Label.new()
 var hud_badge := Label.new()
+var exchange_terminal_panel := PanelContainer.new()
+var exchange_terminal_title := Label.new()
+var exchange_terminal_summary := RichTextLabel.new()
+var exchange_terminal_tape := RichTextLabel.new()
+var exchange_terminal_actions := VBoxContainer.new()
+var exchange_terminal_nodes: Array[CanvasItem] = []
 var minimap_panel_node: CanvasItem
 var subtitle_panel_node: CanvasItem
 var toast_tween: Tween
@@ -377,6 +383,54 @@ func _build_ui() -> void:
 	news_ticker_label.custom_minimum_size = Vector2(860, 30)
 	news_ticker_label.add_theme_color_override("default_color", Color("f3e7c7"))
 	ticker_margin.add_child(news_ticker_label)
+	
+	var exchange_style := StyleBoxFlat.new()
+	exchange_style.bg_color = Color(0.09, 0.12, 0.16, 0.9)
+	exchange_style.border_color = Color("d8b982")
+	exchange_style.border_width_left = 2
+	exchange_style.border_width_top = 2
+	exchange_style.border_width_right = 2
+	exchange_style.border_width_bottom = 2
+	exchange_style.corner_radius_top_left = 10
+	exchange_style.corner_radius_top_right = 10
+	exchange_style.corner_radius_bottom_left = 10
+	exchange_style.corner_radius_bottom_right = 10
+	exchange_terminal_panel.position = Vector2(1060, 122)
+	exchange_terminal_panel.size = Vector2(510, 446)
+	exchange_terminal_panel.visible = false
+	exchange_terminal_panel.add_theme_stylebox_override("panel", exchange_style)
+	ui_root.add_child(exchange_terminal_panel)
+	exchange_terminal_nodes.append(exchange_terminal_panel)
+
+	var exchange_margin := MarginContainer.new()
+	exchange_margin.set_anchors_preset(Control.PRESET_FULL_RECT)
+	exchange_margin.add_theme_constant_override("margin_left", 14)
+	exchange_margin.add_theme_constant_override("margin_top", 12)
+	exchange_margin.add_theme_constant_override("margin_right", 14)
+	exchange_margin.add_theme_constant_override("margin_bottom", 12)
+	exchange_terminal_panel.add_child(exchange_margin)
+
+	var exchange_box := VBoxContainer.new()
+	exchange_box.add_theme_constant_override("separation", 8)
+	exchange_margin.add_child(exchange_box)
+
+	exchange_terminal_title.text = "证券交易终端"
+	exchange_terminal_title.add_theme_font_size_override("font_size", 24)
+	exchange_terminal_title.add_theme_color_override("font_color", Color("f4dfb7"))
+	exchange_box.add_child(exchange_terminal_title)
+
+	_setup_rich_text(exchange_terminal_summary, false)
+	exchange_terminal_summary.custom_minimum_size = Vector2(0, 164)
+	exchange_terminal_summary.add_theme_color_override("default_color", Color("e9dcc0"))
+	exchange_box.add_child(exchange_terminal_summary)
+
+	_setup_rich_text(exchange_terminal_tape, false)
+	exchange_terminal_tape.custom_minimum_size = Vector2(0, 82)
+	exchange_terminal_tape.add_theme_color_override("default_color", Color("d4c29c"))
+	exchange_box.add_child(exchange_terminal_tape)
+
+	exchange_terminal_actions.add_theme_constant_override("separation", 6)
+	exchange_box.add_child(exchange_terminal_actions)
 
 	var overview_panel := _make_panel(Rect2(18, 18, 448, 148), "乌龟账本")
 	overview_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -631,6 +685,7 @@ func _build_ui() -> void:
 	)
 	modal_box.add_child(dismiss)
 	_apply_visibility_modes()
+	_update_exchange_terminal(last_snapshot)
 
 
 func _layout_modal_card() -> void:
@@ -1325,35 +1380,44 @@ func _update_current_interactable() -> void:
 func _interaction_anchor_for_node(node: InteractableView) -> Vector2:
 	var anchor := node.position
 	if node.kind == "house" and node.interaction_id == "exchange_house":
-		anchor += Vector2(0.0, 108.0)
+		anchor += Vector2(0.0, 132.0)
 	return anchor
 
 
 func _interaction_radius_for_node(node: InteractableView) -> float:
 	if node.kind == "house":
 		if node.interaction_id == "exchange_house":
-			return 176.0
+			return 216.0
 		return HOUSE_ENTRY_RADIUS * WORLD_VISUAL_SCALE
 	return 78.0 * WORLD_VISUAL_SCALE
 
 
+func _exchange_house_node() -> InteractableView:
+	for node in interactables:
+		if node.kind == "house" and node.interaction_id == "exchange_house":
+			return node
+	return null
+
+
+func _exchange_entry_zone(node: InteractableView) -> Rect2:
+	var center := _interaction_anchor_for_node(node)
+	return Rect2(center + Vector2(-188.0, -44.0), Vector2(376.0, 236.0))
+
+
 func _maybe_trigger_auto_house_entry() -> void:
-	if current_interactable == null or current_interactable.kind != "house":
-		return
-	if current_interactable.interaction_id != "exchange_house":
+	var exchange_house := _exchange_house_node()
+	if exchange_house == null:
 		return
 	if modal_overlay.visible or ledger_ui_visible or inspection_mode or not pending_dialogue_request.is_empty():
-		return
-	if last_move_input.length() <= 0.08:
 		return
 	var now := Time.get_ticks_msec()
 	if now - last_auto_enter_msec < 900:
 		return
-	var distance := player.position.distance_to(_interaction_anchor_for_node(current_interactable))
-	if distance > _interaction_radius_for_node(current_interactable) * 0.86:
+	var entry_zone := _exchange_entry_zone(exchange_house)
+	if not entry_zone.has_point(player.position):
 		return
 	last_auto_enter_msec = now
-	_submit_interaction(_default_payload_for_interactable(current_interactable))
+	_submit_interaction(_default_payload_for_interactable(exchange_house))
 
 
 func _open_interactable_actions() -> void:
@@ -1412,6 +1476,8 @@ func _trigger_primary_interaction() -> void:
 
 
 func _default_payload_for_current_context() -> Dictionary:
+	if current_interactable != null and current_interactable.kind == "house" and current_interactable.interaction_id == "exchange_house":
+		return _default_payload_for_interactable(current_interactable)
 	var nearby_npcs := _get_nearby_npcs(1, DIRECT_TALK_RADIUS * WORLD_VISUAL_SCALE)
 	if not nearby_npcs.is_empty():
 		var npc_id := str(nearby_npcs[0].get("id", ""))
@@ -2891,7 +2957,9 @@ func _on_snapshot_updated(snapshot: Dictionary) -> void:
 		visual_clock_minutes,
 		str(visual_summary.get("clock_label", "08:00"))
 	)
+	house_interior.set_exchange_hud_state(snapshot.get("stock_exchange_view", {}))
 	house_interior.update_house_state(_house_state_for_id(str(current_house_data.get("id", ""))))
+	_update_exchange_terminal(snapshot)
 	_refresh_npcs()
 	if modal_overlay.visible and not active_dialogue_context.is_empty():
 		_refresh_modal_trade_panel(active_dialogue_context)
@@ -3807,6 +3875,10 @@ func _apply_visibility_modes() -> void:
 	for node in compact_ui_nodes:
 		if is_instance_valid(node):
 			node.visible = compact_visible
+	var exchange_visible := _exchange_terminal_active() and not inspection_mode
+	for node in exchange_terminal_nodes:
+		if is_instance_valid(node):
+			node.visible = exchange_visible
 	if is_instance_valid(minimap_panel_node):
 		minimap_panel_node.visible = ui_panels_visible and not interior_mode
 	if is_instance_valid(subtitle_panel_node):
@@ -3833,6 +3905,7 @@ func _set_interior_mode(enabled: bool, house_data: Dictionary = {}) -> void:
 			"subtitle": str(house_data.get("subtitle", "床铺、厨房和储物箱都在里面。")),
 			"district": str(house_data.get("district", "贫民街"))
 		})
+		house_interior.set_exchange_hud_state(last_snapshot.get("stock_exchange_view", {}))
 		house_interior.set_active(true)
 		world_camera.enabled = false
 		player.set_movement_direction(Vector2.ZERO)
@@ -4292,6 +4365,119 @@ func _submit_modal_trade(quote: Dictionary) -> void:
 		"trade_mode": action_type,
 		"district": _current_district_for_position(player.position if not interior_mode else house_interior.get_player_position()),
 		"payload": payload
+	})
+
+
+func _exchange_terminal_active() -> bool:
+	return interior_mode and str(current_house_data.get("id", "")) == "stock_exchange"
+
+
+func _update_exchange_terminal(snapshot: Dictionary) -> void:
+	if not is_instance_valid(exchange_terminal_panel):
+		return
+	if not _exchange_terminal_active():
+		exchange_terminal_summary.text = ""
+		exchange_terminal_tape.text = ""
+		for child in exchange_terminal_actions.get_children():
+			child.queue_free()
+		return
+	var exchange_view: Dictionary = snapshot.get("stock_exchange_view", {})
+	var stocks: Array = exchange_view.get("stocks", [])
+	var tape: Array = exchange_view.get("tape", [])
+	var session_label := str(exchange_view.get("session_label", "08:00-18:00"))
+	var clock_label := str(exchange_view.get("clock_label", "08:00"))
+	var feedback := _sanitize_visible_text(str(exchange_view.get("feedback", "")), "")
+	var market_open := bool(exchange_view.get("market_open", true))
+	var player_data := {
+		"cash": int(exchange_view.get("player_cash", 0)),
+	}
+	var total_stock_value := int(exchange_view.get("player_holdings_value", 0))
+	var lines: Array[String] = []
+	for stock in stocks:
+		var stock_name := str(stock.get("name", ""))
+		var price := int(stock.get("current_price", 0))
+		var held := int(stock.get("held", 0))
+		var market_cap := int(stock.get("market_cap", 0))
+		var change_amount := int(stock.get("change_amount", 0))
+		var change_pct := float(stock.get("change_pct", 0.0)) * 100.0
+		var change_color := "#d8b982"
+		if change_pct > 0.01:
+			change_color = "#d96d52"
+		elif change_pct < -0.01:
+			change_color = "#74b58a"
+		lines.append("[b]%s[/b]  现价 %s  持仓 %s\n[color=%s]涨跌 %+d / %+.2f%%[/color]  总市值 %s" % [
+			stock_name,
+			price,
+			held,
+			change_color,
+			change_amount,
+			change_pct,
+			market_cap,
+		])
+	exchange_terminal_summary.text = "[b]账户[/b] 现金 %s 铜币  持仓总值 %s\n[b]交易所状态[/b] 室内盘口与你的账本完全同步。\n%s" % [
+		int(player_data.get("cash", 0)),
+		total_stock_value,
+		"\n\n".join(lines),
+	]
+	var status_color := "#74b58a" if market_open else "#d96d52"
+	var status_line := "[color=%s]%s[/color]" % [status_color, "开市" if market_open else "休市"]
+	if not feedback.is_empty():
+		status_line += "  %s" % feedback
+	exchange_terminal_summary.text = "[b]账户[/b] 现金 %s 铜币  持仓总值 %s  总资产 %s\n[b]交易所状态[/b] %s  当前时间 %s  交易时段 %s\n%s" % [
+		int(exchange_view.get("player_cash", 0)),
+		int(exchange_view.get("player_holdings_value", 0)),
+		int(exchange_view.get("player_total_wealth", 0)),
+		status_line,
+		clock_label,
+		session_label,
+		"\n\n".join(lines),
+	]
+	var tape_lines: Array[String] = []
+	for row in tape.slice(0, min(4, tape.size())):
+		tape_lines.append("• %s" % _sanitize_visible_text(str(row.get("anonymous_label", "")), "刚才还没有新的成交。"))
+	if tape_lines.is_empty():
+		tape_lines.append("• 刚才还没有新的成交。")
+	exchange_terminal_tape.text = "[b]最近成交[/b]\n%s" % "\n".join(tape_lines)
+	exchange_terminal_tape.text = "[b]最近成交[/b]\n%s" % "\n".join(tape_lines)
+	for child in exchange_terminal_actions.get_children():
+		child.queue_free()
+	for stock in stocks:
+		var stock_name := str(stock.get("name", ""))
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 8)
+		var row_label := Label.new()
+		row_label.text = stock_name
+		row_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row_label.add_theme_font_size_override("font_size", 16)
+		row_label.add_theme_color_override("font_color", Color("f0dfbe"))
+		row.add_child(row_label)
+		for spec in [
+			{"text": "买1", "mode": "buy_stock", "qty": 1, "base": Color("2f6f4f"), "hover": Color("3f8a60"), "press": Color("244f3a")},
+			{"text": "卖1", "mode": "sell_stock", "qty": 1, "base": Color("6c4a2a"), "hover": Color("8a6037"), "press": Color("4f3520")},
+			{"text": "买10", "mode": "buy_stock", "qty": 10, "base": Color("2f6f4f"), "hover": Color("3f8a60"), "press": Color("244f3a")},
+			{"text": "卖10", "mode": "sell_stock", "qty": 10, "base": Color("6c4a2a"), "hover": Color("8a6037"), "press": Color("4f3520")},
+		]:
+			var button := Button.new()
+			button.text = str(spec.get("text", "交易"))
+			button.custom_minimum_size = Vector2(58, 32)
+			_style_button(button, spec.get("base", Color("6c4a2a")), spec.get("hover", Color("8a6037")), spec.get("press", Color("4f3520")))
+			button.pressed.connect(func() -> void:
+				_submit_exchange_stock_trade(stock_name, str(spec.get("mode", "buy_stock")), int(spec.get("qty", 1)))
+			)
+			row.add_child(button)
+		exchange_terminal_actions.add_child(row)
+
+
+func _submit_exchange_stock_trade(stock_name: String, action_type: String, quantity: int) -> void:
+	if stock_name.is_empty() or quantity <= 0:
+		return
+	_submit_interaction({
+		"action_type": action_type,
+		"district": _current_district_for_position(player.position if not interior_mode else house_interior.get_player_position()),
+		"payload": {
+			"stock_name": stock_name,
+			"quantity": quantity,
+		},
 	})
 
 

@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from .ark_client import ArkClient
+from .npc_story_overrides import NPC_STORY_OVERRIDES
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 HOUSE_DEFS: dict[str, dict[str, str]] = {
@@ -254,7 +255,15 @@ class WorldEngine:
             npcs = copy.deepcopy(self.npc_defs)
             residence_occupancy: dict[str, int] = {}
             for index, npc in enumerate(npcs):
-                npc["prompt_profile"] = copy.deepcopy(self.npc_prompt_defs.get(str(npc.get("id", "")), {}))
+                npc_id = str(npc.get("id", ""))
+                story_override = copy.deepcopy(NPC_STORY_OVERRIDES.get(npc_id, {}))
+                prompt_override = story_override.pop("prompt_profile", {}) if isinstance(story_override, dict) else {}
+                if isinstance(story_override, dict):
+                    npc.update(story_override)
+                base_prompt_profile = copy.deepcopy(self.npc_prompt_defs.get(npc_id, {}))
+                if isinstance(prompt_override, dict):
+                    base_prompt_profile.update(prompt_override)
+                npc["prompt_profile"] = base_prompt_profile
                 npc["social_band"] = self._npc_social_band(npc)
                 npc["current_goal"] = npc.get("current_goal", "守住今天")
                 npc["mood"] = npc.get("mood", "wary")
@@ -347,6 +356,8 @@ class WorldEngine:
                 "stocks": stocks,
                 "stock_trade_tape": [],
                 "stock_holder_registry": {},
+                "stock_exchange_feedback": "",
+                "stock_exchange_view": {},
                 "families": families,
                 "companies": companies,
                 "districts": districts,
@@ -467,9 +478,9 @@ class WorldEngine:
                 case "sell_goods":
                     return self._trade_good(payload["good_name"], int(payload.get("quantity", 1)), -1, payload)
                 case "buy_stock":
-                    return self._trade_stock(payload["stock_name"], int(payload.get("quantity", 1)), 1)
+                    return self._trade_stock_v2(payload["stock_name"], int(payload.get("quantity", 1)), 1)
                 case "sell_stock":
-                    return self._trade_stock(payload["stock_name"], int(payload.get("quantity", 1)), -1)
+                    return self._trade_stock_v2(payload["stock_name"], int(payload.get("quantity", 1)), -1)
                 case "gift_money":
                     return self._gift_money_to_npc(str(payload.get("npc_id", "")), int(payload.get("amount", 0)), district)
                 case "buy_intel":
@@ -522,7 +533,7 @@ class WorldEngine:
                 self._record_scene_observation(scene_observation)
             self.state["demo_metrics"]["ai_pulses"] = int(self.state["demo_metrics"].get("ai_pulses", 0)) + 1
             self._generate_ai_pulse(trigger=trigger)
-            var_allow_social_llm = not self._is_background_scene_pulse(trigger)
+            var_allow_social_llm = self._allow_live_pulse_llm(trigger)
             self._run_agent_social_turns(scene_observation or {}, allow_llm=var_allow_social_llm)
             self._apply_intraday_market_move(reason="ai_pulse", decay=0.72)
             self._decay_district_signals()
@@ -564,7 +575,7 @@ class WorldEngine:
             district = district or str(npc["district"])
             live_observation = copy.deepcopy(self.state.get("scene_observation", {}))
             self._refresh_derived_views()
-            topic = self._resolve_talk_topic(npc, topic_id, district)
+            topic = self._select_player_talk_topic(npc, topic_id, district, player_input, intent)
             truth_profile = self._truth_metrics_for_topic(npc, topic, approach, intent)
             trust_delta, intel_strength, npc_openness = self._evaluate_talk_approach(npc, topic, approach)
             favorability_state = self._npc_favorability_state(npc)
@@ -577,39 +588,30 @@ class WorldEngine:
                     "speaker": {
                         "name": "玩家",
                         "district": district,
-                        "family_affiliation": "",
+                        "role": "玩家",
                         "mood": "wary",
                         "current_goal": topic.get("label", "街头风声"),
-                        "fear": 24,
-                        "greed": 28,
-                        "relationship_memory": copy.deepcopy(npc_snapshot.get("player_memory", {})),
                     },
-                    "speaker_agent": {
-                        "agent_id": "player_proxy",
-                        "system_prompt": "你代表玩家发起这一轮问话。只负责复述玩家原话、交代问法和意图，不替 NPC 回答。",
-                        "tool_policy": ["保持玩家语气", "不替 NPC 编回答", "围绕当前议题追问"],
-                        "memory": copy.deepcopy(list(npc_snapshot.get("relationship_memory", []))[:4]),
-                    },
-                    "listener": npc_snapshot,
-                    "listener_agent": self._npc_agent_profile(npc_snapshot),
+                    "listener": self._dialogue_listener_brief(npc_snapshot),
                     "district": district,
                     "trigger": "玩家搭话",
                     "topic": topic,
                     "approach": approach,
                     "intent": intent,
                     "player_input": player_input,
-                    "active_topics": self._active_public_topics(limit=4, district_name=district),
-                    "active_norms": self._active_norms_view(limit=4, district_name=district),
-                    "active_collective_actions": self._active_collective_actions_view(limit=4, district_name=district),
-                    "scene_observation": live_observation,
                     "truth_profile": truth_profile,
                     "favorability_state": favorability_state,
-                    "listener_sections": self._npc_llm_sections(npc_snapshot, topic),
+                    "listener_sections": self._dialogue_listener_sections(npc_snapshot, topic),
                     "relationship_memory": {
                         "player_memory": copy.deepcopy(npc_snapshot.get("player_memory", {})),
-                        "recent_events": copy.deepcopy(list(npc_snapshot.get("relationship_memory", []))[:4]),
-                        "conversation_history": self._dialogue_history_view(npc_snapshot, counterpart_id="player", limit=5),
-                        "local_memory": self._local_memory_view(npc_snapshot, counterpart_id="player", topic_id=str(topic.get("id", "")), limit=5),
+                        "recent_events": copy.deepcopy(list(npc_snapshot.get("relationship_memory", []))[:2]),
+                        "conversation_history": self._dialogue_history_view(npc_snapshot, counterpart_id="player", limit=2),
+                        "local_memory": self._local_memory_view(npc_snapshot, counterpart_id="player", topic_id=str(topic.get("id", "")), limit=2),
+                    },
+                    "scene_observation": {
+                        "current_district": district,
+                        "scene_context": live_observation.get("scene_context", {}),
+                        "screenshot_b64": live_observation.get("screenshot_b64", ""),
                     },
                 }
         if llm_payload is not None:
@@ -2496,6 +2498,80 @@ class WorldEngine:
             rows.sort(key=lambda row: int(row.get("shares", 0)), reverse=True)
         self.state["stock_holder_registry"] = registry
 
+    @staticmethod
+    def _stock_market_session_bounds() -> tuple[int, int]:
+        return 8 * 60, 18 * 60
+
+    def _stock_market_is_open(self) -> bool:
+        start_minutes, end_minutes = self._stock_market_session_bounds()
+        clock_minutes = int(self.state.get("clock_minutes", 8 * 60))
+        return start_minutes <= clock_minutes <= end_minutes
+
+    def _stock_market_session_label(self) -> str:
+        start_minutes, end_minutes = self._stock_market_session_bounds()
+        return f"{start_minutes // 60:02d}:{start_minutes % 60:02d}-{end_minutes // 60:02d}:{end_minutes % 60:02d}"
+
+    def _build_stock_exchange_view(self) -> dict[str, Any]:
+        player = self.state.get("player", {})
+        holdings = {str(name): int(value) for name, value in dict(player.get("stock_holdings", {})).items()}
+        stocks_view: list[dict[str, Any]] = []
+        holdings_value = 0
+        market_total = 0
+        for stock in self.state.get("stocks", []):
+            stock_name = str(stock.get("name", ""))
+            held = holdings.get(stock_name, 0)
+            current_price = int(stock.get("current_price", 0))
+            market_cap = int(stock.get("market_cap", int(stock.get("issued_shares", 0)) * current_price))
+            holding_value = held * current_price
+            holdings_value += holding_value
+            market_total += market_cap
+            stocks_view.append(
+                {
+                    "id": str(stock.get("id", "")),
+                    "name": stock_name,
+                    "industry": str(stock.get("industry", "")),
+                    "family_owner": str(stock.get("family_owner", "")),
+                    "current_price": current_price,
+                    "previous_close": int(stock.get("previous_close", stock.get("base_price", 0))),
+                    "reference_price": float(stock.get("reference_price", stock.get("base_price", 0))),
+                    "issued_shares": int(stock.get("issued_shares", 0)),
+                    "market_cap": market_cap,
+                    "held": held,
+                    "holding_value": holding_value,
+                    "change_amount": int(stock.get("change_amount", 0)),
+                    "change_pct": round(float(stock.get("change_pct", 0.0)), 4),
+                    "trade_volume": int(stock.get("trade_volume", 0)),
+                    "float_turnover": round(float(stock.get("float_turnover", 0.0)), 4),
+                    "net_cash_flow": round(float(stock.get("net_cash_flow", 0.0)), 2),
+                    "market_sentiment": str(stock.get("market_sentiment", "")),
+                }
+            )
+        tape = [
+            {
+                "stock_name": str(row.get("stock_name", "")),
+                "side": str(row.get("side", "")),
+                "quantity": int(row.get("quantity", 0)),
+                "unit_price": int(row.get("unit_price", 0)),
+                "total_amount": int(row.get("total_amount", 0)),
+                "clock": str(row.get("clock", "")),
+                "anonymous_label": str(row.get("anonymous_label", "")),
+            }
+            for row in list(self.state.get("stock_trade_tape", []))[:8]
+            if isinstance(row, dict)
+        ]
+        return {
+            "market_open": self._stock_market_is_open(),
+            "session_label": self._stock_market_session_label(),
+            "clock_label": self._clock_label(),
+            "feedback": str(self.state.get("stock_exchange_feedback", "")),
+            "player_cash": int(player.get("cash", 0)),
+            "player_holdings_value": holdings_value,
+            "player_total_wealth": self._player_total_wealth(),
+            "market_total_value": market_total,
+            "stocks": stocks_view,
+            "tape": tape,
+        }
+
     def _reprice_stock_after_trade(self, stock: dict[str, Any], trade_cash: float, direction: int) -> None:
         previous = int(stock.get("current_price", 0))
         current_price = max(1.0, float(stock.get("current_price", 1)))
@@ -2614,6 +2690,8 @@ class WorldEngine:
         return {"action": "hold", "stock_name": focus_name, "quantity": 0, "confidence": 0.32, "note": ""}
 
     def _apply_npc_trade_decision(self, npc: dict[str, Any], raw: Any, source: str = "rule") -> dict[str, Any] | None:
+        if not self._stock_market_is_open():
+            return None
         decision = self._coerce_trade_decision(raw, npc)
         if decision["action"] == "hold":
             decision = self._rule_npc_trade_decision(npc)
@@ -2719,6 +2797,66 @@ class WorldEngine:
         self._bump_district_signal("交易所", "liquidity", 0.1 * quantity)
         self._bump_district_signal("交易所", "trade_heat", 0.06 * quantity)
         self._update_player_class()
+        self._refresh_derived_views()
+        return ActionResult(f"卖出 {stock_name} x{quantity}。", self.snapshot())
+
+    def _trade_stock_v2(self, stock_name: str, quantity: int, direction: int) -> ActionResult:
+        player = self.state["player"]
+        stock = self._find_by_name(self.state["stocks"], stock_name)
+        if not stock:
+            self.state["stock_exchange_feedback"] = "没有这支股票。"
+            return ActionResult("没有这支股票。", self.snapshot())
+        if not self._stock_market_is_open():
+            message = f"交易所当前闭市，可交易时段为 {self._stock_market_session_label()}。"
+            self.state["stock_exchange_feedback"] = message
+            return ActionResult(message, self.snapshot())
+        quantity = max(quantity, 1)
+        cost = int(stock.get("current_price", 0)) * quantity
+        if direction > 0:
+            if int(player.get("cash", 0)) < cost:
+                self.state["stock_exchange_feedback"] = "现金不足，无法完成买入。"
+                return ActionResult("现金不足。", self.snapshot())
+            player["cash"] = int(player.get("cash", 0)) - cost
+            player["stock_holdings"][stock_name] = int(player["stock_holdings"].get(stock_name, 0)) + quantity
+            if stock_name == "珊瑚金控":
+                self._increment_task_progress("swing_trade_media", stock_name, quantity)
+            self.state["demo_metrics"]["stock_trades"] = int(self.state["demo_metrics"].get("stock_trades", 0)) + quantity
+            self._record_stock_trade(
+                actor_kind="player",
+                actor_id="player",
+                actor_name="玩家",
+                stock_name=stock_name,
+                quantity=quantity,
+                direction=1,
+                unit_price=int(stock.get("current_price", 0)),
+                source="player_action",
+            )
+            self._bump_district_signal("交易所", "liquidity", 0.12 * quantity)
+            self._bump_district_signal("交易所", "trade_heat", 0.08 * quantity)
+            self._update_player_class()
+            self.state["stock_exchange_feedback"] = f"买入 {stock_name} x{quantity}，成交金额 {cost} 铜币。"
+            self._refresh_derived_views()
+            return ActionResult(f"买入 {stock_name} x{quantity}。", self.snapshot())
+        if int(player["stock_holdings"].get(stock_name, 0)) < quantity:
+            self.state["stock_exchange_feedback"] = "持仓不足，无法完成卖出。"
+            return ActionResult("持仓不足。", self.snapshot())
+        player["stock_holdings"][stock_name] = int(player["stock_holdings"].get(stock_name, 0)) - quantity
+        player["cash"] = int(player.get("cash", 0)) + cost
+        self.state["demo_metrics"]["stock_trades"] = int(self.state["demo_metrics"].get("stock_trades", 0)) + quantity
+        self._record_stock_trade(
+            actor_kind="player",
+            actor_id="player",
+            actor_name="玩家",
+            stock_name=stock_name,
+            quantity=quantity,
+            direction=-1,
+            unit_price=int(stock.get("current_price", 0)),
+            source="player_action",
+        )
+        self._bump_district_signal("交易所", "liquidity", 0.1 * quantity)
+        self._bump_district_signal("交易所", "trade_heat", 0.06 * quantity)
+        self._update_player_class()
+        self.state["stock_exchange_feedback"] = f"卖出 {stock_name} x{quantity}，回笼资金 {cost} 铜币。"
         self._refresh_derived_views()
         return ActionResult(f"卖出 {stock_name} x{quantity}。", self.snapshot())
 
@@ -2881,10 +3019,7 @@ class WorldEngine:
             if allow_boot_spread:
                 self._apply_local_hearing(npc)
                 self._check_local_escalation(npc)
-        use_live_llm = (
-            not self._is_background_scene_pulse(trigger)
-            or self._full_scheduled_llm_mode()
-        )
+        use_live_llm = self._allow_live_pulse_llm(trigger)
         if use_live_llm:
             self._apply_llm_pulse_brief(trigger)
             self._apply_scene_director_note(trigger)
@@ -3113,6 +3248,13 @@ class WorldEngine:
     @staticmethod
     def _is_background_scene_pulse(trigger: str) -> bool:
         return str(trigger or "") in {"scheduled", "scheduled_scene", "manual_scene"}
+
+    def _allow_live_pulse_llm(self, trigger: str) -> bool:
+        if self._is_background_scene_pulse(trigger) and not self._full_scheduled_llm_mode():
+            return False
+        if self._full_scheduled_llm_mode():
+            return True
+        return self.ark.enabled
 
     def _full_scheduled_llm_mode(self) -> bool:
         return "unittest" in sys.modules or os.getenv("SHELL_MARKET_FULL_SCHEDULED_LLM", "0") == "1"
@@ -4180,6 +4322,7 @@ class WorldEngine:
             stock["change_amount"] = int(stock.get("current_price", 0)) - int(stock.get("previous_close", stock.get("base_price", 0)))
             stock["change_pct"] = round((float(stock.get("current_price", 0)) - base) / base, 4)
         self._rebuild_stock_holder_registry()
+        self.state["stock_exchange_view"] = self._build_stock_exchange_view()
         for npc in self.state["npcs"]:
             npc["agent_prompt"] = self._npc_agent_prompt(npc)
             npc["agent_tool_policy"] = self._npc_tool_policy(npc)
@@ -6668,11 +6811,51 @@ class WorldEngine:
             "approaches": ["cautious", "friendly", "hardball"],
         }
 
+    def _select_player_talk_topic(
+        self,
+        npc: dict[str, Any],
+        topic_id: str,
+        district_name: str,
+        player_input: str = "",
+        intent: str = "",
+    ) -> dict[str, Any]:
+        resolved = self._resolve_talk_topic(npc, topic_id, district_name)
+        if topic_id:
+            return resolved
+        npc_topics = self._talk_topics_for_npc(str(npc.get("id", "")), district_name)
+        personal_topics = self._npc_personal_topics(npc)
+        hint = f"{player_input} {intent}".lower()
+        domains = {str(value) for value in npc.get("information_domain", [])}
+        role = str(npc.get("role", ""))
+        market_roles = {"投机者", "银行经理", "代理人", "记者", "老板"}
+        market_hint = any(token in hint for token in ["票", "股", "盘口", "仓", "价格", "涨", "跌", "做局", "利息", "放风"])
+        wants_market = market_hint or district_name == "交易所" or "stock" in domains or role in market_roles
+        wants_actor = any(token in hint for token in ["谁", "哪家", "哪边", "做局", "放风", "护盘"])
+        if wants_market:
+            for topic in personal_topics:
+                if str(topic.get("kind", "")) == "position":
+                    return topic
+            for topic in npc_topics:
+                if str(topic.get("kind", "")) in {"asset", "finance", "company", "institution", "position"}:
+                    return topic
+        if wants_actor:
+            for topic in npc_topics:
+                if str(topic.get("kind", "")) in {"institution", "company", "family", "finance", "asset"}:
+                    return topic
+        if str(resolved.get("id", "")) == "generic_wind" or str(resolved.get("kind", "")) == "panic":
+            if personal_topics:
+                return personal_topics[0]
+            for topic in npc_topics:
+                if str(topic.get("kind", "")) != "panic":
+                    return topic
+        return resolved
+
     def _evaluate_talk_approach(self, npc: dict[str, Any], topic: dict[str, Any], approach: str) -> tuple[int, float, str]:
         relation = int(npc.get("player_relation", 0))
         role = str(npc.get("role", ""))
         memory = self._npc_player_memory(npc)
         favorability = self._npc_favorability_state(npc)
+        profile = self._npc_prompt_profile(npc)
         sensitivity = 0
         if topic.get("kind") in {"family", "panic", "company"}:
             sensitivity += 1
@@ -7289,15 +7472,24 @@ class WorldEngine:
 
     def _npc_llm_sections(self, npc: dict[str, Any], topic: dict[str, Any] | None = None) -> dict[str, Any]:
         favorability = self._npc_favorability_state(npc)
+        profile = self._npc_prompt_profile(npc)
         return {
             "who_you_are": {
                 "name": str(npc.get("name", "")),
                 "title": str(npc.get("title", npc.get("role", ""))),
                 "role": str(npc.get("role", "")),
                 "class": str(npc.get("class", "")),
+                "camp": str(npc.get("camp", npc.get("family_affiliation", ""))),
+                "route_alignment": str(npc.get("route_alignment", "")),
                 "family": str(npc.get("family_affiliation", "")) or "无",
                 "risk_preference": float(npc.get("risk_preference", 40.0)),
                 "political_stance": str(npc.get("political_stance", "self_preservation")),
+                "public_mask": str(profile.get("public_mask", "")),
+                "core_drive": str(profile.get("core_drive", "")),
+                "current_secret": str(profile.get("current_secret", "")),
+                "route_stance": str(profile.get("route_stance", "")),
+                "leverage_points": copy.deepcopy(profile.get("leverage_points", [])),
+                "tone_notes": str(profile.get("tone_notes", "")),
                 "persona_brief": self._npc_persona_brief(npc),
             },
             "current_status": {
@@ -7319,15 +7511,109 @@ class WorldEngine:
                     "home_mode": str(npc.get("home_mode", "doorstep")),
                     "schedule_anchor_type": str(npc.get("schedule_anchor_type", "")),
                 },
+                "trigger_conditions": {
+                    "leak_triggers": copy.deepcopy(profile.get("leak_triggers", [])),
+                    "betrayal_triggers": copy.deepcopy(profile.get("betrayal_triggers", [])),
+                    "action_triggers": copy.deepcopy(profile.get("action_triggers", [])),
+                },
             },
             "recent_experiences": {
                 "recent_events": self._npc_recent_experiences(npc, topic, limit=10),
                 "salient_memories": self._local_memory_view(npc, topic_id=str((topic or {}).get("id", "")), limit=4),
                 "reflection_summary": self._npc_reflection_summary(npc, topic),
             },
-            "people_and_relations": self._npc_people_and_relations(npc, limit=8),
+            "people_and_relations": {
+                "contacts": self._npc_people_and_relations(npc, limit=8),
+                "trusted_people": copy.deepcopy(profile.get("trusted_people", [])),
+                "watch_people": copy.deepcopy(profile.get("watch_people", [])),
+                "relationship_hooks": copy.deepcopy(profile.get("relationship_hooks", [])),
+            },
             "city_summary": self._npc_city_summary(npc),
             "allowed_actions": self._npc_allowed_actions(npc, topic),
+        }
+
+    def _dialogue_listener_brief(self, npc: dict[str, Any]) -> dict[str, Any]:
+        position_kind, position_name, position_qty, position_bias = self._dominant_position(npc)
+        return {
+            "name": str(npc.get("name", "")),
+            "title": str(npc.get("title", npc.get("role", ""))),
+            "role": str(npc.get("role", "")),
+            "district": str(npc.get("district", "")),
+            "family": str(npc.get("family_affiliation", "")) or "无",
+            "camp": str(npc.get("camp", "")),
+            "mood": str(npc.get("mood", "")),
+            "current_goal": str(npc.get("current_goal", "")),
+            "stance": str(npc.get("stance", "")),
+            "cash": int(npc.get("cash", 0)),
+            "debt": int(npc.get("debt", 0)),
+            "hunger": int(npc.get("hunger", 0)),
+            "position": {
+                "kind": position_kind,
+                "name": position_name,
+                "quantity": int(position_qty),
+                "bias": position_bias,
+            },
+        }
+
+    def _dialogue_listener_sections(self, npc: dict[str, Any], topic: dict[str, Any] | None = None) -> dict[str, Any]:
+        full = self._npc_llm_sections(npc, topic)
+        who = full.get("who_you_are", {})
+        status = full.get("current_status", {})
+        recent = full.get("recent_experiences", {})
+        relations = full.get("people_and_relations", {})
+        city = full.get("city_summary", {})
+        favorability = status.get("favorability_state", {})
+        recent_events = [
+            str(row.get("summary", "")).strip()
+            for row in recent.get("recent_events", [])
+            if isinstance(row, dict) and str(row.get("summary", "")).strip()
+        ][:3]
+        salient_memories = [
+            str(row.get("summary", "")).strip()
+            for row in recent.get("salient_memories", [])
+            if isinstance(row, dict) and str(row.get("summary", "")).strip()
+        ][:2]
+        return {
+            "who_you_are": {
+                "name": str(who.get("name", "")),
+                "title": str(who.get("title", "")),
+                "role": str(who.get("role", "")),
+                "camp": str(who.get("camp", "")),
+                "route_alignment": str(who.get("route_alignment", "")),
+                "public_mask": str(who.get("public_mask", "")),
+                "core_drive": str(who.get("core_drive", "")),
+                "current_secret": str(who.get("current_secret", "")),
+                "persona_brief": str(who.get("persona_brief", "")),
+            },
+            "current_status": {
+                "cash": int(status.get("cash", 0)),
+                "work_status": str(status.get("work_status", "")),
+                "emotions": copy.deepcopy(status.get("emotions", {})),
+                "stock_positions": copy.deepcopy(status.get("stock_positions", {})),
+                "speech_register": str(favorability.get("speech_register", "")),
+                "disclosure_willingness": float(favorability.get("disclosure_willingness", 0.0)),
+            },
+            "recent_experiences": {
+                "recent_events": recent_events,
+                "salient_memories": salient_memories,
+                "reflection_summary": str(recent.get("reflection_summary", "")),
+            },
+            "people_and_relations": {
+                "trusted_people": copy.deepcopy(relations.get("trusted_people", [])),
+                "watch_people": copy.deepcopy(relations.get("watch_people", [])),
+                "relationship_hooks": copy.deepcopy(relations.get("relationship_hooks", [])),
+            },
+            "city_summary": {
+                "district": str(city.get("district", "")),
+                "stocks": copy.deepcopy(city.get("stocks", {})),
+                "top_topic": str(city.get("top_topic", "")),
+                "top_collective": str(city.get("top_collective", "")),
+                "active_norms": [
+                    str(row.get("text", "")).strip()
+                    for row in city.get("active_norms", [])
+                    if isinstance(row, dict) and str(row.get("text", "")).strip()
+                ][:2],
+            },
         }
 
     def _npc_market_tilt(self, npc: dict[str, Any]) -> str:
@@ -8919,6 +9205,131 @@ class WorldEngine:
             f"你会保留自己的记忆和立场，按人物级连续性做短期计划，但不能凭空发明世界事实。"
         )
 
+    @staticmethod
+    def _prompt_list_text(values: Any, fallback: str = "无") -> str:
+        rows = [str(value).strip() for value in values if str(value).strip()] if isinstance(values, list) else []
+        return "、".join(rows[:6]) if rows else fallback
+
+    def _npc_prompt_profile(self, npc: dict[str, Any]) -> dict[str, Any]:
+        raw = npc.get("prompt_profile", {})
+        profile = copy.deepcopy(raw) if isinstance(raw, dict) else {}
+        camp = str(npc.get("camp", npc.get("family_affiliation", ""))).strip()
+        route_alignment = str(npc.get("route_alignment", "")).strip()
+        role = str(npc.get("role", "")).strip()
+        title = str(npc.get("title", role)).strip()
+        voice_style = str(npc.get("voice_style", "克制")).strip()
+        current_goal = str(npc.get("current_goal", "先活下去")).strip()
+        defaults = {
+            "public_mask": title or role or "本地居民",
+            "core_drive": current_goal,
+            "private_fear": "被更强的势力清算，或者在下一轮风暴里失去退路",
+            "current_secret": "",
+            "route_stance": route_alignment or "中立观望",
+            "leverage_points": [],
+            "trusted_people": [],
+            "watch_people": [],
+            "relationship_hooks": [],
+            "leak_triggers": [],
+            "betrayal_triggers": [],
+            "action_triggers": [],
+            "tone_notes": "%s，先判断风险和利益，再决定透露多少话。" % (voice_style or "克制"),
+            "social_strategy": "先试探对方的立场、筹码和恐惧，再决定给出多少情报。",
+            "rumor_strategy": "只转述自己能利用的消息，不为别人无偿放风。",
+            "planning_style": "先保留退路，再推进下一步。",
+            "taboos": [],
+            "soft_spots": [],
+        }
+        if camp in {"海藻资本", "资本方"}:
+            defaults["social_strategy"] = "用礼貌、合同、回扣和风险话术逼对方站队。"
+            defaults["rumor_strategy"] = "优先压制会伤害资本信用的消息，再放出有利于估值和收购的版本。"
+            defaults["planning_style"] = "先锁住关键资源和证据，再做公开动作。"
+        elif camp in {"龟甲家族", "江湖势力"}:
+            defaults["social_strategy"] = "先看忠诚和胆量，再谈交易；不守规矩的人要被敲打。"
+            defaults["rumor_strategy"] = "把消息当筹码和威慑，不轻易透底。"
+            defaults["planning_style"] = "先布人手和后手，再决定谈判还是动手。"
+        elif camp in {"政府与公共秩序", "镇政府"}:
+            defaults["social_strategy"] = "先索要证据和责任链，再决定是否表态。"
+            defaults["rumor_strategy"] = "避免留下把柄，只在必要时释放可控口径。"
+            defaults["planning_style"] = "先稳住局面，再考虑站队与切割。"
+        elif camp in {"商业、媒体与产业", "媒体与商业"}:
+            defaults["social_strategy"] = "先判断消息值多少钱，再决定是刊发、压稿还是转卖。"
+            defaults["rumor_strategy"] = "围绕传播价值和交易价值筛选消息。"
+            defaults["planning_style"] = "先做信息比价，再决定押哪一边。"
+        elif camp in {"普通居民与社会底层", "居民与底层"}:
+            defaults["social_strategy"] = "先判断对方会不会害自己，再决定是否抱团。"
+            defaults["rumor_strategy"] = "消息优先在熟人和同类里流动，用来保命或组织反抗。"
+            defaults["planning_style"] = "先保证今晚有饭、有床、有退路，再谈明天。"
+        if route_alignment == "精英路线":
+            defaults["route_stance"] = "精英路线"
+        elif route_alignment == "平民路线":
+            defaults["route_stance"] = "平民路线"
+        defaults.update(profile)
+        return defaults
+
+    def _npc_persona_brief(self, npc: dict[str, Any]) -> str:
+        profile = self._npc_prompt_profile(npc)
+        return (
+            f"公开面具={profile.get('public_mask', '无')}；"
+            f"真实动机={profile.get('core_drive', npc.get('current_goal', '先活下去'))}；"
+            f"当前秘密={profile.get('current_secret', '无')}；"
+            f"路线立场={profile.get('route_stance', npc.get('route_alignment', '中立'))}；"
+            f"可依赖的人={self._prompt_list_text(profile.get('trusted_people', []), '暂时没有稳定盟友')}；"
+            f"重点盯防={self._prompt_list_text(profile.get('watch_people', []), '暂无固定盯防对象')}；"
+            f"可被撬动点={self._prompt_list_text(profile.get('leverage_points', []), '金钱、证据、情面与生存压力')}；"
+            f"禁忌={self._prompt_list_text(profile.get('taboos', []), '被人当众拆穿或羞辱')}；"
+            f"软肋={self._prompt_list_text(profile.get('soft_spots', []), '涉及生计、亲近之人或自身退路')}。"
+        )
+
+    def _npc_agent_agenda(self, npc: dict[str, Any]) -> str:
+        profile = self._npc_prompt_profile(npc)
+        goal = str(npc.get("current_goal", "先活下去"))
+        camp = str(npc.get("camp", npc.get("family_affiliation", "")) or "本地势力")
+        return (
+            f"你当前最表层的任务是：{goal}。"
+            f"真正优先级更高的是：{profile.get('core_drive', goal)}。"
+            f"你属于{camp}，路线立场是{profile.get('route_stance', npc.get('route_alignment', '中立观望'))}。"
+            f"你会按“{profile.get('planning_style', '先保留退路，再推进下一步。')}”推进计划，"
+            f"并通过“{profile.get('social_strategy', '先试探对方立场，再决定是否合作。')}”与人互动。"
+            f"你常先联系{self._prompt_list_text(profile.get('trusted_people', []), '暂时没有稳定盟友')}，"
+            f"重点提防{self._prompt_list_text(profile.get('watch_people', []), '眼前更强的那一方')}。"
+            f"遇到{self._prompt_list_text(profile.get('soft_spots', []), '会直接影响你生存和退路的事')}时，"
+            f"你会立刻调整说法和短期动作。"
+        )
+
+    def _npc_agent_prompt(self, npc: dict[str, Any]) -> str:
+        profile = self._npc_prompt_profile(npc)
+        camp = str(npc.get("camp", npc.get("family_affiliation", "")) or "无阵营")
+        route_alignment = str(npc.get("route_alignment", "") or "中立观望")
+        family = str(npc.get("family_affiliation", "")) or "无"
+        subregion = str(npc.get("subregion_name", "")) or str(npc.get("district", ""))
+        title = str(npc.get("title", "")) or str(npc.get("role", "街头角色"))
+        domains = "、".join([str(value) for value in npc.get("information_domain", [])[:4]]) or "街头风声"
+        topic_digest = self._npc_topic_digest(npc)
+        norm_digest = self._npc_norm_digest(npc)
+        collective_digest = self._npc_collective_digest(npc)
+        trusted = self._prompt_list_text(profile.get("trusted_people", []), "暂时没有稳定盟友")
+        watch = self._prompt_list_text(profile.get("watch_people", []), "暂无固定盯防对象")
+        hooks = self._prompt_list_text(profile.get("relationship_hooks", []), "关系会随着利益、态度和风险快速变化")
+        leverage = self._prompt_list_text(profile.get("leverage_points", []), "金钱、证据、情面、把柄与生存压力")
+        leaks = self._prompt_list_text(profile.get("leak_triggers", []), "确认对方能保护你，或你已无路可退时")
+        betrayals = self._prompt_list_text(profile.get("betrayal_triggers", []), "自身安全、利益和阵营地位受到更大威胁时")
+        actions = self._prompt_list_text(profile.get("action_triggers", []), "出现能够改变自身命运或阵营优势的窗口时")
+        taboos = self._prompt_list_text(profile.get("taboos", []), "当众拆台、触碰底牌、逼你无条件表态")
+        soft_spots = self._prompt_list_text(profile.get("soft_spots", []), "亲近之人、生计、名声和最后退路")
+        return (
+            f"你是小镇模拟中的常驻 NPC：{npc.get('name', '无名者')}。\n"
+            f"身份信息：头衔={title}；角色={npc.get('role', '街头角色')}；阶层={npc.get('class', '底层')}；阵营={camp}；家族/机构={family}；路线立场={route_alignment}；常驻区域={npc.get('district', '街区')} / {subregion}。\n"
+            f"现实处境：现金={int(npc.get('cash', 0))}；债务={int(npc.get('debt', 0))}；饥饿={int(npc.get('hunger', 0))}；恐惧={int(npc.get('fear', 0))}；贪婪={int(npc.get('greed', 0))}；忠诚={int(npc.get('loyalty', 0))}；说话风格={npc.get('voice_style', '克制')}；关注领域={domains}。\n"
+            f"角色内核：公开面具={profile.get('public_mask', '无')}；真实动机={profile.get('core_drive', npc.get('current_goal', '先活下去'))}；当前秘密={profile.get('current_secret', '无')}；私下恐惧={profile.get('private_fear', '无')}；语气要求={profile.get('tone_notes', '先判断风险，再决定透露多少。')}。\n"
+            f"关系网络：可信任的人={trusted}；重点盯防的人={watch}；关系钩子={hooks}；可被撬动点={leverage}。\n"
+            f"触发规则：泄密条件={leaks}；背叛条件={betrayals}；组织行动条件={actions}；禁忌={taboos}；软肋={soft_spots}。\n"
+            f"短期计划：{self._npc_agent_agenda(npc)}\n"
+            f"近期现实输入：显式议题={topic_digest}；显式规范={norm_digest}；显式集体行动={collective_digest}。\n"
+            "对玩家的互动规则：玩家只是外来玩家或来访者，不预设玩家物种、血统或旧主角身份。你必须依据自己的利益、恐惧、阵营、关系和当前证据说话，不替玩家做决定。\n"
+            "你不能凭空发明世界事实。你只能围绕引擎里已给出的事件、关系、价格、组织行动、谣言和制度约束去回应、试探、交易、压价、隐瞒、泄密、背叛或组织行动。\n"
+            "资本方更看重利益、把柄与风险；政府方更看重证据链、责任和可切割性；底层角色更看重生存压力、态度和是否能一起承担后果。你的口风、报价、泄密粒度和合作意愿必须体现这些差异。"
+        )
+
     def _npc_agent_profile(self, npc: dict[str, Any]) -> dict[str, Any]:
         budget = npc.get("agent_budget", {})
         return {
@@ -9694,6 +10105,8 @@ class WorldEngine:
                     "name": str(npc.get("name", "")),
                     "title": str(npc.get("title", "")) or str(npc.get("role", "")),
                     "district": str(npc.get("district", "")),
+                    "camp": str(npc.get("camp", npc.get("family_affiliation", ""))),
+                    "route_alignment": str(npc.get("route_alignment", "")),
                     "subregion_id": str(npc.get("subregion_id", "")),
                     "subregion_name": str(npc.get("subregion_name", "")),
                     "home_building_id": str(npc.get("home_building_id", npc.get("home_id", ""))),
@@ -10153,6 +10566,316 @@ class WorldEngine:
         if float(weakest.get("financing_pressure", 0.0)) >= 60:
             return f"让代理人去试探 {target or weakest.get('stock_name', '盘口')}"
         return f"沿着 {target or weakest.get('name', '街区')} 放风"
+
+    def _select_player_talk_topic(
+        self,
+        npc: dict[str, Any],
+        topic_id: str,
+        district_name: str,
+        player_input: str = "",
+        intent: str = "",
+    ) -> dict[str, Any]:
+        resolved = self._resolve_talk_topic(npc, topic_id, district_name)
+        if topic_id:
+            return resolved
+        npc_topics = self._talk_topics_for_npc(str(npc.get("id", "")), district_name)
+        personal_topics = self._npc_personal_topics(npc)
+        hint = f"{player_input} {intent}".lower()
+        domains = {str(value) for value in npc.get("information_domain", [])}
+        role = str(npc.get("role", ""))
+        title = str(npc.get("title", ""))
+        market_roles = {"投机者", "银行经理", "代理人", "记者", "老板"}
+        identity_hint = any(
+            token in hint
+            for token in [
+                "你是谁",
+                "你是干啥的",
+                "你干啥",
+                "你干什么",
+                "什么身份",
+                "什么来头",
+                "哪路",
+                "哪边的",
+                "和谁一伙",
+                "谁的人",
+                "替谁办事",
+                "为谁做事",
+            ]
+        )
+        stance_hint = any(token in hint for token in ["站哪边", "哪边的人", "谁的人", "和谁一伙", "替谁办事", "为谁做事"])
+        market_hint = any(token in hint for token in ["票", "股", "盘口", "仓", "价格", "涨", "跌", "做局", "利息", "放风"])
+        wants_market = market_hint or district_name == "交易所" or "stock" in domains or role in market_roles
+        wants_actor = any(token in hint for token in ["谁", "哪家", "哪边", "做局", "放风", "护盘"])
+        if identity_hint:
+            return self._identity_topic_for_npc(npc, district_name)
+        kind_priority = ["position", "asset", "finance", "company", "institution", "family"]
+        if "操盘手" in title:
+            kind_priority = ["position", "finance", "asset", "company", "institution", "family"]
+        elif "交际花" in title:
+            kind_priority = ["institution", "company", "finance", "asset", "position", "family"]
+        elif "名媛" in title:
+            kind_priority = ["family", "company", "asset", "position", "finance", "institution"]
+        elif "发言人" in title or role == "记者":
+            kind_priority = ["company", "institution", "asset", "finance", "position", "family"]
+        elif "经理" in title or role in {"银行经理", "代理人"}:
+            kind_priority = ["finance", "company", "asset", "position", "institution", "family"]
+        elif any(token in title for token in ["官", "顾问", "律师"]):
+            kind_priority = ["institution", "company", "family", "finance", "asset", "position"]
+        if stance_hint:
+            kind_priority = ["institution", "family", "company", "finance", "asset", "position"]
+        elif any(token in hint for token in ["股东", "家族", "后台", "哪家"]):
+            kind_priority = ["family", "company", "institution", "finance", "asset", "position"]
+        elif wants_actor:
+            kind_priority = ["institution", "company", "family", "finance", "asset", "position"]
+        merged_topics: list[dict[str, Any]] = []
+        seen_topic_ids: set[str] = set()
+        for row in personal_topics + npc_topics:
+            row_id = str(row.get("id", ""))
+            if row_id and row_id in seen_topic_ids:
+                continue
+            if row_id:
+                seen_topic_ids.add(row_id)
+            merged_topics.append(row)
+
+        def _pick_topic(kinds: list[str], allow_panic: bool = False) -> dict[str, Any] | None:
+            for kind in kinds:
+                for row in merged_topics:
+                    if str(row.get("kind", "")) != kind:
+                        continue
+                    if not allow_panic and str(row.get("kind", "")) == "panic":
+                        continue
+                    return row
+            return None
+
+        if wants_market or wants_actor:
+            picked = _pick_topic(kind_priority)
+            if picked:
+                return picked
+        if str(resolved.get("id", "")) == "generic_wind" or str(resolved.get("kind", "")) == "panic":
+            picked = _pick_topic(kind_priority)
+            if picked:
+                return picked
+            if personal_topics:
+                return personal_topics[0]
+            for topic in npc_topics:
+                if str(topic.get("kind", "")) != "panic":
+                    return topic
+        return resolved
+
+    def _identity_topic_for_npc(self, npc: dict[str, Any], district_name: str) -> dict[str, Any]:
+        name = str(npc.get("name", "对方"))
+        title = str(npc.get("title", npc.get("role", "")))
+        role = str(npc.get("role", "本地角色"))
+        family = str(npc.get("family_affiliation", "")) or "无"
+        camp = str(npc.get("camp", "")) or family
+        district = district_name or str(npc.get("district", "街区"))
+        return {
+            "id": f"topic_identity_{npc.get('id', name)}",
+            "kind": "identity",
+            "district": district,
+            "label": f"{name}的身份和来路",
+            "summary": f"{name}明面上是{title}，平时以{role}的身份在{district}活动，背后和{camp}这条线牵得更近。",
+            "heat": 0.82,
+            "npc_ids": [str(npc.get("id", ""))],
+            "tags": [district, title or role, family, camp],
+            "approaches": ["friendly", "cautious", "hardball"],
+            "impacts": {},
+        }
+
+    def _rule_player_talk_lead(
+        self,
+        npc: dict[str, Any],
+        register: str,
+        salutation: str,
+        topic: dict[str, Any],
+    ) -> str:
+        title = str(npc.get("title", ""))
+        role = str(npc.get("role", ""))
+        label = str(topic.get("label", npc.get("district", "这事")))
+        if "操盘手" in title:
+            base = f"{salutation}，{label} 这口风先看谁补保证金，再看谁敢开口。"
+        elif "交际花" in title:
+            base = f"{salutation}，你想听的是台面价，还是包厢里那层真价？"
+        elif "名媛" in title:
+            base = f"{salutation}，别把酒杯碰出来的笑脸都当成利好。"
+        elif "发言人" in title or role == "记者":
+            base = f"{salutation}，公开口径是一套，停顿里的口风是另一套。"
+        elif "经理" in title or role in {"银行经理", "代理人"}:
+            base = f"{salutation}，账面稳不稳不重要，重要的是谁先抽梯子。"
+        else:
+            base = f"{salutation}，{label} 这事表面热闹，底下才值钱。"
+        if register == "owned":
+            return f"你既然肯把筹码压过来，我就按最贵的那层说。{base}"
+        if register == "bought":
+            return f"钱既然已经落袋，我就不替谁包糖衣。{base}"
+        if register == "patronized":
+            return base
+        if register == "deferential":
+            return f"你既然肯来，我就把能说的先递你半层。{base}"
+        if register == "warm":
+            return f"这次你问得还像个懂行的。{base}"
+        if register == "slick":
+            return f"要真想听深一点，价和人情总得有一样先到位。{base}"
+        return base
+
+    def _rule_player_talk_lines(
+        self,
+        npc: dict[str, Any],
+        topic: dict[str, Any],
+        approach: str,
+        openness: str,
+        intent: str = "",
+    ) -> list[str]:
+        favorability = self._npc_favorability_state(npc)
+        register = str(favorability.get("speech_register", "neutral"))
+        salutation = "哥" if register in {"deferential", "slick", "patronized", "owned"} and float(favorability.get("respect", 0.0)) >= 0.56 else "你"
+        player_line = {
+            "cautious": f"我只想问一句，{topic.get('label', npc['district'])} 最近是不是在变？",
+            "friendly": f"我不是来压你话的，就想听听你怎么看 {topic.get('label', npc['district'])}。",
+            "hardball": f"别绕了，{topic.get('label', npc['district'])} 到底是谁在做局？",
+        }.get(approach, f"最近 {topic.get('label', npc['district'])} 的风向到底怎么走？")
+        core_line = self._rule_player_talk_core_line(npc, topic)
+        lead = self._rule_player_talk_lead(npc, register, salutation, topic)
+        if register == "owned":
+            reply = f"{npc['name']}：{lead}{core_line}"
+        elif register == "bought":
+            reply = f"{npc['name']}：{lead}{core_line}"
+        elif register == "patronized":
+            reply = f"{npc['name']}：{lead}{core_line}"
+        elif register == "hostile":
+            reply = f"{npc['name']}：你口气收一收。{topic.get('label', npc['district'])} 这事不是你想逼就逼得出来的。"
+        elif register == "sullen":
+            reply = f"{npc['name']}：话我不是不能说，但你别真把人当能随手拿捏的壳。"
+        elif openness == "guarded":
+            reply = f"{npc['name']}：{lead}不过这话题在 {npc['district']} 不便宜。{core_line}"
+        elif openness == "skeptical":
+            reply = f"{npc['name']}：{lead}我只说半句，剩下半句你自己拿壳去试。{core_line}"
+        elif register == "deferential":
+            reply = f"{npc['name']}：{lead}{core_line}"
+        elif register == "warm":
+            reply = f"{npc['name']}：{lead}{core_line}"
+        elif register == "slick":
+            reply = f"{npc['name']}：{lead}{core_line}"
+        else:
+            reply = self.random.choice(
+                [
+                    f"{npc['name']}：{core_line}",
+                    f"{npc['name']}：{lead}{core_line}",
+                    f"{npc['name']}：真相没那么直，但 {topic.get('label', npc['district'])} 这事已经把街上气味带歪了。{core_line}",
+                ]
+            )
+        return [player_line, reply]
+
+    def _rule_player_talk_core_line(self, npc: dict[str, Any], topic: dict[str, Any]) -> str:
+        topic_kind = str(topic.get("kind", ""))
+        topic_label = str(topic.get("label", npc.get("district", "这件事")))
+        topic_summary = str(topic.get("summary", "街上都在看这件事。"))
+        role = str(npc.get("role", ""))
+        title = str(npc.get("title", role or "本地角色"))
+        camp = str(npc.get("camp", npc.get("family_affiliation", "")))
+        profile = self._npc_prompt_profile(npc)
+        secret = str(profile.get("current_secret", "")).strip()
+        leverage_points = [str(item).strip() for item in profile.get("leverage_points", []) if str(item).strip()]
+        watch_people = [str(item).strip() for item in profile.get("watch_people", []) if str(item).strip()]
+        position_kind, position_name, position_qty, position_bias = self._dominant_position(npc)
+        if topic_kind == "identity":
+            if "交际花" in title:
+                return "台面上我是交际花，靠酒局、饭局和男人的虚荣心吃饭。真要问我站哪边，我只站在能让我活得更贵、也更安全的那边。"
+            if "操盘手" in title:
+                return "明面上我是首席操盘手，替人盯盘、修口径、挪风险。你要问我替谁办事，就盯着海藻资本那条资金线看。"
+            if "名媛" in title:
+                return "明面上我是别墅区名媛，实际更像替股东家庭试风向的人。酒杯端得越稳，越说明我背后那群人不愿先露底。"
+            if "顾问" in title or role == "代理人":
+                return f"明面上我是{title}，靠规则、合同和口风吃饭。真要分边站，我离 {camp or title} 这条线更近。"
+            if role == "记者":
+                return f"我明面上是{title or role}，吃的是消息饭。站队这种事，我一般不认嘴上那套，只认谁在背后给风向加价。"
+            return f"明面上我是{title or role}，在{npc.get('district', '这地方')}吃这口饭。你要问我替谁办事，我更接近 {camp or title} 这条线。"
+        if topic_kind == "position" and position_kind == "stock":
+            if "操盘手" in title:
+                return (
+                    f"{position_name} 我压着 {position_qty} 不是给你看热闹的。"
+                    f"盘面每抖一下，我都在看谁先补保证金，谁还想把旧账继续压到明天。"
+                )
+            if "交际花" in title:
+                return (
+                    f"{position_name} 的价只是桌面，桌下更值钱的是名单和醉话。"
+                    f"我手里也捏着一点仓，谁今晚忽然不接我电话，谁八成就在准备撤。"
+                )
+            if "名媛" in title:
+                return (
+                    f"{position_name} 我也压着 {position_qty}，可别墅区真正先泄底的从来不是 K 线，"
+                    f"而是哪位股东家里先把酒杯放下。"
+                )
+            if "发言人" in title or role == "记者":
+                return (
+                    f"{position_name} 的价我盯着，人心我也盯着。"
+                    f"今早谁还在替人稳口径，谁就是怕这只票撑不过午后。"
+                )
+            if "经理" in title or role in {"代理人", "银行经理"}:
+                return (
+                    f"{position_name} 这边我盯的不是热闹，是谁先缩手、谁还在加杠杆。"
+                    f"手里这点仓位，只说明我不信场面话。"
+                )
+            if role == "投机者":
+                return f"我手里压着 {position_name} x{position_qty}，眼下更偏{position_bias}。在交易所里，先动嘴的人往往是在替仓位探路。"
+            return f"{topic_summary} 我自己手里还压着 {position_name} x{position_qty}，口风不会完全中性。"
+        if topic_kind == "finance":
+            if "交际花" in title:
+                return "利息只是桌上的说法，真正值钱的是谁在借债遮丑、谁在拿名单求活。你现在听到的每一句稳，都可能是昨晚敬出来的。"
+            if "名媛" in title:
+                return "融资这件事在别墅区从来不叫融资，叫体面。谁家开始急着问质押和过桥，谁家就先闻到自己的血味。"
+            if "操盘手" in title:
+                return "信用风一紧，盘面就先抽筋。聪明人现在不表态，只盯着谁会先被迫砍仓，谁又想把锅继续挪给别人。"
+            if role in {"代理人", "银行经理"}:
+                return "这边现在盯的是信用、利息和谁先抽梯子。表面都说稳，真正在算的是哪边先断现金。"
+            if role == "投机者":
+                return "利息风一变，盘面就先抽筋。聪明人现在不忙着表态，忙着看谁在借题洗仓。"
+            return f"{topic_summary} 真正值钱的是谁先把这股风拿去做价格。"
+        if topic_kind == "asset":
+            if "交际花" in title:
+                return f"{topic_label} 现在不只是价格问题，还是谁愿意拿自己的名声给它垫一层。越急着说看好的人，往往越怕别人先跑。"
+            if "名媛" in title:
+                return f"{topic_label} 在酒会里已经不是票，是家族站队。谁还愿意举杯提它，谁就是还没找到更好的退路。"
+            if position_kind == "stock" and position_name:
+                return f"{topic_label} 现在不只是价格问题。像我这种手里有 {position_name} 的人，更看谁在借消息逼别人先动。"
+            return f"{topic_summary} 这地方已经不是单看牌价了，连谁站在哪边都算进盘口。"
+        if topic_kind == "company":
+            if "操盘手" in title:
+                return f"{topic_summary} 公司动作只是壳，真正要命的是谁在用它挪假账、拖时间和找替身。"
+            if "交际花" in title:
+                return f"{topic_summary} 公司公告只给外人看，包厢里谈的是谁能替谁保住名字，谁又准备把谁送出去挡刀。"
+            if "名媛" in title:
+                return f"{topic_summary} 这事在上流圈子里谈的从来不是公司本身，而是谁家的股份先变成了麻烦。"
+            return f"{topic_summary} 这事表面是公司动作，底下其实是 {camp or title} 在抢谁先开口。"
+        if topic_kind == "family":
+            if "名媛" in title:
+                return f"{topic_label} 这种事在别墅区不会有人明说，但谁忽然开始替家里切割，谁就知道火已经烧到门廊了。"
+            if leverage_points:
+                return f"{topic_summary} 真正能撬开的不是脸面，是 {leverage_points[0]} 这类握在手里的东西。"
+            return topic_summary
+        if topic_kind == "institution":
+            if "交际花" in title:
+                return f"{topic_label} 最有意思的从来不是规矩，是哪位大人物酒醒以后开始求我删名字。"
+            if secret:
+                return f"{topic_summary} 真正让人不敢睡的，是那层还没摆上桌的秘密。"
+            return topic_summary
+        if topic_kind == "panic":
+            if "交际花" in title:
+                return "耳语越密，说明越多人想把自己的名字从名单里擦掉。你现在听到的慌，多半已经被人修过价。"
+            if "名媛" in title:
+                return "坏消息在别墅区从不先喊出来，只会先体现在谁忽然不赴约、谁忽然装作没看见你。"
+            if "操盘手" in title:
+                return "坏消息现在只是引子，真正的戏在谁借这股慌劲把别人洗下车，再顺手把账推给更慢的人。"
+            if role == "投机者":
+                return "坏消息现在只是引子，真正的戏在谁借这股慌劲把别人洗下车。"
+            if role in {"记者", "代理人"}:
+                return "耳语一密，说明有人希望这阵风先自己长腿。你现在听到的，多半已经是别人挑过的版本。"
+            return topic_summary
+        if topic_kind == "livelihood":
+            return f"{topic_summary} 人一旦被账和饭卡住，说出来的话就不会完全干净。"
+        if watch_people and secret:
+            return f"{topic_summary} 我现在更盯着 {watch_people[0]} 那边会不会先露口子，毕竟真正值钱的还是那层没公开的秘密。"
+        return topic_summary
 
     def _push_memory(self, memory_tags: list[str], tag: str) -> list[str]:
         updated = list(memory_tags)

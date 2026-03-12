@@ -21,7 +21,7 @@ const CHARACTER_SHEET := preload("res://assets/vendor/superpowers/medieval-fanta
 const CALCIUM_INTERIOR_PATH := "res://assets/vendor/calciumtrice/medieval_tileset_interior.png"
 const LPC_WOODSHOP_PATH := "res://assets/vendor/lpc_woodshop/lpc-woodshop/woodshop.png"
 const LPC_LIGHTS_PATH := "res://assets/vendor/lpc_castle_lights.png"
-const STOCK_EXCHANGE_INTERIOR_PATH := "res://unnamed_4k_realesrgan.png"
+const STOCK_EXCHANGE_INTERIOR_PATH := "res://证券交易所_4k_realesrgan.png"
 const ROOM_TEXTURE := preload("res://assets/vendor/tiny_wizard/art/room.png")
 const TW_NORMAL_CHEST := preload("res://assets/vendor/tiny_wizard/props/chests/normal_chest_closed.png")
 const TW_GOLD_CHEST := preload("res://assets/vendor/tiny_wizard/props/chests/gold_chest_closed.png")
@@ -73,6 +73,7 @@ var current_period := "day"
 var current_light_level := 1.0
 var current_clock_minutes := 8 * 60
 var current_clock_label := "08:00"
+var exchange_hud_state: Dictionary = {}
 var room_caption := "屋里还有温度。"
 
 
@@ -150,8 +151,32 @@ func set_active(enabled: bool) -> void:
 func enter_house(data: Dictionary) -> void:
 	house_data = data.duplicate(true)
 	house_state = data.get("house_state", {}).duplicate(true)
+	if _scene_house_id() != "stock_exchange":
+		exchange_hud_state.clear()
 	house_theme = _theme_for_house(house_data)
 	house_layout = _layout_for_house(house_data)
+	if _scene_house_id() == "stock_exchange":
+		house_layout["entry_x"] = 1078.0
+		house_layout["entry_y"] = 724.0
+		house_layout["desk_x"] = 314.0
+		house_layout["desk_y"] = 586.0
+		house_layout["storage_x"] = 180.0
+		house_layout["storage_y"] = 708.0
+		house_layout["kitchen_x"] = 1036.0
+		house_layout["kitchen_y"] = 238.0
+		house_layout["bed_x"] = 456.0
+		house_layout["bed_y"] = 544.0
+		house_layout["route_nodes"] = {
+			"entry": Vector2(1078.0, 706.0),
+			"storage": Vector2(180.0, 708.0),
+			"cabinet": Vector2(180.0, 708.0),
+			"desk": Vector2(314.0, 586.0),
+			"table": Vector2(760.0, 646.0),
+			"kitchen": Vector2(1036.0, 238.0),
+			"bedside": Vector2(456.0, 544.0),
+			"mending": Vector2(456.0, 544.0),
+			"warming": Vector2(456.0, 544.0)
+		}
 	title_label.text = str(house_data.get("title", "屋内"))
 	room_player.position = Vector2(
 		float(house_layout.get("entry_x", 664.0)),
@@ -166,6 +191,12 @@ func update_house_state(state: Dictionary) -> void:
 	house_state = state.duplicate(true)
 	_refresh_caption()
 	queue_redraw()
+
+
+func set_exchange_hud_state(state: Dictionary) -> void:
+	exchange_hud_state = state.duplicate(true)
+	if _scene_house_id() == "stock_exchange":
+		queue_redraw()
 
 
 func set_time_of_day(period: String, light_level: float) -> void:
@@ -295,6 +326,17 @@ func _rebuild_interactables() -> void:
 			{"id":"briefing_table","kind":"tasks","title":"晨会长桌","district":get_current_district(),"subtitle":"看看经纪行的委托、任务和临时悬赏。","x":1012.0,"y":672.0},
 			{"id":"exit_house","kind":"exit_house","title":"正门","district":get_current_district(),"subtitle":"回到交易所外街面。","x":678.0,"y":744.0}
 		]
+		var exchange_item_overrides := {
+			"trading_floor": {"title":"交易席", "subtitle":"盯住三支股票的盘口、涨跌与个人持仓。", "x":456.0, "y":544.0},
+			"intel_terminal": {"title":"信息终端", "subtitle":"查看市场风向、政策耳语和交易室里的流言。", "x":1036.0, "y":238.0},
+			"broker_desk": {"title":"经纪人办公桌", "subtitle":"翻看委托、回执和你的资金记录。", "x":314.0, "y":586.0},
+			"vault": {"title":"保密金库", "subtitle":"封存凭证、密码函和不能见光的材料。", "x":180.0, "y":708.0},
+			"briefing_table": {"title":"晨会长桌", "subtitle":"经纪行的临时委托、悬赏和会议纪要。", "x":760.0, "y":646.0},
+			"exit_house": {"title":"正门", "subtitle":"回到交易所大楼门前。", "x":1078.0, "y":730.0},
+		}
+		for item in exchange_items:
+			var exchange_override: Dictionary = exchange_item_overrides.get(str(item.get("id", "")), {})
+			item.merge(exchange_override, true)
 		for item in exchange_items:
 			var exchange_node := InteractableView.new()
 			exchange_node.configure(item)
@@ -381,6 +423,21 @@ func _draw_stock_exchange_scene() -> void:
 	draw_rect(Rect2(112, 96, 320, 34), Color("11161d"), true)
 	draw_string(ThemeDB.fallback_font, Vector2(132, 121), "证券交易所内厅", HORIZONTAL_ALIGNMENT_LEFT, 260, 26, Color("f4e3bd"))
 	draw_string(ThemeDB.fallback_font, Vector2(844, 121), "行情室 / 情报墙 / 金库", HORIZONTAL_ALIGNMENT_LEFT, 340, 20, Color("d7cdb6"))
+
+	var board_rect := Rect2(860, 144, 286, 126)
+	draw_rect(board_rect, Color(0.05, 0.08, 0.1, 0.72), true)
+	draw_rect(board_rect, Color(0.75, 0.66, 0.42, 0.38), false, 2.0)
+	draw_string(ThemeDB.fallback_font, board_rect.position + Vector2(12, 18), "LIVE BOARD", HORIZONTAL_ALIGNMENT_LEFT, 120, 16, Color("f0dfbe"))
+	var board_rows: Array = exchange_hud_state.get("stocks", [])
+	for index in range(min(3, board_rows.size())):
+		var stock: Dictionary = board_rows[index]
+		var change_pct := float(stock.get("change_pct", 0.0)) * 100.0
+		var row_color := Color("d96d52") if change_pct > 0.01 else Color("74b58a") if change_pct < -0.01 else Color("d8b982")
+		var row_text := "%s %s %+0.2f%%" % [str(stock.get("name", "")), int(stock.get("current_price", 0)), change_pct]
+		draw_string(ThemeDB.fallback_font, board_rect.position + Vector2(12, 42 + index * 24), row_text, HORIZONTAL_ALIGNMENT_LEFT, 258, 16, row_color)
+	var board_status := "MARKET OPEN" if bool(exchange_hud_state.get("market_open", true)) else "MARKET CLOSED"
+	draw_string(ThemeDB.fallback_font, board_rect.position + Vector2(12, 114), board_status, HORIZONTAL_ALIGNMENT_LEFT, 160, 15, Color("d7cdb6"))
+	draw_string(ThemeDB.fallback_font, board_rect.position + Vector2(168, 114), str(exchange_hud_state.get("clock_label", current_clock_label)), HORIZONTAL_ALIGNMENT_LEFT, 100, 15, Color("d7cdb6"))
 
 func _draw_floor() -> void:
 	draw_rect(Rect2(76, 120, 1168, 696), house_theme.get("floor", Color("5c432d")), true)

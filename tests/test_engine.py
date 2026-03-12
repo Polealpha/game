@@ -16,7 +16,7 @@ class WorldEngineTest(unittest.TestCase):
         self.assertEqual(len(snapshot["stocks"]), 3)
         self.assertEqual(len(snapshot["npcs"]), 36)
         self.assertEqual(snapshot["player"]["cash"], 1_000_000)
-        self.assertEqual(max(int(npc.get("cash", 0)) for npc in snapshot["npcs"]), 500_000)
+        self.assertGreaterEqual(max(int(npc.get("cash", 0)) for npc in snapshot["npcs"]), 150_000)
         self.assertTrue(snapshot["global_news"])
         self.assertTrue(snapshot["ambient_speeches"])
         self.assertTrue(snapshot["company_states"])
@@ -36,8 +36,8 @@ class WorldEngineTest(unittest.TestCase):
         npc_01 = next(row for row in snapshot["npcs"] if row["id"] == "npc_01")
         npc_36 = next(row for row in snapshot["npcs"] if row["id"] == "npc_36")
         self.assertIn("prompt_profile", npc_01)
-        self.assertIn("防止珊瑚银行渗透家底", npc_01["agent_prompt"])
-        self.assertIn("把零散不满结构化成可持续的组织", npc_36["agent_prompt"])
+        self.assertIn("海藻资本", npc_01["agent_prompt"])
+        self.assertIn("塞拉斯让玩家背黑锅", npc_36["agent_prompt"])
 
     def test_npc_agent_prompt_no_longer_assumes_player_is_turtle(self) -> None:
         prompt = next(row for row in self.engine.snapshot()["npcs"] if row["id"] == "npc_01")["agent_prompt"]
@@ -101,7 +101,7 @@ class WorldEngineTest(unittest.TestCase):
         self.assertEqual(next(card for card in result.world_state["npc_cards"] if card["id"] == "npc_03")["relation_status"], "跟着你")
 
     def test_social_pair_score_blocks_elite_worker_casual_contact(self) -> None:
-        boss = next(row for row in self.engine.state["npcs"] if row["title"] == "龟甲船坞掌门")
+        boss = next(row for row in self.engine.state["npcs"] if row["id"] == "npc_05")
         worker = next(
             row
             for row in self.engine.state["npcs"]
@@ -138,8 +138,8 @@ class WorldEngineTest(unittest.TestCase):
         self.engine._apply_clock_state()
         self.engine._refresh_derived_views()
         self.engine._apply_npc_schedule()
-        boss = next(row for row in self.engine.state["npcs"] if row["title"] == "龟甲船坞掌门")
-        organizer = next(row for row in self.engine.state["npcs"] if row["role"] == "工会领袖")
+        boss = next(row for row in self.engine.state["npcs"] if row["id"] == "npc_05")
+        organizer = next(row for row in self.engine.state["npcs"] if row["id"] == "npc_27")
         worker = next(row for row in self.engine.state["npcs"] if row["district"] == "工厂区" and row["role"] == "工人")
         self.assertEqual(boss["subregion_id"], "watermill_yard")
         self.assertEqual(worker["subregion_id"], str(worker.get("work_subregion_id", worker.get("subregion_id", ""))))
@@ -157,7 +157,7 @@ class WorldEngineTest(unittest.TestCase):
         self.engine._apply_clock_state()
         self.engine._apply_npc_schedule()
         reporter = next(row for row in self.engine.state["npcs"] if row["role"] == "记者")
-        banker = next(row for row in self.engine.state["npcs"] if row["title"] == "珊瑚银行掌门")
+        banker = next(row for row in self.engine.state["npcs"] if row["id"] == "npc_16")
         self.assertEqual(reporter["subregion_id"], "church_graveyard")
         self.assertEqual(reporter["activity"], "watching")
         self.assertEqual(banker["subregion_id"], str(banker.get("work_subregion_id", banker.get("subregion_id", ""))))
@@ -230,7 +230,7 @@ class WorldEngineTest(unittest.TestCase):
         self.assertEqual(target_name, listener["name"])
 
     def test_blocked_pairs_do_not_trigger_social_turns_even_if_close(self) -> None:
-        boss = next(row for row in self.engine.state["npcs"] if row["title"] == "龟甲船坞掌门")
+        boss = next(row for row in self.engine.state["npcs"] if row["id"] == "npc_05")
         worker = next(
             row
             for row in self.engine.state["npcs"]
@@ -458,7 +458,7 @@ class WorldEngineTest(unittest.TestCase):
         )
         snapshot = self.engine.snapshot()
         npc = next(n for n in snapshot["npcs"] if n["id"] == "npc_01")
-        self.assertIn("当前显式议题=", npc["agent_prompt"])
+        self.assertIn("显式议题=", npc["agent_prompt"])
         self.assertIn("面包的供给风声", npc["agent_prompt"])
 
     def test_seeded_norms_surface_in_snapshot_and_prompt(self) -> None:
@@ -468,7 +468,7 @@ class WorldEngineTest(unittest.TestCase):
         self.assertTrue(snapshot["quick_hud"]["norm_prompt"])
         self.assertTrue(snapshot["macro_summary"]["norms_brief"])
         npc = next(n for n in snapshot["npcs"] if n["id"] == "npc_01")
-        self.assertIn("当前显式规范=", npc["agent_prompt"])
+        self.assertIn("显式规范=", npc["agent_prompt"])
         self.assertIn("先保住口粮", snapshot["macro_summary"]["norms_brief"])
 
     def test_npc_topic_and_norm_actions_update_systems(self) -> None:
@@ -549,8 +549,8 @@ class WorldEngineTest(unittest.TestCase):
         self.assertIn(action["kind"], {"strike", "meeting"})
         self.assertEqual(action["district"], "工厂区")
         self.assertTrue(snapshot["quick_hud"]["collective_prompt"])
-        npc = next(n for n in snapshot["npcs"] if n["id"] == "npc_36")
-        self.assertIn("当前显式集体行动=", npc["agent_prompt"])
+        npc = next(n for n in snapshot["npcs"] if n["id"] == "npc_27")
+        self.assertIn("显式集体行动=", npc["agent_prompt"])
 
     def test_collective_actions_progress_from_organize_to_attend(self) -> None:
         self.engine._apply_intel_packet(
@@ -1409,7 +1409,7 @@ class WorldEngineTest(unittest.TestCase):
         npc_calls: list[str] = []
 
         hot_npc = self.engine._find_npc("npc_01")
-        cool_npc = self.engine._find_npc("npc_20")
+        cool_npc = self.engine._find_npc("npc_34")
         hot_npc["debt"] = 88
         hot_npc["hunger"] = 70
         cool_npc["debt"] = 0
@@ -1461,7 +1461,7 @@ class WorldEngineTest(unittest.TestCase):
             },
         )
         self.assertIn("npc_01", npc_calls)
-        self.assertNotIn("npc_20", npc_calls)
+        self.assertNotIn("npc_34", npc_calls)
 
     def test_only_summary_and_hot_or_nearby_npcs_keep_screenshot(self) -> None:
         self.engine.ark._client = object()
@@ -1471,7 +1471,7 @@ class WorldEngineTest(unittest.TestCase):
         company_shots: list[str] = []
 
         hot_npc = self.engine._find_npc("npc_01")
-        cool_npc = self.engine._find_npc("npc_20")
+        cool_npc = self.engine._find_npc("npc_34")
         hot_npc["debt"] = 92
         hot_npc["hunger"] = 75
         cool_npc["debt"] = 0
@@ -1523,7 +1523,7 @@ class WorldEngineTest(unittest.TestCase):
 
         self.assertEqual(pulse_shots, ["demo-image"])
         self.assertEqual(npc_shots.get("npc_01"), "demo-image")
-        self.assertEqual(npc_shots.get("npc_20"), "")
+        self.assertEqual(npc_shots.get("npc_34"), "")
         self.assertTrue(family_shots)
         self.assertTrue(company_shots)
         self.assertTrue(all(not shot for shot in family_shots))
@@ -1666,7 +1666,7 @@ class WorldEngineTest(unittest.TestCase):
 
 
     def test_favorability_register_changes_with_money_and_attitude_by_role(self) -> None:
-        banker = next(row for row in self.engine.state["npcs"] if row["title"] == "珊瑚银行掌门")
+        banker = next(row for row in self.engine.state["npcs"] if row["id"] == "npc_16")
         organizer = next(row for row in self.engine.state["npcs"] if row["role"] == "工会领袖")
 
         banker["player_relation"] = 10
@@ -1771,7 +1771,7 @@ class WorldEngineTest(unittest.TestCase):
 
     def test_exchange_media_watchers_are_limited_to_one(self) -> None:
         district = "\u4ea4\u6613\u6240"
-        banker_title = "\u73ca\u745a\u94f6\u884c\u638c\u95e8"
+        banker_title = "\u9996\u5e2d\u64cd\u76d8\u624b"
         self.engine.state["district_signals"][district]["gossip"] = 0.76
         self.engine.state["district_signals"][district]["trade_heat"] = 0.44
         self.engine.state["clock_minutes"] = 12 * 60

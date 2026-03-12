@@ -22,6 +22,53 @@ const CALCIUM_INTERIOR_PATH := "res://assets/vendor/calciumtrice/medieval_tilese
 const LPC_WOODSHOP_PATH := "res://assets/vendor/lpc_woodshop/lpc-woodshop/woodshop.png"
 const LPC_LIGHTS_PATH := "res://assets/vendor/lpc_castle_lights.png"
 const STOCK_EXCHANGE_INTERIOR_PATH := "res://证券交易所_4k_realesrgan.png"
+const CUSTOM_ROOM_TEXTURES := {
+	"news_center_1": "res://assets/interiors/news_center.png",
+	"factory_2": "res://assets/interiors/factory.png",
+	"factory_house": "res://assets/interiors/factory.png",
+	"food_market_3": "res://assets/interiors/food_market.png",
+	"food_market_4": "res://assets/interiors/food_market.png",
+	"bookstore_5": "res://assets/interiors/bookstore.png",
+	"stock_exchange_6": "res://assets/interiors/stock_exchange.png",
+	"capitalist_mansion_7": "res://assets/interiors/capitalist_mansion.png",
+	"bar_8": "res://assets/interiors/bar.png",
+	"slum_9": "res://assets/interiors/slum.png",
+	"slum_10": "res://assets/interiors/slum.png",
+	"slum_house": "res://assets/interiors/slum.png",
+}
+const CUSTOM_ROOM_WALK_MASK_TEXTURES := {
+	"news_center_1": "res://assets/interiors/walk_masks/news_center.png",
+	"factory_2": "res://assets/interiors/walk_masks/factory.png",
+	"factory_house": "res://assets/interiors/walk_masks/factory.png",
+	"food_market_3": "res://assets/interiors/walk_masks/food_market.png",
+	"food_market_4": "res://assets/interiors/walk_masks/food_market.png",
+	"bookstore_5": "res://assets/interiors/walk_masks/bookstore.png",
+	"stock_exchange_6": "res://assets/interiors/walk_masks/stock_exchange.png",
+	"stock_exchange": "res://assets/interiors/walk_masks/stock_exchange.png",
+	"capitalist_mansion_7": "res://assets/interiors/walk_masks/capitalist_mansion.png",
+	"bar_8": "res://assets/interiors/walk_masks/bar.png",
+	"slum_9": "res://assets/interiors/walk_masks/slum.png",
+	"slum_10": "res://assets/interiors/walk_masks/slum.png",
+	"slum_house": "res://assets/interiors/walk_masks/slum.png",
+}
+const CUSTOM_ROOM_WALK_MASK_SOURCE_RECTS := {
+	"news_center_1": Rect2(1272, 1978, 2004, 562),
+	"factory_2": Rect2(36, 1642, 1920, 1015),
+	"factory_house": Rect2(36, 1642, 1920, 1015),
+	"food_market_3": Rect2(1334, 1538, 1921, 1144),
+	"food_market_4": Rect2(1334, 1538, 1921, 1144),
+	"bookstore_5": Rect2(1398, 1420, 1921, 1278),
+	"stock_exchange_6": Rect2(622, 1478, 1922, 1152),
+	"stock_exchange": Rect2(622, 1478, 1922, 1152),
+	"capitalist_mansion_7": Rect2(1228, 1800, 1920, 664),
+	"bar_8": Rect2(1462, 2118, 1921, 586),
+	"slum_9": Rect2(672, 1884, 1918, 814),
+	"slum_10": Rect2(672, 1884, 1918, 814),
+	"slum_house": Rect2(672, 1884, 1918, 814),
+}
+const CUSTOM_ROOM_FRAME_RECT := Rect2(56, 56, 1208, 768)
+const STOCK_EXCHANGE_FRAME_RECT := Rect2(54, 84, 1212, 720)
+const ROOM_WALK_MASK_ALPHA_THRESHOLD := 0.08
 const ROOM_TEXTURE := preload("res://assets/vendor/tiny_wizard/art/room.png")
 const TW_NORMAL_CHEST := preload("res://assets/vendor/tiny_wizard/props/chests/normal_chest_closed.png")
 const TW_GOLD_CHEST := preload("res://assets/vendor/tiny_wizard/props/chests/gold_chest_closed.png")
@@ -58,6 +105,8 @@ var calcium_interior: Texture2D
 var woodshop_texture: Texture2D
 var lights_texture: Texture2D
 var stock_exchange_interior: Texture2D
+var custom_room_texture: Texture2D
+var custom_room_walk_mask_image: Image
 var emote_sleep_texture: Texture2D
 var emote_sleeps_texture: Texture2D
 
@@ -112,11 +161,21 @@ func _ready() -> void:
 	queue_redraw()
 
 
-func _load_runtime_texture(path: String) -> Texture2D:
+func _load_runtime_image(path: String, warn_on_fail: bool = true) -> Image:
+	if path.is_empty():
+		return null
 	var image := Image.new()
 	var error := image.load(ProjectSettings.globalize_path(path))
 	if error != OK:
-		push_warning("Failed to load runtime texture: %s" % path)
+		if warn_on_fail:
+			push_warning("Failed to load runtime texture: %s" % path)
+		return null
+	return image
+
+
+func _load_runtime_texture(path: String, warn_on_fail: bool = true) -> Texture2D:
+	var image := _load_runtime_image(path, warn_on_fail)
+	if image == null:
 		return null
 	return ImageTexture.create_from_image(image)
 
@@ -131,6 +190,8 @@ func _exit_tree() -> void:
 	woodshop_texture = null
 	lights_texture = null
 	stock_exchange_interior = null
+	custom_room_texture = null
+	custom_room_walk_mask_image = null
 	emote_sleep_texture = null
 	emote_sleeps_texture = null
 
@@ -155,6 +216,8 @@ func enter_house(data: Dictionary) -> void:
 		exchange_hud_state.clear()
 	house_theme = _theme_for_house(house_data)
 	house_layout = _layout_for_house(house_data)
+	custom_room_texture = _load_runtime_texture(_custom_room_texture_path_for_house(_scene_house_id()), false)
+	custom_room_walk_mask_image = _load_runtime_image(_custom_room_walk_mask_path_for_house(_scene_house_id()), false)
 	if _scene_house_id() == "stock_exchange":
 		house_layout["entry_x"] = 1078.0
 		house_layout["entry_y"] = 724.0
@@ -178,10 +241,10 @@ func enter_house(data: Dictionary) -> void:
 			"warming": Vector2(456.0, 544.0)
 		}
 	title_label.text = str(house_data.get("title", "屋内"))
-	room_player.position = Vector2(
+	room_player.position = _spawn_position_for_room(Vector2(
 		float(house_layout.get("entry_x", 664.0)),
 		float(house_layout.get("entry_y", 674.0))
-	)
+	))
 	_rebuild_interactables()
 	_refresh_caption()
 	queue_redraw()
@@ -224,9 +287,8 @@ func tick(delta: float) -> void:
 	pulse_time += delta
 	var input_vector := Input.get_vector("move_left", "move_right", "move_up", "move_down")
 	room_player.set_movement_direction(input_vector)
-	room_player.position += input_vector * PLAYER_SPEED * delta
-	room_player.position.x = clamp(room_player.position.x, WALK_RECT.position.x, WALK_RECT.end.x)
-	room_player.position.y = clamp(room_player.position.y, WALK_RECT.position.y, WALK_RECT.end.y)
+	var desired_position := room_player.position + input_vector * PLAYER_SPEED * delta
+	room_player.position = _resolve_room_motion(room_player.position, desired_position)
 	_update_current_interactable()
 	queue_redraw()
 
@@ -299,16 +361,237 @@ func _refresh_caption() -> void:
 
 func _default_life_note() -> String:
 	match _scene_house_id():
+		"news_center_1":
+			return "墙上的头版和热线电话都还亮着，城里的风声随时会被写成新闻。"
+		"factory_2", "factory_house":
+			return "机械臂和控制台都还带着余温，钢铁味和机油味压满了整间屋子。"
+		"food_market_3", "food_market_4":
+			return "柜台上的货单和价签还没收，今天卖剩下的食材都藏在后头。"
+		"bookstore_5":
+			return "纸张、灰尘和旧消息混在一起，最值钱的往往不是书而是传闻。"
+		"stock_exchange_6", "stock_exchange":
+			return "落地窗外压着全城天际线，盘口灯墙和保密金库都在等下一轮敲钟。"
+		"capitalist_mansion_7":
+			return "证书、藏酒和城市夜景摆在一起，这里每样东西都在宣告权力。"
+		"bar_8":
+			return "酒瓶、吧台和暖灯把人留在这里，最值钱的话通常都在杯子放下以后。"
+		"slum_9", "slum_10", "slum_house":
+			return "床铺、旧报纸和裂开的墙皮全挤在一起，日子还得靠这间屋子顶着。"
 		"dock_house":
 			return "潮气贴在木梁上，绳结和锅具都还留着盐味。"
-		"factory_house":
-			return "墙角堆着旧工具和铁灰，炉边还有没擦净的手印。"
 		"exchange_house":
 			return "桌上的账本翻到半页，蜡油沿着铜台慢慢往下流。"
-		"stock_exchange":
-			return "落地窗外压着全城天际线，盘口灯墙和保密金库都在等下一轮敲钟。"
 		_:
 			return "补丁布帘挡着风，木板缝里还带着晚饭后的热气。"
+
+
+func _custom_room_texture_path_for_house(house_id: String) -> String:
+	return str(CUSTOM_ROOM_TEXTURES.get(house_id, ""))
+
+
+func _custom_room_walk_mask_path_for_house(house_id: String) -> String:
+	return str(CUSTOM_ROOM_WALK_MASK_TEXTURES.get(house_id, ""))
+
+
+func _custom_room_walk_mask_source_rect_for_house(house_id: String) -> Rect2:
+	return CUSTOM_ROOM_WALK_MASK_SOURCE_RECTS.get(house_id, Rect2())
+
+
+func _has_custom_room_scene() -> bool:
+	return custom_room_texture != null
+
+
+func _has_room_walk_mask() -> bool:
+	return custom_room_walk_mask_image != null
+
+
+func _current_room_base_texture() -> Texture2D:
+	if custom_room_texture != null:
+		return custom_room_texture
+	if _scene_house_id() == "stock_exchange":
+		return stock_exchange_interior
+	return null
+
+
+func _room_frame_rect() -> Rect2:
+	if _scene_house_id() == "stock_exchange":
+		return STOCK_EXCHANGE_FRAME_RECT
+	return CUSTOM_ROOM_FRAME_RECT
+
+
+func _room_walk_mask_dest_rect() -> Rect2:
+	var base_texture := _current_room_base_texture()
+	var source_rect := _custom_room_walk_mask_source_rect_for_house(_scene_house_id())
+	if base_texture == null or source_rect.size.x <= 0.0 or source_rect.size.y <= 0.0:
+		return _room_frame_rect()
+	var frame_rect := _room_frame_rect()
+	var scale_x := frame_rect.size.x / float(base_texture.get_width())
+	var scale_y := frame_rect.size.y / float(base_texture.get_height())
+	return Rect2(
+		frame_rect.position + Vector2(source_rect.position.x * scale_x, source_rect.position.y * scale_y),
+		Vector2(source_rect.size.x * scale_x, source_rect.size.y * scale_y)
+	)
+
+
+func _clamp_to_room_bounds(pos: Vector2) -> Vector2:
+	if _has_room_walk_mask():
+		var frame_rect := _room_walk_mask_dest_rect().grow(-2.0)
+		return Vector2(
+			clampf(pos.x, frame_rect.position.x, frame_rect.end.x),
+			clampf(pos.y, frame_rect.position.y, frame_rect.end.y)
+		)
+	return Vector2(
+		clampf(pos.x, WALK_RECT.position.x, WALK_RECT.end.x),
+		clampf(pos.y, WALK_RECT.position.y, WALK_RECT.end.y)
+	)
+
+
+func _spawn_position_for_room(pos: Vector2) -> Vector2:
+	var clamped := _clamp_to_room_bounds(pos)
+	if not _has_room_walk_mask():
+		return clamped
+	return _snap_to_room_walk_mask(clamped)
+
+
+func _resolve_room_motion(current: Vector2, desired: Vector2) -> Vector2:
+	var clamped_desired := _clamp_to_room_bounds(desired)
+	if not _has_room_walk_mask():
+		return clamped_desired
+	for candidate in [
+		clamped_desired,
+		_clamp_to_room_bounds(Vector2(clamped_desired.x, current.y)),
+		_clamp_to_room_bounds(Vector2(current.x, clamped_desired.y))
+	]:
+		if _is_point_on_room_walk_mask(candidate):
+			return candidate
+	if _is_point_on_room_walk_mask(current):
+		return current
+	return _snap_to_room_walk_mask(current)
+
+
+func _is_point_on_room_walk_mask(pos: Vector2) -> bool:
+	if custom_room_walk_mask_image == null:
+		return false
+	var frame_rect := _room_walk_mask_dest_rect()
+	if not frame_rect.has_point(pos):
+		return false
+	var uv := Vector2(
+		(pos.x - frame_rect.position.x) / frame_rect.size.x,
+		(pos.y - frame_rect.position.y) / frame_rect.size.y
+	)
+	var px := int(clampf(roundf(uv.x * float(custom_room_walk_mask_image.get_width() - 1)), 0.0, float(custom_room_walk_mask_image.get_width() - 1)))
+	var py := int(clampf(roundf(uv.y * float(custom_room_walk_mask_image.get_height() - 1)), 0.0, float(custom_room_walk_mask_image.get_height() - 1)))
+	return custom_room_walk_mask_image.get_pixel(px, py).a >= ROOM_WALK_MASK_ALPHA_THRESHOLD
+
+
+func _snap_to_room_walk_mask(pos: Vector2) -> Vector2:
+	var clamped := _clamp_to_room_bounds(pos)
+	if not _has_room_walk_mask():
+		return clamped
+	if _is_point_on_room_walk_mask(clamped):
+		return clamped
+	var best_point := clamped
+	var best_distance := INF
+	var frame_rect := _room_walk_mask_dest_rect().grow(-2.0)
+	var max_radius := int(maxf(frame_rect.size.x, frame_rect.size.y))
+	for radius in range(12, max_radius + 1, 12):
+		var sample_count := 16 if radius <= 96 else 28
+		for index in range(sample_count):
+			var angle := TAU * float(index) / float(sample_count)
+			var sample := clamped + Vector2(cos(angle), sin(angle)) * float(radius)
+			sample = _clamp_to_room_bounds(sample)
+			if not _is_point_on_room_walk_mask(sample):
+				continue
+			var distance := pos.distance_squared_to(sample)
+			if distance < best_distance:
+				best_distance = distance
+				best_point = sample
+		if best_distance < INF:
+			return best_point
+	var fallback_best := clamped
+	var fallback_distance := INF
+	for step_y in range(0, 96):
+		var y := frame_rect.position.y + frame_rect.size.y * float(step_y) / 95.0
+		for step_x in range(0, 140):
+			var x := frame_rect.position.x + frame_rect.size.x * float(step_x) / 139.0
+			var sample := Vector2(x, y)
+			if not _is_point_on_room_walk_mask(sample):
+				continue
+			var distance := pos.distance_squared_to(sample)
+			if distance < fallback_distance:
+				fallback_distance = distance
+				fallback_best = sample
+	return fallback_best
+
+
+func _spawn_interactable_rows(items: Array) -> void:
+	for item in items:
+		var node := InteractableView.new()
+		node.configure(item)
+		var position := Vector2(float(item.get("x", 0.0)), float(item.get("y", 0.0)))
+		if _has_room_walk_mask() and not _is_point_on_room_walk_mask(position):
+			var snapped_position := _snap_to_room_walk_mask(position)
+			if position.distance_to(snapped_position) <= 180.0:
+				position = snapped_position
+		node.position = position
+		interactable_layer.add_child(node)
+		interactables.append(node)
+
+
+func _custom_room_interactables() -> Array:
+	var district := get_current_district()
+	match _scene_house_id():
+		"news_center_1":
+			return [
+				{"id":"news_desk","kind":"desk","title":"新闻工位","district":district,"subtitle":"查看稿件、热线和今日头条。","x":870.0,"y":356.0},
+				{"id":"news_board","kind":"info","title":"线报墙","district":district,"subtitle":"翻看城里最新的风声和舆论热点。","x":1022.0,"y":520.0},
+				{"id":"archive_shelf","kind":"storage","title":"档案柜","district":district,"subtitle":"旧报纸、照片和剪报都压在这里。","x":316.0,"y":360.0},
+				{"id":"exit_house","kind":"exit_house","title":"前门","district":district,"subtitle":"回到街上。","x":664.0,"y":742.0},
+			]
+		"factory_2", "factory_house":
+			return [
+				{"id":"assembly_line","kind":"work","title":"装配线","district":district,"subtitle":"盯住机械臂和传送带，继续干活。","x":846.0,"y":584.0},
+				{"id":"control_console","kind":"desk","title":"控制台","district":district,"subtitle":"翻看工位记录、故障表和排班。","x":1054.0,"y":350.0},
+				{"id":"parts_rack","kind":"storage","title":"备件架","district":district,"subtitle":"零件、工具和半成品都堆在这儿。","x":286.0,"y":620.0},
+				{"id":"exit_house","kind":"exit_house","title":"厂门","district":district,"subtitle":"回到街上。","x":664.0,"y":742.0},
+			]
+		"food_market_3", "food_market_4":
+			return [
+				{"id":"market_counter","kind":"goods","title":"货摊柜台","district":district,"subtitle":"看货、问价，顺手做一笔买卖。","x":840.0,"y":468.0},
+				{"id":"cold_storage","kind":"storage","title":"后仓货架","district":district,"subtitle":"翻看今天剩下的存货和补货单。","x":320.0,"y":584.0},
+				{"id":"market_ledger","kind":"desk","title":"记账台","district":district,"subtitle":"价签、欠条和流水都在这张台面上。","x":1056.0,"y":320.0},
+				{"id":"exit_house","kind":"exit_house","title":"铺门","district":district,"subtitle":"回到街上。","x":664.0,"y":742.0},
+			]
+		"bookstore_5":
+			return [
+				{"id":"bookshelf","kind":"info","title":"书架","district":district,"subtitle":"翻翻旧书、传闻和夹在页里的纸条。","x":316.0,"y":360.0},
+				{"id":"front_counter","kind":"desk","title":"柜台","district":district,"subtitle":"问书、问路，也能顺手打听人。","x":920.0,"y":540.0},
+				{"id":"notice_shelf","kind":"tasks","title":"店内告示","district":district,"subtitle":"看看订书委托和临时活。","x":1086.0,"y":322.0},
+				{"id":"exit_house","kind":"exit_house","title":"店门","district":district,"subtitle":"回到街上。","x":664.0,"y":742.0},
+			]
+		"stock_exchange_6":
+			return [
+				{"id":"trading_floor","kind":"stocks","title":"交易席","district":district,"subtitle":"盯住股票报价和盘口变化。","x":700.0,"y":452.0},
+				{"id":"intel_terminal","kind":"info","title":"信息终端","district":district,"subtitle":"打听政策风向、席位耳语和市场消息。","x":1064.0,"y":186.0},
+				{"id":"broker_desk","kind":"desk","title":"经纪人办公桌","district":district,"subtitle":"翻看委托、成交和你的资金记录。","x":546.0,"y":476.0},
+				{"id":"vault","kind":"storage","title":"保密金库","district":district,"subtitle":"封存文件、筹码和贵重物都在这里。","x":424.0,"y":704.0},
+				{"id":"exit_house","kind":"exit_house","title":"正门","district":district,"subtitle":"回到街上。","x":678.0,"y":744.0},
+			]
+		"capitalist_mansion_7":
+			return [
+				{"id":"drawing_room","kind":"tasks","title":"会客桌","district":district,"subtitle":"看看请帖、邀约和家族安排。","x":770.0,"y":510.0},
+				{"id":"study_desk","kind":"desk","title":"书房桌","district":district,"subtitle":"账册、信件和投资计划都摊在这里。","x":988.0,"y":322.0},
+				{"id":"safe_room","kind":"storage","title":"保险柜","district":district,"subtitle":"贵重文件和现金都锁在里面。","x":318.0,"y":356.0},
+				{"id":"exit_house","kind":"exit_house","title":"侧门","district":district,"subtitle":"回到街上。","x":664.0,"y":742.0},
+			]
+		"bar_8":
+			return [
+				{"id":"bar_counter","kind":"goods","title":"吧台","district":district,"subtitle":"点酒、问价，顺便听点风声。","x":840.0,"y":468.0},
+				{"id":"bar_gossip","kind":"info","title":"酒客耳语","district":district,"subtitle":"角落里总有人愿意低声交换消息。","x":320.0,"y":360.0},
+				{"id":"bar_backroom","kind":"desk","title":"角落账桌","district":district,"subtitle":"老板把流水、赊账和名单都记在这里。","x":1082.0,"y":650.0},
+				{"id":"exit_house","kind":"exit_house","title":"酒吧门口","district":district,"subtitle":"回到街上。","x":664.0,"y":742.0},
+			]
+	return []
 
 
 func _rebuild_interactables() -> void:
@@ -318,30 +601,19 @@ func _rebuild_interactables() -> void:
 	interactables.clear()
 
 	if _scene_house_id() == "stock_exchange":
-		var exchange_items := [
-			{"id":"trading_floor","kind":"stocks","title":"交易席","district":get_current_district(),"subtitle":"盯住三支家族股票的盘口与成交带。","x":700.0,"y":452.0},
-			{"id":"intel_terminal","kind":"info","title":"信息终端","district":get_current_district(),"subtitle":"花钱打听市场传闻、政策风向和席位耳语。","x":1064.0,"y":186.0},
-			{"id":"broker_desk","kind":"desk","title":"经纪人办公桌","district":get_current_district(),"subtitle":"翻看账册、成交回执和你的资金记录。","x":546.0,"y":476.0},
-			{"id":"vault","kind":"storage","title":"保密金库","district":get_current_district(),"subtitle":"搜查封存的凭证、筹码和留给明天的库存。","x":424.0,"y":704.0},
-			{"id":"briefing_table","kind":"tasks","title":"晨会长桌","district":get_current_district(),"subtitle":"看看经纪行的委托、任务和临时悬赏。","x":1012.0,"y":672.0},
-			{"id":"exit_house","kind":"exit_house","title":"正门","district":get_current_district(),"subtitle":"回到交易所外街面。","x":678.0,"y":744.0}
-		]
-		var exchange_item_overrides := {
-			"trading_floor": {"title":"交易席", "subtitle":"盯住三支股票的盘口、涨跌与个人持仓。", "x":456.0, "y":544.0},
-			"intel_terminal": {"title":"信息终端", "subtitle":"查看市场风向、政策耳语和交易室里的流言。", "x":1036.0, "y":238.0},
-			"broker_desk": {"title":"经纪人办公桌", "subtitle":"翻看委托、回执和你的资金记录。", "x":314.0, "y":586.0},
-			"vault": {"title":"保密金库", "subtitle":"封存凭证、密码函和不能见光的材料。", "x":180.0, "y":708.0},
-			"briefing_table": {"title":"晨会长桌", "subtitle":"经纪行的临时委托、悬赏和会议纪要。", "x":760.0, "y":646.0},
-			"exit_house": {"title":"正门", "subtitle":"回到交易所大楼门前。", "x":1078.0, "y":730.0},
-		}
-		for item in exchange_items:
-			var exchange_override: Dictionary = exchange_item_overrides.get(str(item.get("id", "")), {})
-			item.merge(exchange_override, true)
-		for item in exchange_items:
-			var exchange_node := InteractableView.new()
-			exchange_node.configure(item)
-			interactable_layer.add_child(exchange_node)
-			interactables.append(exchange_node)
+		_spawn_interactable_rows([
+			{"id":"trading_floor","kind":"stocks","title":"交易席","district":get_current_district(),"subtitle":"盯住三支股票的盘口、涨跌与个人持仓。","x":456.0,"y":544.0},
+			{"id":"intel_terminal","kind":"info","title":"信息终端","district":get_current_district(),"subtitle":"查看市场风向、政策耳语和交易室里的流言。","x":1036.0,"y":238.0},
+			{"id":"broker_desk","kind":"desk","title":"经纪人办公桌","district":get_current_district(),"subtitle":"翻看委托、回执和你的资金记录。","x":314.0,"y":586.0},
+			{"id":"vault","kind":"storage","title":"保密金库","district":get_current_district(),"subtitle":"封存凭证、密码函和不能见光的材料。","x":180.0,"y":708.0},
+			{"id":"briefing_table","kind":"tasks","title":"晨会长桌","district":get_current_district(),"subtitle":"经纪行的临时委托、悬赏和会议纪要。","x":760.0,"y":646.0},
+			{"id":"exit_house","kind":"exit_house","title":"正门","district":get_current_district(),"subtitle":"回到交易所大楼门前。","x":1078.0,"y":730.0},
+		])
+		return
+
+	var custom_items := _custom_room_interactables()
+	if _has_custom_room_scene() and not custom_items.is_empty():
+		_spawn_interactable_rows(custom_items)
 		return
 
 	var items := [
@@ -351,11 +623,7 @@ func _rebuild_interactables() -> void:
 		{"id":"desk","kind":"desk","title":str(house_layout.get("desk_title", "账桌")),"district":get_current_district(),"subtitle":str(house_layout.get("desk_subtitle", "把价格、账目和风声重新理顺。")),"x":float(house_layout.get("desk_x", 628.0)),"y":float(house_layout.get("desk_y", 360.0))},
 		{"id":"exit_house","kind":"exit_house","title":"门口","district":get_current_district(),"subtitle":"把门带上，回到街上继续讨生活。","x":float(house_layout.get("entry_x", 664.0)),"y":float(house_layout.get("entry_y", 746.0))}
 	]
-	for item in items:
-		var node := InteractableView.new()
-		node.configure(item)
-		interactable_layer.add_child(node)
-		interactables.append(node)
+	_spawn_interactable_rows(items)
 
 
 func _update_current_interactable() -> void:
@@ -374,6 +642,9 @@ func _update_current_interactable() -> void:
 func _draw() -> void:
 	if _scene_house_id() == "stock_exchange":
 		_draw_stock_exchange_scene()
+		return
+	if _has_custom_room_scene():
+		_draw_custom_room_scene()
 		return
 	draw_rect(ROOM_RECT, house_theme.get("void", Color("1c130d")), true)
 	_draw_floor()
@@ -400,12 +671,26 @@ func _draw() -> void:
 	_draw_resident_presence()
 
 
+func _draw_custom_room_scene() -> void:
+	draw_rect(ROOM_RECT, Color("0f1014"), true)
+	var frame_rect := CUSTOM_ROOM_FRAME_RECT
+	draw_rect(frame_rect.grow(8.0), Color(0, 0, 0, 0.28), true)
+	draw_rect(frame_rect, Color("181a20"), true)
+	if custom_room_texture != null:
+		_draw_scaled_texture(custom_room_texture, frame_rect, Color(1, 1, 1, 0.98))
+	else:
+		draw_rect(frame_rect, Color("2d2f36"), true)
+	draw_rect(frame_rect, Color(1, 1, 1, 0.04), false, 3.0)
+	draw_rect(Rect2(56, 810, 1208, 30), Color(0, 0, 0, 0.26), true)
+
+
 func _draw_stock_exchange_scene() -> void:
 	draw_rect(ROOM_RECT, Color("0f1218"), true)
-	var frame_rect := Rect2(54, 84, 1212, 720)
+	var frame_rect := STOCK_EXCHANGE_FRAME_RECT
 	draw_rect(frame_rect, Color("10151d"), true)
-	if stock_exchange_interior != null:
-		_draw_scaled_texture(stock_exchange_interior, frame_rect, Color(1, 1, 1, 0.98))
+	var base_texture := custom_room_texture if custom_room_texture != null else stock_exchange_interior
+	if base_texture != null:
+		_draw_scaled_texture(base_texture, frame_rect, Color(1, 1, 1, 0.98))
 	else:
 		draw_rect(frame_rect, Color("2b3442"), true)
 		draw_rect(Rect2(120, 118, 1080, 220), Color("415269"), true)

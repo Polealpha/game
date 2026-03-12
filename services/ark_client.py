@@ -42,8 +42,11 @@ class ArkClient:
         # Keep dialogue latency low and let the frontend retry once if a round stalls.
         self.timeout_seconds = float(os.getenv("ARK_TIMEOUT_SECONDS", "6.5").strip() or "6.5")
         self.hard_timeout_seconds = float(os.getenv("ARK_HARD_TIMEOUT_SECONDS", "8.0").strip() or "8.0")
-        self.cooldown_seconds = float(os.getenv("ARK_FAILURE_COOLDOWN_SECONDS", "45").strip() or "45")
-        self._request_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="ark-client")
+        self.cooldown_seconds = float(os.getenv("ARK_FAILURE_COOLDOWN_SECONDS", "12").strip() or "12")
+        self.dialogue_workers = max(1, int(os.getenv("ARK_DIALOGUE_WORKERS", "2").strip() or "2"))
+        self.background_workers = max(1, int(os.getenv("ARK_BACKGROUND_WORKERS", "4").strip() or "4"))
+        self._dialogue_executor = ThreadPoolExecutor(max_workers=self.dialogue_workers, thread_name_prefix="ark-dialogue")
+        self._background_executor = ThreadPoolExecutor(max_workers=self.background_workers, thread_name_prefix="ark-background")
         self._client = None
         self._disabled_until = 0.0
         self._last_error = ""
@@ -64,12 +67,17 @@ class ArkClient:
         self._last_error = str(reason or "").strip()
         self._disabled_until = max(self._disabled_until, time.time() + self.cooldown_seconds)
 
-    def _create_completion(self, **kwargs: Any) -> Any:
+    def _executor_for_task(self, task_type: str) -> ThreadPoolExecutor:
+        if task_type == "dialogue_turn":
+            return self._dialogue_executor
+        return self._background_executor
+
+    def _create_completion(self, task_type: str, **kwargs: Any) -> Any:
         if self._client is None:
             raise RuntimeError("ark client disabled")
         if time.time() < self._disabled_until:
             raise RuntimeError("ark client cooling down")
-        future = self._request_executor.submit(self._client.chat.completions.create, **kwargs)
+        future = self._executor_for_task(task_type).submit(self._client.chat.completions.create, **kwargs)
         try:
             response = future.result(timeout=self.hard_timeout_seconds)
             self._disabled_until = 0.0
@@ -357,6 +365,7 @@ class ArkClient:
         for model_name in self._model_candidates():
             try:
                 response = self._create_completion(
+                    task_type="probe",
                     model=model_name,
                     temperature=0.1,
                     max_tokens=24,
@@ -416,6 +425,7 @@ class ArkClient:
         for model_name in self._model_candidates():
             try:
                 response = self._create_completion(
+                    task_type=task_type,
                     model=model_name,
                     temperature=0.01,
                     max_tokens=self._task_max_tokens(task_type),

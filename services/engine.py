@@ -522,7 +522,12 @@ class WorldEngine:
             self._refresh_derived_views()
             return ActionResult("黄铜钟响过，城市进入下一天。", self.snapshot())
 
-    def ai_pulse(self, trigger: str = "scheduled", scene_observation: dict[str, Any] | None = None) -> ActionResult:
+    def ai_pulse(
+        self,
+        trigger: str = "scheduled",
+        scene_observation: dict[str, Any] | None = None,
+        allow_live_llm: bool | None = None,
+    ) -> ActionResult:
         with self.lock:
             self._advance_realtime_clock()
             self._advance_clock(6)
@@ -532,8 +537,8 @@ class WorldEngine:
             if scene_observation:
                 self._record_scene_observation(scene_observation)
             self.state["demo_metrics"]["ai_pulses"] = int(self.state["demo_metrics"].get("ai_pulses", 0)) + 1
-            self._generate_ai_pulse(trigger=trigger)
-            var_allow_social_llm = self._allow_live_pulse_llm(trigger)
+            self._generate_ai_pulse(trigger=trigger, allow_live_llm_override=allow_live_llm)
+            var_allow_social_llm = self._allow_live_pulse_llm(trigger) if allow_live_llm is None else bool(allow_live_llm)
             self._run_agent_social_turns(scene_observation or {}, allow_llm=var_allow_social_llm)
             self._apply_intraday_market_move(reason="ai_pulse", decay=0.72)
             self._decay_district_signals()
@@ -3010,7 +3015,7 @@ class WorldEngine:
         self.state["global_news"].insert(0, generated)
         self.state["global_news"] = self.state["global_news"][:8]
 
-    def _generate_ai_pulse(self, trigger: str) -> None:
+    def _generate_ai_pulse(self, trigger: str, allow_live_llm_override: bool | None = None) -> None:
         self.state["local_broadcasts"] = []
         allow_boot_spread = trigger != "boot"
         for npc in self.state["npcs"]:
@@ -3019,7 +3024,7 @@ class WorldEngine:
             if allow_boot_spread:
                 self._apply_local_hearing(npc)
                 self._check_local_escalation(npc)
-        use_live_llm = self._allow_live_pulse_llm(trigger)
+        use_live_llm = self._allow_live_pulse_llm(trigger) if allow_live_llm_override is None else bool(allow_live_llm_override)
         if use_live_llm:
             self._apply_llm_pulse_brief(trigger)
             self._apply_scene_director_note(trigger)

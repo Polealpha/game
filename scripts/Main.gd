@@ -227,13 +227,14 @@ func _process(delta: float) -> void:
 		_move_player(delta)
 		_update_world_camera(delta)
 		_update_current_interactable()
-		_maybe_trigger_auto_house_entry()
 		_update_npc_attention()
 		_maybe_trigger_proactive_npc_talk(delta)
 	_refresh_interaction_badge()
 	_update_subtitles()
 	if not interior_mode:
 		_update_minimap()
+	if Input.is_action_just_pressed("enter_house_hotkey"):
+		_trigger_house_entry_hotkey()
 	if Input.is_action_just_pressed("interact"):
 		_trigger_primary_interaction()
 	if Input.is_action_just_pressed("debug_hearing"):
@@ -1260,6 +1261,9 @@ func _refresh_interaction_badge() -> void:
 			interaction_badge_label.text = "屋内走动中  ·  靠近床、灶台、储物箱或账桌后按 E"
 		return
 	if current_interactable != null:
+		if current_interactable.kind == "house":
+			interaction_badge_label.text = "F 进入 %s  ·  %s  ·  H 账本  ·  Tab 查看模式" % [current_interactable.title, current_interactable.subtitle]
+			return
 		interaction_badge_label.text = "E %s  ·  %s  ·  H 账本  ·  Tab 查看模式" % [current_interactable.title, current_interactable.subtitle]
 		return
 	var nearby_npcs := _get_nearby_npcs(1)
@@ -1351,16 +1355,23 @@ func _update_current_interactable() -> void:
 		nearest_npc_distance = float(nearby_npcs[0].get("distance", 99999.0))
 	var previous_interactable := current_interactable
 	var nearest: InteractableView = null
+	var nearest_house: InteractableView = null
 	var best_distance := 99999.0
+	var best_house_distance := 99999.0
 	for node in interactables:
 		var anchor := _interaction_anchor_for_node(node)
 		var distance := player.position.distance_to(anchor)
 		var interaction_radius := _interaction_radius_for_node(node)
 		node.set_focus_strength(clampf(1.0 - distance / (interaction_radius * 1.35), 0.0, 1.0))
-		var is_target := distance < interaction_radius and distance < best_distance
-		if is_target:
+		if node.kind == "house":
+			if distance < interaction_radius and distance < best_house_distance:
+				best_house_distance = distance
+				nearest_house = node
+		elif distance < interaction_radius and distance < best_distance:
 			best_distance = distance
 			nearest = node
+	if nearest_house != null:
+		nearest = nearest_house
 	for node in interactables:
 		node.set_highlighted(node == nearest)
 	current_interactable = nearest
@@ -1374,21 +1385,32 @@ func _update_current_interactable() -> void:
 		else:
 			hint_label.text = "附近有人。按 E 可直接搭话，或继续走向摊位和告示板。F3 显示听觉圈，Tab 切换查看模式。"
 	else:
-		hint_label.text = "靠近 %s。按 E 进行操作。%s  H 开关账本界面，Tab 临时取消遮挡。" % [current_interactable.title, current_interactable.subtitle]
+		if current_interactable.kind == "house":
+			hint_label.text = "靠近 %s 时会弹出入屋提示，按 F 进入房间。%s  H 开关账本界面，Tab 临时取消遮挡。" % [current_interactable.title, current_interactable.subtitle]
+		else:
+			hint_label.text = "靠近 %s。按 E 进行操作。%s  H 开关账本界面，Tab 临时取消遮挡。" % [current_interactable.title, current_interactable.subtitle]
 
 
 func _interaction_anchor_for_node(node: InteractableView) -> Vector2:
 	var anchor := node.position
-	if node.kind == "house" and node.interaction_id == "exchange_house":
-		anchor += Vector2(0.0, 132.0)
+	if node.kind == "house" and WorldLayout.has_house_door(node.interaction_id):
+		anchor = _to_world_position(WorldLayout.snap_to_walkable(WorldLayout.house_door_for_id(node.interaction_id)))
 	return anchor
 
 
 func _interaction_radius_for_node(node: InteractableView) -> float:
 	if node.kind == "house":
-		if node.interaction_id == "exchange_house":
-			return 216.0
-		return HOUSE_ENTRY_RADIUS * WORLD_VISUAL_SCALE
+		match node.interaction_id:
+			"exchange_house", "stock_exchange_6":
+				return 104.0 * WORLD_VISUAL_SCALE
+			"bookstore_5":
+				return 180.0 * WORLD_VISUAL_SCALE
+			"news_center_1", "capitalist_mansion_7":
+				return 120.0 * WORLD_VISUAL_SCALE
+			"bar_8", "food_market_3", "food_market_4":
+				return 112.0 * WORLD_VISUAL_SCALE
+			_:
+				return 104.0 * WORLD_VISUAL_SCALE
 	return 78.0 * WORLD_VISUAL_SCALE
 
 
@@ -1404,20 +1426,25 @@ func _exchange_entry_zone(node: InteractableView) -> Rect2:
 	return Rect2(center + Vector2(-188.0, -44.0), Vector2(376.0, 236.0))
 
 
+func _nearest_house_for_entry() -> InteractableView:
+	var nearest: InteractableView = null
+	var best_distance := INF
+	for node in interactables:
+		if node.kind != "house":
+			continue
+		var anchor := _interaction_anchor_for_node(node)
+		var distance := player.position.distance_to(anchor)
+		var interaction_radius := _interaction_radius_for_node(node)
+		if distance > interaction_radius:
+			continue
+		if distance < best_distance:
+			best_distance = distance
+			nearest = node
+	return nearest
+
+
 func _maybe_trigger_auto_house_entry() -> void:
-	var exchange_house := _exchange_house_node()
-	if exchange_house == null:
-		return
-	if modal_overlay.visible or ledger_ui_visible or inspection_mode or not pending_dialogue_request.is_empty():
-		return
-	var now := Time.get_ticks_msec()
-	if now - last_auto_enter_msec < 900:
-		return
-	var entry_zone := _exchange_entry_zone(exchange_house)
-	if not entry_zone.has_point(player.position):
-		return
-	last_auto_enter_msec = now
-	_submit_interaction(_default_payload_for_interactable(exchange_house))
+	return
 
 
 func _open_interactable_actions() -> void:
@@ -1465,6 +1492,9 @@ func _open_interactable_actions() -> void:
 func _trigger_primary_interaction() -> void:
 	var payload := _default_payload_for_current_context()
 	if payload.is_empty():
+		if not interior_mode and current_interactable != null and current_interactable.kind == "house" and not ledger_ui_visible:
+			GameState.add_toast("靠近门口后按 F 进入 %s。" % current_interactable.title)
+			return
 		if ledger_ui_visible:
 			_open_interactable_actions()
 		else:
@@ -1476,8 +1506,6 @@ func _trigger_primary_interaction() -> void:
 
 
 func _default_payload_for_current_context() -> Dictionary:
-	if current_interactable != null and current_interactable.kind == "house" and current_interactable.interaction_id == "exchange_house":
-		return _default_payload_for_interactable(current_interactable)
 	var nearby_npcs := _get_nearby_npcs(1, DIRECT_TALK_RADIUS * WORLD_VISUAL_SCALE)
 	if not nearby_npcs.is_empty():
 		var npc_id := str(nearby_npcs[0].get("id", ""))
@@ -1494,8 +1522,26 @@ func _default_payload_for_current_context() -> Dictionary:
 				}
 			}
 	if current_interactable != null:
+		if current_interactable.kind == "house":
+			return {}
 		return _default_payload_for_interactable(current_interactable)
 	return {}
+
+
+func _trigger_house_entry_hotkey() -> void:
+	if interior_mode:
+		return
+	if modal_overlay.visible or ledger_ui_visible or inspection_mode or not pending_dialogue_request.is_empty():
+		return
+	var house_node := current_interactable if current_interactable != null and current_interactable.kind == "house" else _nearest_house_for_entry()
+	if house_node == null:
+		GameState.add_toast("靠近房门后再按 F。")
+		return
+	var now := Time.get_ticks_msec()
+	if now - last_auto_enter_msec < 240:
+		return
+	last_auto_enter_msec = now
+	_submit_interaction(_default_payload_for_interactable(house_node))
 
 
 func _default_payload_for_interactable(node: InteractableView) -> Dictionary:

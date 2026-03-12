@@ -81,10 +81,20 @@ const STREET_LAMPS := [
 ]
 
 const HOUSE_DOORS := {
-	"slum_house": Vector2(610, 560),
+	"slum_house": Vector2(548, 452),
 	"dock_house": Vector2(860, 720),
 	"factory_house": Vector2(2240, 1120),
-	"exchange_house": Vector2(1370, 690),
+	"exchange_house": Vector2(1370, 804),
+	"news_center_1": Vector2(2012, 448),
+	"factory_2": Vector2(2240, 1120),
+	"food_market_3": Vector2(428, 1688),
+	"food_market_4": Vector2(240, 1810),
+	"bookstore_5": Vector2(2620, 778),
+	"stock_exchange_6": Vector2(1370, 804),
+	"capitalist_mansion_7": Vector2(2516, 412),
+	"bar_8": Vector2(583, 1183),
+	"slum_9": Vector2(760, 420),
+	"slum_10": Vector2(220, 520),
 }
 
 const SUBREGIONS := [
@@ -168,11 +178,16 @@ const SUBREGIONS := [
 ]
 
 const INTERACTABLES := [
-	{"id": "slum_house", "kind": "house", "title": "山坡租屋", "district": "贫民街", "subtitle": "推门进屋，睡觉、做饭和翻储物箱", "subregion_id": "forest_farm", "x": 610, "y": 560},
+	{"id": "slum_10", "kind": "house", "title": "贫民窟", "district": "贫民街", "subtitle": "靠近门口后按交互键进入房间。", "subregion_id": "forest_farm", "x": 220, "y": 520},
+	{"id": "slum_9", "kind": "house", "title": "贫民窟", "district": "贫民街", "subtitle": "靠近门口后按交互键进入房间。", "subregion_id": "forest_farm", "x": 760, "y": 420},
+	{"id": "slum_house", "kind": "house", "title": "山坡租屋", "district": "贫民街", "subtitle": "靠近门口后按交互键进入房间。", "subregion_id": "forest_farm", "x": 548, "y": 420},
 	{"id": "slum_market", "kind": "goods", "title": "鱼市小摊", "district": "贫民街", "subtitle": "便宜杂货和旧货消息都在这儿", "subregion_id": "wild_path", "x": 260, "y": 1570},
 	{"id": "rag_broker", "kind": "goods", "title": "巷口杂铺", "district": "贫民街", "subtitle": "低价散货、旧箱子和临时货单", "subregion_id": "courtyard_garden", "x": 430, "y": 760},
 	{"id": "charity_board", "kind": "tasks", "title": "山坡告示牌", "district": "贫民街", "subtitle": "委托、苦活和代办都贴在这里", "subregion_id": "forest_farm", "x": 240, "y": 360},
 	{"id": "forest_stall", "kind": "info", "title": "街口风声", "district": "贫民街", "subtitle": "这里能听到租金、粮价和欠账消息", "subregion_id": "courtyard_garden", "x": 720, "y": 900},
+	{"id": "bar_8", "kind": "house", "title": "酒吧", "district": "港口", "subtitle": "靠近门口后按交互键进入房间。", "subregion_id": "stonebridge_quarter", "x": 583, "y": 1100},
+	{"id": "food_market_4", "kind": "house", "title": "食品市场", "district": "港口", "subtitle": "靠近门口后按交互键进入房间。", "subregion_id": "shipyard_workshop", "x": 240, "y": 1730},
+	{"id": "food_market_3", "kind": "house", "title": "食品市场", "district": "港口", "subtitle": "靠近门口后按交互键进入房间。", "subregion_id": "shipyard_workshop", "x": 428, "y": 1600},
 	{"id": "dock_labor", "kind": "work", "title": "船坞工牌", "district": "港口", "subtitle": "搬箱、修船和装卸都在这里领工", "subregion_id": "shipyard_workshop", "x": 1430, "y": 1540},
 	{"id": "harbor_broker", "kind": "info", "title": "运河耳报", "district": "港口", "subtitle": "花点钱打听航运、热货和谁在抢仓位", "subregion_id": "canal_harbor", "x": 1260, "y": 1080},
 	{"id": "dock_house", "kind": "house", "title": "石桥住屋", "district": "港口", "subtitle": "潮木、鱼腥和炉火都留在屋里", "subregion_id": "stonebridge_quarter", "x": 860, "y": 720},
@@ -183,6 +198,9 @@ const INTERACTABLES := [
 	{"id": "canteen_supply", "kind": "goods", "title": "厂区配给", "district": "工厂区", "subtitle": "便宜面包、热汤和工区常备货", "subregion_id": "watermill_yard", "x": 1850, "y": 1440},
 	{"id": "rumor_post", "kind": "info", "title": "货场小报", "district": "工厂区", "subtitle": "矿价、工钱和谁要闹事都写在这", "subregion_id": "stoneyard_workcamp", "x": 2520, "y": 1450},
 	{"id": "mill_notice", "kind": "tasks", "title": "机房白板", "district": "工厂区", "subtitle": "修机、搬料和守夜的活在这里接", "subregion_id": "watermill_yard", "x": 2070, "y": 980},
+	{"id": "news_center_1", "kind": "house", "title": "新闻中心", "district": "交易所", "subtitle": "靠近门口后按交互键进入房间。", "subregion_id": "church_graveyard", "x": 2012, "y": 360},
+	{"id": "capitalist_mansion_7", "kind": "house", "title": "资本家豪宅", "district": "交易所", "subtitle": "靠近门口后按交互键进入房间。", "subregion_id": "clocktower_market", "x": 2516, "y": 300},
+	{"id": "bookstore_5", "kind": "house", "title": "书店", "district": "交易所", "subtitle": "靠近门口后按交互键进入房间。", "subregion_id": "clocktower_market", "x": 2620, "y": 730},
 	{"id": "exchange_board", "kind": "stocks", "title": "交易牌价", "district": "交易所", "subtitle": "买卖股票，盯住资本风向", "subregion_id": "clocktower_market", "x": 2190, "y": 220},
 	{"id": "market_whisper", "kind": "info", "title": "市场风报", "district": "交易所", "subtitle": "付费获得宏观传言和盘口消息", "subregion_id": "church_graveyard", "x": 2060, "y": 640},
 	{"id": "family_registry", "kind": "tasks", "title": "会客前厅", "district": "交易所", "subtitle": "查关系、接差事、领委托", "subregion_id": "rune_tower", "x": 1120, "y": 620},
@@ -366,3 +384,7 @@ static func fountain_points() -> Array:
 
 static func house_door_for_id(house_id: String) -> Vector2:
 	return HOUSE_DOORS.get(house_id, PLAYER_START)
+
+
+static func has_house_door(house_id: String) -> bool:
+	return HOUSE_DOORS.has(house_id)

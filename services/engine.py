@@ -620,10 +620,17 @@ class WorldEngine:
                     "favorability_state": favorability_state,
                     "listener_sections": self._dialogue_listener_sections(npc_snapshot, topic),
                     "relationship_memory": {
-                        "player_memory": copy.deepcopy(npc_snapshot.get("player_memory", {})),
-                        "recent_events": copy.deepcopy(list(npc_snapshot.get("relationship_memory", []))[:2]),
-                        "conversation_history": self._dialogue_history_view(npc_snapshot, counterpart_id="player", limit=2),
-                        "local_memory": self._local_memory_view(npc_snapshot, counterpart_id="player", topic_id=str(topic.get("id", "")), limit=2),
+                        "player_memory": {
+                            "talk_count": int(dict(npc_snapshot.get("player_memory", {})).get("talk_count", 0)),
+                            "cash_gift_total": int(dict(npc_snapshot.get("player_memory", {})).get("cash_gift_total", 0)),
+                            "friendly_count": int(dict(npc_snapshot.get("player_memory", {})).get("friendly_count", 0)),
+                            "hardball_count": int(dict(npc_snapshot.get("player_memory", {})).get("hardball_count", 0)),
+                            "bought_over": bool(dict(npc_snapshot.get("player_memory", {})).get("bought_over", False)),
+                            "follows_player": bool(dict(npc_snapshot.get("player_memory", {})).get("follows_player", False)),
+                        },
+                        "recent_events": copy.deepcopy(list(npc_snapshot.get("relationship_memory", []))[:1]),
+                        "conversation_history": self._dialogue_history_view(npc_snapshot, counterpart_id="player", limit=1),
+                        "local_memory": self._local_memory_view(npc_snapshot, counterpart_id="player", topic_id=str(topic.get("id", "")), limit=1),
                     },
                     "scene_observation": {
                         "current_district": district,
@@ -7790,12 +7797,22 @@ class WorldEngine:
             str(row.get("summary", "")).strip()
             for row in recent.get("recent_events", [])
             if isinstance(row, dict) and str(row.get("summary", "")).strip()
-        ][:3]
+        ][:2]
         salient_memories = [
             str(row.get("summary", "")).strip()
             for row in recent.get("salient_memories", [])
             if isinstance(row, dict) and str(row.get("summary", "")).strip()
-        ][:2]
+        ][:1]
+        stock_signals = {
+            key: value
+            for key, value in copy.deepcopy(city.get("stocks", {})).items()
+        }
+        story_pulse = {
+            "SUI": dict(city.get("shadow_reputation", {})).get("SUI", 15),
+            "ST": dict(city.get("shadow_reputation", {})).get("ST", 1.0),
+            "WL": dict(city.get("shadow_reputation", {})).get("WL", 1),
+        }
+        player_memory = self._npc_player_memory(npc)
         return {
             "who_you_are": {
                 "name": str(who.get("name", "")),
@@ -7806,39 +7823,34 @@ class WorldEngine:
                 "public_mask": str(who.get("public_mask", "")),
                 "core_drive": str(who.get("core_drive", "")),
                 "current_secret": str(who.get("current_secret", "")),
-                "persona_brief": str(who.get("persona_brief", "")),
             },
             "current_status": {
                 "cash": int(status.get("cash", 0)),
                 "work_status": str(status.get("work_status", "")),
-                "emotions": copy.deepcopy(status.get("emotions", {})),
-                "stock_positions": copy.deepcopy(status.get("stock_positions", {})),
                 "speech_register": str(favorability.get("speech_register", "")),
                 "disclosure_willingness": float(favorability.get("disclosure_willingness", 0.0)),
-                "story_metrics": copy.deepcopy(status.get("story_metrics", {})),
+                "trust_streak": int(player_memory.get("trust_streak", 0)),
             },
             "recent_experiences": {
                 "recent_events": recent_events,
                 "salient_memories": salient_memories,
-                "reflection_summary": str(recent.get("reflection_summary", "")),
             },
             "people_and_relations": {
-                "trusted_people": copy.deepcopy(relations.get("trusted_people", [])),
-                "watch_people": copy.deepcopy(relations.get("watch_people", [])),
-                "relationship_hooks": copy.deepcopy(relations.get("relationship_hooks", [])),
+                "trusted_people": copy.deepcopy(relations.get("trusted_people", []))[:1],
+                "watch_people": copy.deepcopy(relations.get("watch_people", []))[:2],
+                "relationship_hooks": copy.deepcopy(relations.get("relationship_hooks", []))[:2],
             },
             "city_summary": {
                 "district": str(city.get("district", "")),
-                "stocks": copy.deepcopy(city.get("stocks", {})),
+                "stocks": stock_signals,
                 "top_topic": str(city.get("top_topic", "")),
                 "top_collective": str(city.get("top_collective", "")),
-                "reputation": copy.deepcopy(city.get("reputation", {})),
-                "shadow_reputation": copy.deepcopy(city.get("shadow_reputation", {})),
+                "story_pulse": story_pulse,
                 "active_norms": [
                     str(row.get("text", "")).strip()
                     for row in city.get("active_norms", [])
                     if isinstance(row, dict) and str(row.get("text", "")).strip()
-                ][:2],
+                ][:1],
             },
         }
 

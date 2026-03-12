@@ -124,9 +124,11 @@ def world_end_day(_payload: WorldActionRequest) -> dict[str, Any]:
 
 @app.post("/ai/pulse")
 def ai_pulse(payload: AIPulseRequest) -> dict[str, Any]:
+    trigger = str(payload.trigger or "manual")
+    allow_live_llm = trigger not in {"scheduled", "scheduled_scene"}
     result = engine.ai_pulse(
-        trigger=payload.trigger,
-        allow_live_llm=True,
+        trigger=trigger,
+        allow_live_llm=allow_live_llm,
         scene_observation={
             "current_district": payload.current_district,
             "player_position": payload.player_position,

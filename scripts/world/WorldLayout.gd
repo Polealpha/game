@@ -55,6 +55,15 @@ const BLOCKED_RECTS := [
 	Rect2(2570, 1510, 500, 390),
 ]
 
+const FORCED_WALKABLE_RECTS := [
+	# Exchange frontage: repair two holes in the road mask without widening
+	# nearby walls or the planter/fountain side.
+	Rect2(1140, 628, 484, 134),
+	Rect2(1598, 638, 48, 124),
+	Rect2(1618, 768, 190, 92),
+	Rect2(1698, 858, 168, 132),
+]
+
 const WATER_AREAS := [
 	{"id": "upper_canal", "rect": Rect2(720, 700, 280, 120), "flow": Vector2(1.0, 0.08), "strength": 0.9},
 	{"id": "market_basin", "rect": Rect2(1130, 910, 320, 430), "flow": Vector2(0.5, 0.18), "strength": 0.78},
@@ -259,6 +268,9 @@ static func label_position_for_district(district_name: String) -> Vector2:
 static func is_walkable_point(pos: Vector2) -> bool:
 	if not WORLD_RECT.has_point(pos):
 		return false
+	for rect in FORCED_WALKABLE_RECTS:
+		if rect.has_point(pos):
+			return true
 	if _has_road_mask():
 		return _is_point_on_road_mask(pos)
 	for rect in WATER_RECTS:

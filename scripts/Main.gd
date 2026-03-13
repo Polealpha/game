@@ -132,10 +132,17 @@ var news_ticker_label := RichTextLabel.new()
 var interaction_badge_label := Label.new()
 var inspect_badge := Label.new()
 var hud_badge := Label.new()
+var market_flash_panel_node: CanvasItem
+var news_ticker_panel_node: CanvasItem
 var exchange_terminal_panel := PanelContainer.new()
 var exchange_terminal_title := Label.new()
+var exchange_terminal_scroll := ScrollContainer.new()
+var exchange_terminal_scroll_body := VBoxContainer.new()
 var exchange_terminal_summary := RichTextLabel.new()
 var exchange_terminal_tape := RichTextLabel.new()
+var exchange_terminal_controls := HBoxContainer.new()
+var exchange_quantity_input := LineEdit.new()
+var exchange_leverage_input := LineEdit.new()
 var exchange_terminal_actions := VBoxContainer.new()
 var exchange_terminal_nodes: Array[CanvasItem] = []
 var minimap_panel_node: CanvasItem
@@ -379,6 +386,7 @@ func _build_ui() -> void:
 	market_flash_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	market_flash_label.add_theme_color_override("default_color", Color("f5e8c6"))
 	market_margin.add_child(market_flash_label)
+	market_flash_panel_node = market_margin.get_parent()
 
 	var ticker_margin := _make_overlay_card(Rect2(282, 742, 888, 44))
 	news_ticker_label.bbcode_enabled = true
@@ -388,6 +396,7 @@ func _build_ui() -> void:
 	news_ticker_label.custom_minimum_size = Vector2(860, 30)
 	news_ticker_label.add_theme_color_override("default_color", Color("f3e7c7"))
 	ticker_margin.add_child(news_ticker_label)
+	news_ticker_panel_node = ticker_margin.get_parent()
 	
 	var exchange_style := StyleBoxFlat.new()
 	exchange_style.bg_color = Color(0.09, 0.12, 0.16, 0.9)
@@ -424,18 +433,52 @@ func _build_ui() -> void:
 	exchange_terminal_title.add_theme_color_override("font_color", Color("f4dfb7"))
 	exchange_box.add_child(exchange_terminal_title)
 
+	exchange_terminal_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	exchange_terminal_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	exchange_terminal_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	exchange_box.add_child(exchange_terminal_scroll)
+
+	exchange_terminal_scroll_body.add_theme_constant_override("separation", 8)
+	exchange_terminal_scroll_body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	exchange_terminal_scroll.add_child(exchange_terminal_scroll_body)
+
 	_setup_rich_text(exchange_terminal_summary, false)
 	exchange_terminal_summary.custom_minimum_size = Vector2(0, 164)
 	exchange_terminal_summary.add_theme_color_override("default_color", Color("e9dcc0"))
-	exchange_box.add_child(exchange_terminal_summary)
+	exchange_terminal_scroll_body.add_child(exchange_terminal_summary)
 
 	_setup_rich_text(exchange_terminal_tape, false)
 	exchange_terminal_tape.custom_minimum_size = Vector2(0, 82)
 	exchange_terminal_tape.add_theme_color_override("default_color", Color("d4c29c"))
-	exchange_box.add_child(exchange_terminal_tape)
+	exchange_terminal_scroll_body.add_child(exchange_terminal_tape)
+
+	exchange_terminal_controls.add_theme_constant_override("separation", 8)
+	exchange_terminal_scroll_body.add_child(exchange_terminal_controls)
+
+	var qty_label := Label.new()
+	qty_label.text = "股数"
+	qty_label.add_theme_color_override("font_color", Color("d8c28e"))
+	exchange_terminal_controls.add_child(qty_label)
+
+	exchange_quantity_input.placeholder_text = "10"
+	exchange_quantity_input.text = "10"
+	exchange_quantity_input.custom_minimum_size = Vector2(76, 34)
+	exchange_quantity_input.max_length = 6
+	exchange_terminal_controls.add_child(exchange_quantity_input)
+
+	var leverage_label := Label.new()
+	leverage_label.text = "杠杆"
+	leverage_label.add_theme_color_override("font_color", Color("d8c28e"))
+	exchange_terminal_controls.add_child(leverage_label)
+
+	exchange_leverage_input.placeholder_text = "1"
+	exchange_leverage_input.text = "1"
+	exchange_leverage_input.custom_minimum_size = Vector2(76, 34)
+	exchange_leverage_input.max_length = 3
+	exchange_terminal_controls.add_child(exchange_leverage_input)
 
 	exchange_terminal_actions.add_theme_constant_override("separation", 6)
-	exchange_box.add_child(exchange_terminal_actions)
+	exchange_terminal_scroll_body.add_child(exchange_terminal_actions)
 	_layout_exchange_terminal_panel()
 
 	var overview_panel := _make_panel(Rect2(18, 18, 448, 148), "乌龟账本")
@@ -717,14 +760,33 @@ func _layout_exchange_terminal_panel() -> void:
 		return
 	var viewport_size := get_viewport_rect().size
 	last_viewport_size = viewport_size
-	var panel_width := clampf(viewport_size.x * 0.32, 360.0, 510.0)
-	var panel_height := clampf(viewport_size.y - 140.0, 360.0, 560.0)
+	var panel_width := clampf(viewport_size.x * 0.34, 420.0, 560.0)
+	var panel_height := clampf(viewport_size.y - 56.0, 420.0, 760.0)
 	var panel_x := maxf(16.0, viewport_size.x - panel_width - 24.0)
-	var panel_y := clampf(122.0, 16.0, maxf(16.0, viewport_size.y - panel_height - 24.0))
+	var panel_y := clampf(66.0, 16.0, maxf(16.0, viewport_size.y - panel_height - 24.0))
 	exchange_terminal_panel.position = Vector2(panel_x, panel_y)
 	exchange_terminal_panel.size = Vector2(panel_width, panel_height)
-	exchange_terminal_summary.custom_minimum_size = Vector2(0, clampf(panel_height * 0.33, 128.0, 188.0))
-	exchange_terminal_tape.custom_minimum_size = Vector2(0, clampf(panel_height * 0.16, 72.0, 108.0))
+	exchange_terminal_scroll.custom_minimum_size = Vector2(0, panel_height - 60.0)
+	exchange_terminal_summary.custom_minimum_size = Vector2(panel_width - 52.0, clampf(panel_height * 0.34, 180.0, 320.0))
+	exchange_terminal_tape.custom_minimum_size = Vector2(panel_width - 52.0, clampf(panel_height * 0.16, 88.0, 132.0))
+
+
+func _exchange_interior_active() -> bool:
+	return interior_mode and str(current_house_data.get("id", "")) in ["stock_exchange", "exchange_house", "stock_exchange_6"]
+
+
+func _current_exchange_quantity() -> int:
+	var text := str(exchange_quantity_input.text).strip_edges()
+	if text.is_empty() or not text.is_valid_int():
+		return 10
+	return max(1, int(text))
+
+
+func _current_exchange_leverage(max_leverage: int = 50) -> int:
+	var text := str(exchange_leverage_input.text).strip_edges()
+	if text.is_empty() or not text.is_valid_int():
+		return 1
+	return clampi(int(text), 1, max(1, max_leverage))
 
 
 func _make_panel(rect: Rect2, title: String) -> Dictionary:
@@ -3442,7 +3504,7 @@ func _confirm_player_action_reaction(tag: String, data: Dictionary) -> void:
 
 func _player_action_preview_emotion(action_type: String) -> String:
 	match action_type:
-		"buy_goods", "sell_goods", "buy_stock", "sell_stock":
+		"buy_goods", "sell_goods", "buy_stock", "sell_stock", "short_stock", "cover_short":
 			return "puzzled"
 		"accept_task", "claim_task":
 			return "startled"
@@ -3459,6 +3521,10 @@ func _player_action_confirm_emotion(action_type: String, message: String) -> Str
 			return "startled"
 		"sell_stock":
 			return "puzzled"
+		"short_stock":
+			return "scoff"
+		"cover_short":
+			return "startled"
 		"buy_goods":
 			return "puzzled"
 		"sell_goods":
@@ -3666,7 +3732,7 @@ func _player_action_reaction_bias(candidate: NPCView, action_type: String, confi
 	var activity := candidate.get_activity()
 	var prop := candidate.get_prop()
 	match action_type:
-		"buy_stock", "sell_stock":
+		"buy_stock", "sell_stock", "short_stock", "cover_short":
 			if district == "交易所":
 				bias += 0.55
 			if role in ["投机者", "银行经理", "代理人", "记者"]:
@@ -3715,7 +3781,7 @@ func _player_action_social_role(candidate: NPCView, action_type: String, confirm
 	var role := candidate.get_role()
 	var district := candidate.get_district()
 	match action_type:
-		"buy_stock", "sell_stock":
+		"buy_stock", "sell_stock", "short_stock", "cover_short":
 			if role in ["投机者", "银行经理", "代理人"] and index <= 1:
 				return "listener" if confirmed else "glance"
 			if district == "交易所" and index <= 2:
@@ -3738,7 +3804,7 @@ func _player_action_social_role(candidate: NPCView, action_type: String, confirm
 			return "slowpass" if index > 1 else "glance"
 		if action_type == "claim_task":
 			return "bystand" if index == 0 else "glance"
-		if action_type == "buy_stock" or action_type == "sell_stock":
+		if action_type == "buy_stock" or action_type == "sell_stock" or action_type == "short_stock" or action_type == "cover_short":
 			return "listener" if index == 0 else "glance"
 	return "glance"
 
@@ -3755,9 +3821,9 @@ func _player_action_reaction_for_candidate(candidate: NPCView, action_type: Stri
 		elif base_emotion == "scoff" and index == 0 and action_type == "claim_task":
 			reaction = "startled"
 	match action_type:
-		"buy_stock", "sell_stock":
+		"buy_stock", "sell_stock", "short_stock", "cover_short":
 			if role in ["投机者", "银行经理"] and confirmed:
-				return "startled" if action_type == "buy_stock" else "puzzled"
+				return "startled" if action_type in ["buy_stock", "cover_short"] else "puzzled"
 			if role == "记者":
 				return "puzzled"
 		"work":
@@ -3948,6 +4014,10 @@ func _apply_visibility_modes() -> void:
 	for node in compact_ui_nodes:
 		if is_instance_valid(node):
 			node.visible = compact_visible
+	if is_instance_valid(market_flash_panel_node):
+		market_flash_panel_node.visible = compact_visible and not _exchange_interior_active()
+	if is_instance_valid(news_ticker_panel_node):
+		news_ticker_panel_node.visible = compact_visible and not _exchange_interior_active()
 	var exchange_visible := _exchange_terminal_active() and not inspection_mode
 	for node in exchange_terminal_nodes:
 		if is_instance_valid(node):
@@ -3955,7 +4025,7 @@ func _apply_visibility_modes() -> void:
 	if is_instance_valid(minimap_panel_node):
 		minimap_panel_node.visible = ui_panels_visible and not interior_mode
 	if is_instance_valid(subtitle_panel_node):
-		subtitle_panel_node.visible = not inspection_mode
+		subtitle_panel_node.visible = not inspection_mode and not _exchange_interior_active()
 	for node in world_overlay_nodes:
 		if is_instance_valid(node):
 			node.visible = false and not interior_mode
@@ -4473,16 +4543,23 @@ func _update_exchange_terminal(snapshot: Dictionary) -> void:
 	var maintenance_margin := int(exchange_view.get("maintenance_margin", 0))
 	var equity := int(exchange_view.get("equity", 0))
 	var buying_power := int(exchange_view.get("buying_power", 0))
+	var short_exposure := int(exchange_view.get("short_exposure", 0))
 	var player_health := int(exchange_view.get("player_health", 100))
 	var route_label := str(exchange_view.get("financial_route", "暗池精英"))
 	var account_locked := bool(exchange_view.get("account_locked", false))
 	var liquidation_pending := bool(exchange_view.get("liquidation_pending", false))
 	var account_note := str(exchange_view.get("account_lock_reason", ""))
+	var account_max_leverage := int(account_tier.get("max_leverage", 10))
+	exchange_leverage_input.placeholder_text = "1-%s" % account_max_leverage
+	exchange_leverage_input.tooltip_text = "输入 1-%s 的杠杆倍数。" % account_max_leverage
+	exchange_quantity_input.tooltip_text = "输入每次下单的股数。"
 	var lines: Array[String] = []
 	for stock in stocks:
 		var stock_name := str(stock.get("display_name", stock.get("name", "")))
 		var price := int(stock.get("current_price", 0))
 		var held := int(stock.get("held", 0))
+		var short_qty := int(stock.get("short_qty", 0))
+		var avg_short_price := int(round(float(stock.get("short_avg_price", 0.0))))
 		var market_cap := int(stock.get("market_cap", 0))
 		var change_amount := int(stock.get("change_amount", 0))
 		var change_pct := float(stock.get("change_pct", 0.0)) * 100.0
@@ -4496,15 +4573,17 @@ func _update_exchange_terminal(snapshot: Dictionary) -> void:
 			change_color = "#d96d52"
 		elif change_pct < -0.01:
 			change_color = "#74b58a"
-		lines.append("[b]%s[/b]  现价 %s  持仓 %s\n[color=%s]涨跌 %+d / %+.2f%%[/color]  总市值 %s  成交量 %s\n主力席位 %s" % [
+		lines.append("[b]%s[/b]  现价 %s  多仓 %s  空仓 %s\n[color=%s]涨跌 %+d / %+.2f%%[/color]  总市值 %s  成交量 %s\n空仓均价 %s  主力席位 %s" % [
 			stock_name,
 			price,
 			held,
+			short_qty,
 			change_color,
 			change_amount,
 			change_pct,
 			market_cap,
 			trade_volume,
+			avg_short_price if short_qty > 0 else "-",
 			" / ".join(holder_parts) if not holder_parts.is_empty() else "暂无大户",
 		])
 	var status_color := "#74b58a" if market_open else "#d96d52"
@@ -4518,16 +4597,18 @@ func _update_exchange_terminal(snapshot: Dictionary) -> void:
 		warning_lines.insert(0, " - %s" % account_note)
 	elif account_locked and not account_note.is_empty():
 		warning_lines.insert(0, " - %s" % account_note)
-	exchange_terminal_summary.text = "[b]账户[/b] %s  杠杆 %s  现金 %s  持仓总值 %s  总资产 %s\n[b]风险仓位[/b] 净值 %s  负债 %s  维持保证金 %s  可买额度 %s\n[b]人物状态[/b] 路线 %s  生命 %s  账户%s\n[b]交易所状态[/b] %s  当前时间 %s  交易时段 %s\n[b]革命税[/b] 玩家累计 %s  全市场累计 %s  起义军武装等级 WL %s\n[b]声望[/b] FC %s / FB %s / SN %s\n[b]影子盘[/b] SUI %s / ST %s / 风险 %s / 警局 %s\n%s%s" % [
+	exchange_terminal_summary.text = "[b]账户[/b] %s  杠杆 %s  现金 %s  持仓总值 %s  空仓敞口 %s  总资产 %s\n[b]风险仓位[/b] 净值 %s  负债 %s  维持保证金 %s  可买额度 %s\n[b]交易盘面[/b] 全市场总市值 %s\n[b]人物状态[/b] 路线 %s  生命 %s  账户%s\n[b]交易所状态[/b] %s  当前时间 %s  交易时段 %s\n[b]革命税[/b] 玩家累计 %s  全市场累计 %s  起义军武装等级 WL %s\n[b]声望[/b] FC %s / FB %s / SN %s\n[b]影子盘[/b] SUI %s / ST %s / 风险 %s / 警局 %s\n%s%s" % [
 		str(account_tier.get("label", "青铜级")),
 		str(account_tier.get("leverage", "1x-10x")),
 		int(exchange_view.get("player_cash", 0)),
 		int(exchange_view.get("player_holdings_value", 0)),
+		short_exposure,
 		int(exchange_view.get("player_total_wealth", 0)),
 		equity,
 		margin_debt,
 		maintenance_margin,
 		buying_power,
+		int(exchange_view.get("market_total_value", 0)),
 		route_label,
 		player_health,
 		"冻结" if account_locked else "正常",
@@ -4567,19 +4648,18 @@ func _update_exchange_terminal(snapshot: Dictionary) -> void:
 		row_label.add_theme_color_override("font_color", Color("f0dfbe"))
 		row.add_child(row_label)
 		for spec in [
-			{"text": "买1", "mode": "buy_stock", "qty": 1, "base": Color("2f6f4f"), "hover": Color("3f8a60"), "press": Color("244f3a")},
-			{"text": "卖1", "mode": "sell_stock", "qty": 1, "base": Color("6c4a2a"), "hover": Color("8a6037"), "press": Color("4f3520")},
-			{"text": "买10", "mode": "buy_stock", "qty": 10, "base": Color("2f6f4f"), "hover": Color("3f8a60"), "press": Color("244f3a")},
-			{"text": "卖10", "mode": "sell_stock", "qty": 10, "base": Color("6c4a2a"), "hover": Color("8a6037"), "press": Color("4f3520")},
+			{"text": "买入", "mode": "buy_stock", "base": Color("2f6f4f"), "hover": Color("3f8a60"), "press": Color("244f3a")},
+			{"text": "卖出", "mode": "sell_stock", "base": Color("6c4a2a"), "hover": Color("8a6037"), "press": Color("4f3520")},
+			{"text": "做空", "mode": "short_stock", "base": Color("405b88"), "hover": Color("5675a6"), "press": Color("2d4360")},
+			{"text": "平空", "mode": "cover_short", "base": Color("6f5d2f"), "hover": Color("8e7a40"), "press": Color("55461e")},
 		]:
 			var mode := str(spec.get("mode", "buy_stock"))
-			var qty := int(spec.get("qty", 1))
 			var button := Button.new()
 			button.text = str(spec.get("text", "交易"))
-			button.custom_minimum_size = Vector2(58, 32)
+			button.custom_minimum_size = Vector2(64, 32)
 			_style_button(button, spec.get("base", Color("6c4a2a")), spec.get("hover", Color("8a6037")), spec.get("press", Color("4f3520")))
 			button.pressed.connect(func() -> void:
-				_submit_exchange_stock_trade(stock_name, stock_key, mode, qty)
+				_submit_exchange_stock_trade(stock_name, stock_key, mode, _current_exchange_quantity(), _current_exchange_leverage(account_max_leverage))
 			)
 			row.add_child(button)
 		exchange_terminal_actions.add_child(row)
@@ -4617,7 +4697,7 @@ func _update_exchange_terminal(snapshot: Dictionary) -> void:
 		exchange_terminal_actions.add_child(ops_row)
 
 
-func _submit_exchange_stock_trade(stock_name: String, stock_key: String, action_type: String, quantity: int) -> void:
+func _submit_exchange_stock_trade(stock_name: String, stock_key: String, action_type: String, quantity: int, leverage: int = 1) -> void:
 	if (stock_name.is_empty() and stock_key.is_empty()) or quantity <= 0:
 		return
 	_submit_interaction({
@@ -4628,6 +4708,7 @@ func _submit_exchange_stock_trade(stock_name: String, stock_key: String, action_
 			"stock_key": stock_key,
 			"ticker": stock_key,
 			"quantity": quantity,
+			"leverage": leverage,
 		},
 	})
 

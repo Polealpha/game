@@ -1854,6 +1854,41 @@ class WorldEngineTest(unittest.TestCase):
         sell_result = self.engine.action("sell_stock", "交易所", {"stock_name": "龟甲物流", "quantity": 10})
         self.assertLess(int(sell_result.world_state["player"]["stock_margin_debt"]), debt_after_buy)
 
+    def test_short_trade_updates_tape_and_short_exposure(self) -> None:
+        result = self.engine.action("short_stock", "浜ゆ槗鎵€", {"ticker": "SWC", "quantity": 15, "leverage": 4})
+        snapshot = result.world_state
+        exchange = snapshot["stock_exchange_view"]
+        swc_view = next(row for row in exchange["stocks"] if row["ticker"] == "SWC")
+        swc_state = next(row for row in snapshot["stocks"] if row["ticker"] == "SWC")
+        self.assertEqual(snapshot["stock_trade_tape"][0]["side"], "short")
+        self.assertEqual(int(swc_view["short_qty"]), 15)
+        self.assertGreater(int(exchange["short_exposure"]), 0)
+        self.assertEqual(int(swc_view["market_cap"]), int(swc_state["issued_shares"]) * int(swc_state["current_price"]))
+
+    def test_cover_short_reduces_position_and_reports_pnl(self) -> None:
+        self.engine.action("short_stock", "浜ゆ槗鎵€", {"ticker": "TSL", "quantity": 20, "leverage": 3})
+        result = self.engine.action("cover_short", "浜ゆ槗鎵€", {"ticker": "TSL", "quantity": 8, "leverage": 3})
+        exchange = result.world_state["stock_exchange_view"]
+        tsl_view = next(row for row in exchange["stocks"] if row["ticker"] == "TSL")
+        self.assertEqual(result.world_state["stock_trade_tape"][0]["side"], "cover")
+        self.assertEqual(int(tsl_view["short_qty"]), 12)
+        self.assertIn("盈亏", exchange["feedback"])
+
+    def test_buying_power_respects_selected_leverage(self) -> None:
+        self.engine.state["player"]["cash"] = 5_000
+        low_leverage = self.engine.action("buy_stock", "浜ゆ槗鎵€", {"ticker": "SWC", "quantity": 400, "leverage": 1})
+        self.assertIn("杠杆", low_leverage.message)
+        high_leverage = self.engine.action("buy_stock", "浜ゆ槗鎵€", {"ticker": "SWC", "quantity": 40, "leverage": 5})
+        self.assertIn("买入", high_leverage.message)
+
+    def test_margin_buy_uses_financing_and_sell_reduces_debt(self) -> None:
+        self.engine.state["player"]["cash"] = 1_000
+        buy_result = self.engine.action("buy_stock", "交易所", {"ticker": "TSL", "quantity": 80, "leverage": 5})
+        self.assertGreater(int(buy_result.world_state["player"]["stock_margin_debt"]), 0)
+        debt_after_buy = int(buy_result.world_state["player"]["stock_margin_debt"])
+        sell_result = self.engine.action("sell_stock", "交易所", {"ticker": "TSL", "quantity": 10})
+        self.assertLess(int(sell_result.world_state["player"]["stock_margin_debt"]), debt_after_buy)
+
     def test_margin_call_sets_pending_and_then_triggers_physical_liquidation(self) -> None:
         player = self.engine.state["player"]
         player["cash"] = 200

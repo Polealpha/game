@@ -4,25 +4,25 @@ class_name PlayerView
 const TURN_DURATION := 0.18
 const INTERACT_DURATION := 0.34
 const CHARACTER_SCALE := Vector2(0.82, 0.82)
-const CHARACTER_BASE_PATH := "res://assets/generated/character_sheets"
+const CHARACTER_BASE_PATH := "res://assets/generated/portrait_people"
 const SHEET_PATHS := {
 	"idle": {
-		"down": CHARACTER_BASE_PATH + "/hero_idle_sheet.png",
-		"up": CHARACTER_BASE_PATH + "/hero_idle_sheet.png",
-		"left": CHARACTER_BASE_PATH + "/hero_idle_sheet.png",
-		"right": CHARACTER_BASE_PATH + "/hero_idle_sheet.png",
+		"down": CHARACTER_BASE_PATH + "/player_idle.png",
+		"up": CHARACTER_BASE_PATH + "/player_idle.png",
+		"left": CHARACTER_BASE_PATH + "/player_idle.png",
+		"right": CHARACTER_BASE_PATH + "/player_idle.png",
 	},
 	"walk": {
-		"down": CHARACTER_BASE_PATH + "/hero_move_sheet.png",
-		"up": CHARACTER_BASE_PATH + "/hero_move_sheet.png",
-		"left": CHARACTER_BASE_PATH + "/hero_move_sheet.png",
-		"right": CHARACTER_BASE_PATH + "/hero_move_sheet.png",
+		"down": CHARACTER_BASE_PATH + "/player_move.png",
+		"up": CHARACTER_BASE_PATH + "/player_move.png",
+		"left": CHARACTER_BASE_PATH + "/player_move.png",
+		"right": CHARACTER_BASE_PATH + "/player_move.png",
 	},
 	"interact": {
-		"down": CHARACTER_BASE_PATH + "/hero_move_sheet.png",
-		"up": CHARACTER_BASE_PATH + "/hero_move_sheet.png",
-		"left": CHARACTER_BASE_PATH + "/hero_move_sheet.png",
-		"right": CHARACTER_BASE_PATH + "/hero_move_sheet.png",
+		"down": CHARACTER_BASE_PATH + "/player_move.png",
+		"up": CHARACTER_BASE_PATH + "/player_move.png",
+		"left": CHARACTER_BASE_PATH + "/player_move.png",
+		"right": CHARACTER_BASE_PATH + "/player_move.png",
 	},
 }
 const FRAME_COUNTS := {

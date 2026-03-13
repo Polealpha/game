@@ -1,0 +1,190 @@
+{
+  "source_dir": "C:\\Users\\Lenovo\\Desktop\\abc\\牛逼抠图",
+  "player": {
+    "source_key": "01_杰杰",
+    "idle": "player_idle.png",
+    "move": "player_move.png"
+  },
+  "npcs": {
+    "npc_01": {
+      "source_key": "31_维克多",
+      "idle": "npc_01_idle.png",
+      "move": "npc_01_move.png"
+    },
+    "npc_02": {
+      "source_key": "26_塞拉斯",
+      "idle": "npc_02_idle.png",
+      "move": "npc_02_move.png"
+    },
+    "npc_03": {
+      "source_key": "03_露丝夫人",
+      "idle": "npc_03_idle.png",
+      "move": "npc_03_move.png"
+    },
+    "npc_04": {
+      "source_key": "16_斯摩格",
+      "idle": "npc_04_idle.png",
+      "move": "npc_04_move.png"
+    },
+    "npc_05": {
+      "source_key": "26_塞拉斯",
+      "idle": "npc_05_idle.png",
+      "move": "npc_05_move.png"
+    },
+    "npc_06": {
+      "source_key": "05_伊芙琳",
+      "idle": "npc_06_idle.png",
+      "move": "npc_06_move.png"
+    },
+    "npc_07": {
+      "source_key": "21_龟爷",
+      "idle": "npc_07_idle.png",
+      "move": "npc_07_move.png"
+    },
+    "npc_08": {
+      "source_key": "27_亚哈",
+      "idle": "npc_08_idle.png",
+      "move": "npc_08_move.png"
+    },
+    "npc_09": {
+      "source_key": "19_布鲁特斯",
+      "idle": "npc_09_idle.png",
+      "move": "npc_09_move.png"
+    },
+    "npc_10": {
+      "source_key": "11_老咸鱼",
+      "idle": "npc_10_idle.png",
+      "move": "npc_10_move.png"
+    },
+    "npc_11": {
+      "source_key": "03_露丝夫人",
+      "idle": "npc_11_idle.png",
+      "move": "npc_11_move.png"
+    },
+    "npc_12": {
+      "source_key": "07_刀疤",
+      "idle": "npc_12_idle.png",
+      "move": "npc_12_move.png"
+    },
+    "npc_13": {
+      "source_key": "04_毒蛇",
+      "idle": "npc_13_idle.png",
+      "move": "npc_13_move.png"
+    },
+    "npc_14": {
+      "source_key": "22_温斯顿",
+      "idle": "npc_14_idle.png",
+      "move": "npc_14_move.png"
+    },
+    "npc_15": {
+      "source_key": "13_戈登",
+      "idle": "npc_15_idle.png",
+      "move": "npc_15_move.png"
+    },
+    "npc_16": {
+      "source_key": "17_里奥",
+      "idle": "npc_16_idle.png",
+      "move": "npc_16_move.png"
+    },
+    "npc_17": {
+      "source_key": "02_巴恩斯",
+      "idle": "npc_17_idle.png",
+      "move": "npc_17_move.png"
+    },
+    "npc_18": {
+      "source_key": "15_万斯医生",
+      "idle": "npc_18_idle.png",
+      "move": "npc_18_move.png"
+    },
+    "npc_19": {
+      "source_key": "30_克拉拉",
+      "idle": "npc_19_idle.png",
+      "move": "npc_19_move.png"
+    },
+    "npc_20": {
+      "source_key": "14_亚瑟",
+      "idle": "npc_20_idle.png",
+      "move": "npc_20_move.png"
+    },
+    "npc_21": {
+      "source_key": "05_伊芙琳",
+      "idle": "npc_21_idle.png",
+      "move": "npc_21_move.png"
+    },
+    "npc_22": {
+      "source_key": "01_杰杰",
+      "idle": "npc_22_idle.png",
+      "move": "npc_22_move.png"
+    },
+    "npc_23": {
+      "source_key": "12_露易丝",
+      "idle": "npc_23_idle.png",
+      "move": "npc_23_move.png"
+    },
+    "npc_24": {
+      "source_key": "01_杰杰",
+      "idle": "npc_24_idle.png",
+      "move": "npc_24_move.png"
+    },
+    "npc_25": {
+      "source_key": "18_鲍勃",
+      "idle": "npc_25_idle.png",
+      "move": "npc_25_move.png"
+    },
+    "npc_26": {
+      "source_key": "06_戴夫",
+      "idle": "npc_26_idle.png",
+      "move": "npc_26_move.png"
+    },
+    "npc_27": {
+      "source_key": "25_伊格尼斯",
+      "idle": "npc_27_idle.png",
+      "move": "npc_27_move.png"
+    },
+    "npc_28": {
+      "source_key": "09_汤姆",
+      "idle": "npc_28_idle.png",
+      "move": "npc_28_move.png"
+    },
+    "npc_29": {
+      "source_key": "09_汤姆",
+      "idle": "npc_29_idle.png",
+      "move": "npc_29_move.png"
+    },
+    "npc_30": {
+      "source_key": "10_哈德森太太",
+      "idle": "npc_30_idle.png",
+      "move": "npc_30_move.png"
+    },
+    "npc_31": {
+      "source_key": "06_戴夫",
+      "idle": "npc_31_idle.png",
+      "move": "npc_31_move.png"
+    },
+    "npc_32": {
+      "source_key": "08_杰瑞",
+      "idle": "npc_32_idle.png",
+      "move": "npc_32_move.png"
+    },
+    "npc_33": {
+      "source_key": "20_妮娜",
+      "idle": "npc_33_idle.png",
+      "move": "npc_33_move.png"
+    },
+    "npc_34": {
+      "source_key": "05_伊芙琳",
+      "idle": "npc_34_idle.png",
+      "move": "npc_34_move.png"
+    },
+    "npc_35": {
+      "source_key": "23_老皮特",
+      "idle": "npc_35_idle.png",
+      "move": "npc_35_move.png"
+    },
+    "npc_36": {
+      "source_key": "29_巴德",
+      "idle": "npc_36_idle.png",
+      "move": "npc_36_move.png"
+    }
+  }
+}

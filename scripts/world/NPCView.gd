@@ -3,6 +3,7 @@ class_name NPCView
 
 const BODY_OUTLINE := Color("221710")
 const SPEECH_BUBBLE_TEXTURE_PATH := "res://assets/vendor/opengameart/pixel_speech_bubbles/Sprite Sheet.png"
+const PORTRAIT_BASE_PATH := "res://assets/generated/portrait_people"
 const SPEECH_BUBBLE_FRAME := Vector2i(32, 32)
 const SPEECH_BUBBLE_STEP := 34
 const ROLE_PROP_ICON_PATHS := {
@@ -527,10 +528,11 @@ func _draw() -> void:
 		_draw_bubble_backplate()
 		_draw_speech_tail(head_center)
 	_draw_sprite_body(torso_center, stride, bob)
-	_draw_species_tail(torso_center, accent, cloth)
-	_draw_sprite_accessories(torso_center, head_center, accent, cloth, speaker_weight, listener_weight, interject_weight, yield_weight, pause_weight, bystand_weight, glance_weight, slowpass_weight, disperse_weight, dismiss_weight, puzzled_weight, startled_weight, scoff_weight, hurry_weight, talk_open, gesture_swing, listen_nod, idle_role_weight)
-	_draw_role_walk(torso_center, head_center, accent, cloth, walk_blend)
-	_draw_role_prop(torso_center + Vector2(6 * rendered_facing, 0), bob, accent)
+	if not _uses_custom_portrait():
+		_draw_species_tail(torso_center, accent, cloth)
+		_draw_sprite_accessories(torso_center, head_center, accent, cloth, speaker_weight, listener_weight, interject_weight, yield_weight, pause_weight, bystand_weight, glance_weight, slowpass_weight, disperse_weight, dismiss_weight, puzzled_weight, startled_weight, scoff_weight, hurry_weight, talk_open, gesture_swing, listen_nod, idle_role_weight)
+		_draw_role_walk(torso_center, head_center, accent, cloth, walk_blend)
+		_draw_role_prop(torso_center + Vector2(6 * rendered_facing, 0), bob, accent)
 	_draw_commute_carry_prop(torso_center + Vector2(6 * rendered_facing, 0), bob, accent, cloth)
 	_draw_emote_icon(head_center)
 
@@ -896,6 +898,9 @@ func _load_emote_texture(path: String) -> Texture2D:
 
 
 func _sprite_meta() -> Dictionary:
+	var portrait_meta := _custom_portrait_meta()
+	if not portrait_meta.is_empty():
+		return portrait_meta
 	var sprite_key := str(visual_profile.get("sprite_key", "base"))
 	return ANIMAL_SPRITES.get(sprite_key, ANIMAL_SPRITES["base"])
 
@@ -923,6 +928,8 @@ func _sprite_row_for_direction(direction: String) -> int:
 
 
 func _sprite_modulate() -> Color:
+	if _uses_custom_portrait():
+		return Color.WHITE
 	var modulate := Color.WHITE
 	match str(npc_data.get("mood", "")):
 		"anxious":
@@ -953,8 +960,31 @@ func _load_sprite_texture(path: String) -> Texture2D:
 	return texture
 
 
+func _custom_portrait_meta() -> Dictionary:
+	var idle_path := str(visual_profile.get("portrait_idle_path", ""))
+	if idle_path.is_empty():
+		return {}
+	var move_path := str(visual_profile.get("portrait_move_path", idle_path))
+	if not FileAccess.file_exists(ProjectSettings.globalize_path(move_path)):
+		move_path = idle_path
+	return {
+		"idle_path": idle_path,
+		"move_path": move_path,
+		"frame": Vector2i(128, 128),
+		"idle_frames": 4,
+		"move_frames": 8,
+		"scale": 0.68,
+		"ground_offset": 26.0,
+		"family": "portrait"
+	}
+
+
+func _uses_custom_portrait() -> bool:
+	return not _custom_portrait_meta().is_empty()
+
+
 func _draw_species_tail(center: Vector2, accent: Color, cloth: Color) -> void:
-	if str(visual_profile.get("sprite_family", "")) == "square":
+	if str(visual_profile.get("sprite_family", "")) in ["square", "portrait"]:
 		return
 	match str(visual_profile.get("tail", "none")):
 		"fox":
@@ -1266,6 +1296,8 @@ func _build_visual_profile(data: Dictionary) -> Dictionary:
 		"labor_breath": 0.0,
 		"sprite_family": "square",
 		"sprite_key": _npc_sprite_key(data),
+		"portrait_idle_path": "",
+		"portrait_move_path": "",
 		"sprite_scale_bias": 0.0,
 		"posture_phase": _variant_unit(str(data.get("id", "")), 0) * TAU,
 		"shoulder_offset": _variant_centered(str(data.get("id", "")), 1) * 8.0,
@@ -1421,6 +1453,13 @@ func _build_visual_profile(data: Dictionary) -> Dictionary:
 		"home":
 			profile["restless"] = max(0.0, float(profile["restless"]) - 0.25)
 
+	var portrait_paths := _portrait_paths_for_id(str(data.get("id", "")))
+	if not portrait_paths.is_empty():
+		profile["portrait_idle_path"] = str(portrait_paths.get("idle_path", ""))
+		profile["portrait_move_path"] = str(portrait_paths.get("move_path", ""))
+		profile["sprite_family"] = "portrait"
+		profile["sprite_scale_bias"] = max(float(profile["sprite_scale_bias"]), -0.02)
+
 	return profile
 
 
@@ -1544,6 +1583,21 @@ func _npc_sprite_key(data: Dictionary) -> String:
 	for ch in str(data.get("id", "")).to_utf8_buffer():
 		total += int(ch)
 	return keys[total % keys.size()]
+
+
+func _portrait_paths_for_id(npc_id: String) -> Dictionary:
+	if npc_id.is_empty():
+		return {}
+	var idle_path := "%s/%s_idle.png" % [PORTRAIT_BASE_PATH, npc_id]
+	if not FileAccess.file_exists(ProjectSettings.globalize_path(idle_path)):
+		return {}
+	var move_path := "%s/%s_move.png" % [PORTRAIT_BASE_PATH, npc_id]
+	if not FileAccess.file_exists(ProjectSettings.globalize_path(move_path)):
+		move_path = idle_path
+	return {
+		"idle_path": idle_path,
+		"move_path": move_path,
+	}
 
 
 func _direction_name_for_vector(value: Vector2) -> String:

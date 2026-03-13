@@ -333,6 +333,7 @@ class WorldEngine:
                     "class_position": "底层",
                     "financial_route": "暗池精英",
                     "stock_margin_debt": 0,
+                    "stock_short_positions": {"海藻重工": {"quantity": 0, "avg_price": 0.0}, "市政债券": {"quantity": 0, "avg_price": 0.0}, "龟甲物流": {"quantity": 0, "avg_price": 0.0}},
                     "stock_account_locked": False,
                     "stock_account_lock_reason": "",
                     "stock_liquidation_pending": False,
@@ -517,10 +518,16 @@ class WorldEngine:
                     return self._trade_good(payload["good_name"], int(payload.get("quantity", 1)), -1, payload)
                 case "buy_stock":
                     stock_ref = str(payload.get("stock_name") or payload.get("stock_key") or payload.get("ticker") or payload.get("id") or "")
-                    return self._trade_stock_v2(stock_ref, int(payload.get("quantity", 1)), 1)
+                    return self._trade_stock_v2(stock_ref, int(payload.get("quantity", 1)), 1, int(payload.get("leverage", 1)))
                 case "sell_stock":
                     stock_ref = str(payload.get("stock_name") or payload.get("stock_key") or payload.get("ticker") or payload.get("id") or "")
-                    return self._trade_stock_v2(stock_ref, int(payload.get("quantity", 1)), -1)
+                    return self._trade_stock_v2(stock_ref, int(payload.get("quantity", 1)), -1, int(payload.get("leverage", 1)))
+                case "short_stock":
+                    stock_ref = str(payload.get("stock_name") or payload.get("stock_key") or payload.get("ticker") or payload.get("id") or "")
+                    return self._trade_stock_short_v2(stock_ref, int(payload.get("quantity", 1)), 1, int(payload.get("leverage", 1)))
+                case "cover_short":
+                    stock_ref = str(payload.get("stock_name") or payload.get("stock_key") or payload.get("ticker") or payload.get("id") or "")
+                    return self._trade_stock_short_v2(stock_ref, int(payload.get("quantity", 1)), -1, int(payload.get("leverage", 1)))
                 case "gift_money":
                     return self._gift_money_to_npc(str(payload.get("npc_id", "")), int(payload.get("amount", 0)), district)
                 case "buy_intel":
@@ -2648,11 +2655,16 @@ class WorldEngine:
         player.setdefault("health", 100)
         player.setdefault("financial_route", "暗池精英")
         player.setdefault("stock_margin_debt", 0)
+        player.setdefault("stock_short_positions", {})
         player.setdefault("stock_account_locked", False)
         player.setdefault("stock_account_lock_reason", "")
         player.setdefault("stock_liquidation_pending", False)
         player.setdefault("stock_liquidation_note", "")
         player.setdefault("stock_liquidation_due_tick", 0)
+        for stock in self.state.get("stocks", []):
+            stock_name = str(stock.get("name", ""))
+            if stock_name and stock_name not in player["stock_short_positions"]:
+                player["stock_short_positions"][stock_name] = {"quantity": 0, "avg_price": 0.0}
         self.state.setdefault("ending_state", {})
         return player
 
@@ -2661,6 +2673,15 @@ class WorldEngine:
         stock_rows = self.state.get("stocks", [])
         return sum(
             int(player.get("stock_holdings", {}).get(str(row.get("name", "")), 0)) * int(row.get("current_price", 0))
+            for row in stock_rows
+        )
+
+    def _player_stock_short_exposure(self) -> int:
+        player = self._ensure_player_financial_state()
+        short_positions = dict(player.get("stock_short_positions", {}))
+        stock_rows = self.state.get("stocks", [])
+        return sum(
+            int(dict(short_positions.get(str(row.get("name", "")), {})).get("quantity", 0)) * int(row.get("current_price", 0))
             for row in stock_rows
         )
 
@@ -2681,14 +2702,14 @@ class WorldEngine:
 
     def _player_stock_equity(self) -> int:
         player = self._ensure_player_financial_state()
-        return int(player.get("cash", 0)) + self._player_stock_holdings_value() - self._player_stock_margin_debt()
+        return int(player.get("cash", 0)) + self._player_stock_holdings_value() - self._player_stock_short_exposure() - self._player_stock_margin_debt()
 
     def _stock_maintenance_margin(self) -> int:
         player = self._ensure_player_financial_state()
         debt = self._player_stock_margin_debt()
-        if debt <= 0:
+        gross_exposure = self._player_stock_holdings_value() + self._player_stock_short_exposure()
+        if debt <= 0 and gross_exposure <= 0:
             return 0
-        gross_exposure = self._player_stock_holdings_value()
         shadow = dict(self._story_metrics_state().get("shadow_reputation", {}))
         ratio = 0.15
         if float(shadow.get("SUI", 15.0)) >= 80.0:
@@ -2698,13 +2719,24 @@ class WorldEngine:
         swc = self._stock_by_ticker("SWC") or {}
         if int(player.get("stock_holdings", {}).get(str(swc.get("name", "")), 0)) > 0 and float(shadow.get("SUI", 15.0)) >= 31.0:
             ratio += 0.03
+        if self._player_stock_short_exposure() > 0:
+            ratio += 0.05
         return int(round(max(500.0, gross_exposure * ratio)))
 
-    def _player_stock_buying_power(self) -> int:
+    def _player_stock_buying_power(self, leverage_override: int | None = None) -> int:
         equity = max(0, self._player_stock_equity())
         tier = self._stock_account_tier()
-        max_exposure = max(500, equity) * int(tier.get("max_leverage", 10))
-        return max(0, int(max_exposure - self._player_stock_holdings_value()))
+        max_allowed_leverage = int(tier.get("max_leverage", 10))
+        leverage = max_allowed_leverage if leverage_override is None else max(1, min(int(leverage_override), max_allowed_leverage))
+        max_exposure = max(500, equity) * leverage
+        gross_exposure = self._player_stock_holdings_value() + self._player_stock_short_exposure()
+        return max(0, int(max_exposure - gross_exposure))
+
+    def _resolve_stock_reference(self, stock_ref: str) -> dict[str, Any] | None:
+        stock = self._find_by_name(self.state.get("stocks", []), stock_ref)
+        if stock:
+            return stock
+        return self._stock_by_ticker(stock_ref)
 
     def _stock_op_active(self, key: str) -> bool:
         return int(self._stock_ops_state().get(key, 0)) > self._world_tick()
@@ -2857,6 +2889,9 @@ class WorldEngine:
         for stock in self.state.get("stocks", []):
             stock_name = str(stock.get("name", ""))
             held = holdings.get(stock_name, 0)
+            short_row = dict(player.get("stock_short_positions", {}).get(stock_name, {}))
+            short_qty = int(short_row.get("quantity", 0))
+            short_avg_price = float(short_row.get("avg_price", 0.0))
             current_price = int(stock.get("current_price", 0))
             market_cap = int(stock.get("market_cap", int(stock.get("issued_shares", 0)) * current_price))
             holding_value = held * current_price
@@ -2877,6 +2912,9 @@ class WorldEngine:
                     "market_cap": market_cap,
                     "held": held,
                     "holding_value": holding_value,
+                    "short_qty": short_qty,
+                    "short_avg_price": round(short_avg_price, 3),
+                    "short_exposure": short_qty * current_price,
                     "change_amount": int(stock.get("change_amount", 0)),
                     "change_pct": round(float(stock.get("change_pct", 0.0)), 4),
                     "trade_volume": int(stock.get("trade_volume", 0)),
@@ -2905,6 +2943,7 @@ class WorldEngine:
         margin_debt = self._player_stock_margin_debt()
         equity = self._player_stock_equity()
         maintenance_margin = self._stock_maintenance_margin()
+        short_exposure = self._player_stock_short_exposure()
         liquidation_pending = bool(player.get("stock_liquidation_pending", False))
         account_locked = bool(player.get("stock_account_locked", False))
         ops = self._stock_ops_state()
@@ -2950,6 +2989,7 @@ class WorldEngine:
             "margin_debt": margin_debt,
             "maintenance_margin": maintenance_margin,
             "equity": equity,
+            "short_exposure": short_exposure,
             "buying_power": self._player_stock_buying_power(),
             "sam_tax_total": int(metrics.get("sam_tax_total", 0)),
             "player_trading_fees": int(metrics.get("player_trading_fees", 0)),
@@ -3003,6 +3043,10 @@ class WorldEngine:
         player["cash"] = 0
         player["stock_margin_debt"] = 0
         player["stock_holdings"] = {str(name): 0 for name in dict(player.get("stock_holdings", {})).keys()}
+        player["stock_short_positions"] = {
+            str(name): {"quantity": 0, "avg_price": 0.0}
+            for name in dict(player.get("stock_short_positions", {})).keys()
+        }
         player["goods_inventory"] = {str(name): 0 for name in dict(player.get("goods_inventory", {})).keys()}
         player["stock_liquidation_pending"] = False
         player["stock_liquidation_due_tick"] = 0
@@ -3243,6 +3287,14 @@ class WorldEngine:
         stock_name = str(stock.get("name", stock_name))
         quantity = max(1, int(quantity))
         total_amount = int(unit_price) * quantity
+        side = "buy" if direction > 0 else "sell"
+        label = f"{'买入' if direction > 0 else '卖出'} {stock_name} {quantity} 股 / {total_amount} 铜币"
+        if source == "player_short_open":
+            side = "short"
+            label = f"做空 {stock_name} {quantity} 股 / {total_amount} 铜币"
+        elif source == "player_short_cover":
+            side = "cover"
+            label = f"平空 {stock_name} {quantity} 股 / {total_amount} 铜币"
         stock["trade_volume"] = int(stock.get("trade_volume", 0)) + quantity
         stock["net_cash_flow"] = round(float(stock.get("net_cash_flow", 0.0)) + total_amount * (1 if direction > 0 else -1), 2)
         tape = list(self.state.get("stock_trade_tape", []))
@@ -3250,7 +3302,7 @@ class WorldEngine:
             0,
             {
                 "stock_name": stock_name,
-                "side": "buy" if direction > 0 else "sell",
+                "side": side,
                 "quantity": quantity,
                 "unit_price": int(unit_price),
                 "total_amount": total_amount,
@@ -3259,7 +3311,7 @@ class WorldEngine:
                 "actor_name": actor_name,
                 "source": source,
                 "clock": self._clock_label(),
-                "anonymous_label": f"{'买入' if direction > 0 else '卖出'} {stock_name} {quantity} 股 / {total_amount} 铜币",
+                "anonymous_label": label,
             },
         )
         self.state["stock_trade_tape"] = tape[:24]
@@ -3531,6 +3583,198 @@ class WorldEngine:
         stealth_line = " 刀疤把交易所门口的人群视线都挡开了。" if stealth_cover else ""
         self.state["stock_exchange_feedback"] = f"卖出 {stock_name} x{quantity}，回笼资金 {realized_cash} 铜币，萨姆抽成 {fee}。{repay_line}{downgrade_line}{stealth_line}".strip()
         return ActionResult(f"卖出 {stock_name} x{quantity}。", self._snapshot_after_refresh(rebuild_agent_prompts=False))
+
+    def _trade_stock_v2(self, stock_name: str, quantity: int, direction: int, leverage: int = 1) -> ActionResult:
+        player = self._ensure_player_financial_state()
+        stock = self._resolve_stock_reference(stock_name)
+        if not stock:
+            self.state["stock_exchange_feedback"] = "没有这支股票。"
+            return ActionResult("没有这支股票。", self._snapshot_after_refresh(rebuild_agent_prompts=False))
+        stock_name = str(stock.get("name", stock_name))
+        self._check_stock_account_state(trigger="trade_preview")
+        if bool(self.state.get("ending_state", {}).get("game_over", False)):
+            ending = dict(self.state.get("ending_state", {}))
+            return ActionResult(str(ending.get("body", "当前存档已经进入失败结局。")), self._snapshot_after_refresh(rebuild_agent_prompts=False))
+        if bool(player.get("stock_account_locked", False)):
+            message = str(player.get("stock_account_lock_reason", "暗池交易权限已被冻结。"))
+            self.state["stock_exchange_feedback"] = message
+            return ActionResult(message, self._snapshot_after_refresh(rebuild_agent_prompts=False))
+        if not self._stock_market_is_open():
+            message = f"交易所当前休市，可交易时段为 {self._stock_market_session_label()}。"
+            self.state["stock_exchange_feedback"] = message
+            return ActionResult(message, self._snapshot_after_refresh(rebuild_agent_prompts=False))
+        quantity = max(quantity, 1)
+        leverage = max(1, min(int(leverage), int(self._stock_account_tier().get("max_leverage", 10))))
+        unit_price = int(stock.get("current_price", 0))
+        trade_value = unit_price * quantity
+        previous_tier_label = str(self._stock_account_tier().get("label", "青铜级"))
+        stealth_cover = self._stock_op_active("scar_cover_until_tick")
+        if direction > 0:
+            fee = self._record_stock_fee(trade_value, player_paid=True)
+            total_cost = trade_value + fee
+            cash_available = int(player.get("cash", 0))
+            shortfall = max(0, total_cost - cash_available)
+            if trade_value > self._player_stock_buying_power(leverage):
+                self.state["stock_exchange_feedback"] = "这笔买入超过了当前股数和杠杆允许的敞口。"
+                return ActionResult("买入力度超过可用杠杆。", self._snapshot_after_refresh(rebuild_agent_prompts=False))
+            if shortfall > 0 and shortfall > self._player_stock_buying_power(leverage):
+                self.state["stock_exchange_feedback"] = "现金和可用融资额度都不足，无法完成买入。"
+                return ActionResult("现金不足。", self._snapshot_after_refresh(rebuild_agent_prompts=False))
+            if shortfall > 0:
+                player["cash"] = 0
+                player["stock_margin_debt"] = self._player_stock_margin_debt() + shortfall
+            else:
+                player["cash"] = cash_available - total_cost
+            player["stock_holdings"][stock_name] = int(player["stock_holdings"].get(stock_name, 0)) + quantity
+            if str(stock.get("ticker", "")).upper() == "AMB":
+                self._increment_task_progress("swing_trade_media", str(stock.get("name", stock_name)), quantity)
+            self.state["demo_metrics"]["stock_trades"] = int(self.state["demo_metrics"].get("stock_trades", 0)) + quantity
+            self._record_stock_trade(
+                actor_kind="player",
+                actor_id="player",
+                actor_name="玩家",
+                stock_name=stock_name,
+                quantity=quantity,
+                direction=1,
+                unit_price=unit_price,
+                source="player_action",
+            )
+            if not stealth_cover:
+                self._bump_district_signal("交易所", "liquidity", 0.12 * quantity)
+                self._bump_district_signal("交易所", "trade_heat", 0.08 * quantity)
+            self._check_stock_account_state(trigger="buy_stock")
+            self._update_player_class()
+            tier_label = str(self._stock_account_tier().get("label", "青铜级"))
+            debt_now = self._player_stock_margin_debt()
+            debt_line = f" 当前融资负债 {debt_now}。" if debt_now > 0 else ""
+            downgrade_line = f" 账户已从 {previous_tier_label} 降到 {tier_label}。" if self._stock_tier_rank(tier_label) < self._stock_tier_rank(previous_tier_label) else ""
+            stealth_line = " 刀疤把交易所门口的视线都挡开了。" if stealth_cover else ""
+            self.state["stock_exchange_feedback"] = f"买入 {stock_name} x{quantity}，成交额 {trade_value} 铜币，杠杆 {leverage}x，萨姆抽成 {fee}。{debt_line}{downgrade_line}{stealth_line}".strip()
+            return ActionResult(f"买入 {stock_name} x{quantity}。", self._snapshot_after_refresh(rebuild_agent_prompts=False))
+        if int(player["stock_holdings"].get(stock_name, 0)) < quantity:
+            self.state["stock_exchange_feedback"] = "持仓不足，无法完成卖出。"
+            return ActionResult("持仓不足。", self._snapshot_after_refresh(rebuild_agent_prompts=False))
+        fee = self._record_stock_fee(trade_value, player_paid=True)
+        player["stock_holdings"][stock_name] = int(player["stock_holdings"].get(stock_name, 0)) - quantity
+        realized_cash = max(0, trade_value - fee)
+        margin_debt = self._player_stock_margin_debt()
+        paydown = min(margin_debt, realized_cash)
+        player["stock_margin_debt"] = margin_debt - paydown
+        player["cash"] = int(player.get("cash", 0)) + max(0, realized_cash - paydown)
+        self.state["demo_metrics"]["stock_trades"] = int(self.state["demo_metrics"].get("stock_trades", 0)) + quantity
+        self._record_stock_trade(
+            actor_kind="player",
+            actor_id="player",
+            actor_name="玩家",
+            stock_name=stock_name,
+            quantity=quantity,
+            direction=-1,
+            unit_price=unit_price,
+            source="player_action",
+        )
+        if not stealth_cover:
+            self._bump_district_signal("交易所", "liquidity", 0.1 * quantity)
+            self._bump_district_signal("交易所", "trade_heat", 0.06 * quantity)
+        self._check_stock_account_state(trigger="sell_stock")
+        self._update_player_class()
+        tier_label = str(self._stock_account_tier().get("label", "青铜级"))
+        downgrade_line = f" 账户已从 {previous_tier_label} 降到 {tier_label}。" if self._stock_tier_rank(tier_label) < self._stock_tier_rank(previous_tier_label) else ""
+        repay_line = f" 其中 {paydown} 已自动用于归还融资。" if paydown > 0 else ""
+        stealth_line = " 刀疤把交易所门口的视线都挡开了。" if stealth_cover else ""
+        self.state["stock_exchange_feedback"] = f"卖出 {stock_name} x{quantity}，回笼资金 {realized_cash} 铜币，萨姆抽成 {fee}。{repay_line}{downgrade_line}{stealth_line}".strip()
+        return ActionResult(f"卖出 {stock_name} x{quantity}。", self._snapshot_after_refresh(rebuild_agent_prompts=False))
+
+    def _trade_stock_short_v2(self, stock_name: str, quantity: int, direction: int, leverage: int = 1) -> ActionResult:
+        player = self._ensure_player_financial_state()
+        stock = self._resolve_stock_reference(stock_name)
+        if not stock:
+            self.state["stock_exchange_feedback"] = "没有这支股票。"
+            return ActionResult("没有这支股票。", self._snapshot_after_refresh(rebuild_agent_prompts=False))
+        stock_name = str(stock.get("name", stock_name))
+        self._check_stock_account_state(trigger="trade_preview")
+        if bool(self.state.get("ending_state", {}).get("game_over", False)):
+            ending = dict(self.state.get("ending_state", {}))
+            return ActionResult(str(ending.get("body", "当前存档已经进入失败结局。")), self._snapshot_after_refresh(rebuild_agent_prompts=False))
+        if bool(player.get("stock_account_locked", False)):
+            message = str(player.get("stock_account_lock_reason", "暗池交易权限已被冻结。"))
+            self.state["stock_exchange_feedback"] = message
+            return ActionResult(message, self._snapshot_after_refresh(rebuild_agent_prompts=False))
+        if not self._stock_market_is_open():
+            message = f"交易所当前休市，可交易时段为 {self._stock_market_session_label()}。"
+            self.state["stock_exchange_feedback"] = message
+            return ActionResult(message, self._snapshot_after_refresh(rebuild_agent_prompts=False))
+        quantity = max(quantity, 1)
+        leverage = max(1, min(int(leverage), int(self._stock_account_tier().get("max_leverage", 10))))
+        unit_price = int(stock.get("current_price", 0))
+        trade_value = unit_price * quantity
+        stealth_cover = self._stock_op_active("scar_cover_until_tick")
+        current_short = dict(player.get("stock_short_positions", {}).get(stock_name, {"quantity": 0, "avg_price": 0.0}))
+        short_qty = int(current_short.get("quantity", 0))
+        short_avg_price = float(current_short.get("avg_price", 0.0))
+        if direction > 0:
+            if trade_value > self._player_stock_buying_power(leverage):
+                self.state["stock_exchange_feedback"] = "这笔做空超过了当前股数和杠杆允许的敞口。"
+                return ActionResult("做空力度超过可用杠杆。", self._snapshot_after_refresh(rebuild_agent_prompts=False))
+            fee = self._record_stock_fee(trade_value, player_paid=True)
+            proceeds = max(0, trade_value - fee)
+            player["cash"] = int(player.get("cash", 0)) + proceeds
+            combined_qty = short_qty + quantity
+            combined_avg = ((short_avg_price * short_qty) + (unit_price * quantity)) / max(combined_qty, 1)
+            player["stock_short_positions"][stock_name] = {"quantity": combined_qty, "avg_price": round(combined_avg, 3)}
+            self._record_stock_trade(
+                actor_kind="player",
+                actor_id="player",
+                actor_name="玩家",
+                stock_name=stock_name,
+                quantity=quantity,
+                direction=-1,
+                unit_price=unit_price,
+                source="player_short_open",
+            )
+            if not stealth_cover:
+                self._bump_district_signal("交易所", "liquidity", 0.11 * quantity)
+                self._bump_district_signal("交易所", "trade_heat", 0.09 * quantity)
+            self._check_stock_account_state(trigger="short_stock")
+            stealth_line = " 刀疤把交易所门口的视线都挡开了。" if stealth_cover else ""
+            self.state["stock_exchange_feedback"] = f"做空 {stock_name} x{quantity}，名义金额 {trade_value} 铜币，杠杆 {leverage}x，萨姆抽成 {fee}。{stealth_line}".strip()
+            return ActionResult(f"做空 {stock_name} x{quantity}。", self._snapshot_after_refresh(rebuild_agent_prompts=False))
+        if short_qty < quantity:
+            self.state["stock_exchange_feedback"] = "空仓不足，无法平空。"
+            return ActionResult("空仓不足。", self._snapshot_after_refresh(rebuild_agent_prompts=False))
+        fee = self._record_stock_fee(trade_value, player_paid=True)
+        total_cost = trade_value + fee
+        cash_available = int(player.get("cash", 0))
+        shortfall = max(0, total_cost - cash_available)
+        if shortfall > 0:
+            player["cash"] = 0
+            player["stock_margin_debt"] = self._player_stock_margin_debt() + shortfall
+        else:
+            player["cash"] = cash_available - total_cost
+        remaining_qty = short_qty - quantity
+        if remaining_qty > 0:
+            player["stock_short_positions"][stock_name] = {"quantity": remaining_qty, "avg_price": short_avg_price}
+        else:
+            player["stock_short_positions"][stock_name] = {"quantity": 0, "avg_price": 0.0}
+        pnl = int(round((short_avg_price - unit_price) * quantity))
+        self._record_stock_trade(
+            actor_kind="player",
+            actor_id="player",
+            actor_name="玩家",
+            stock_name=stock_name,
+            quantity=quantity,
+            direction=1,
+            unit_price=unit_price,
+            source="player_short_cover",
+        )
+        if not stealth_cover:
+            self._bump_district_signal("交易所", "liquidity", 0.09 * quantity)
+            self._bump_district_signal("交易所", "trade_heat", 0.05 * quantity)
+        self._check_stock_account_state(trigger="cover_short")
+        debt_now = self._player_stock_margin_debt()
+        debt_line = f" 当前融资负债 {debt_now}。" if debt_now > 0 else ""
+        stealth_line = " 刀疤把交易所门口的视线都挡开了。" if stealth_cover else ""
+        self.state["stock_exchange_feedback"] = f"平空 {stock_name} x{quantity}，成交额 {trade_value} 铜币，盈亏 {pnl}，萨姆抽成 {fee}。{debt_line}{stealth_line}".strip()
+        return ActionResult(f"平空 {stock_name} x{quantity}。", self._snapshot_after_refresh(rebuild_agent_prompts=False))
 
     def _accept_task(self, task_id: str) -> ActionResult:
         player = self.state["player"]
@@ -7965,7 +8209,7 @@ class WorldEngine:
             int(player.get("stock_holdings", {}).get(str(row.get("name", "")), 0)) * int(row.get("current_price", 0))
             for row in stock_rows
         )
-        return int(player.get("cash", 0)) + goods_value + stock_value - self._player_stock_margin_debt()
+        return int(player.get("cash", 0)) + goods_value + stock_value - self._player_stock_short_exposure() - self._player_stock_margin_debt()
 
     def _player_collective_bias_for_npc(self, npc: dict[str, Any]) -> float:
         profile = self.state.get("player", {}).get("collective_profile", {})

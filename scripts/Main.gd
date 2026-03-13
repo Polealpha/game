@@ -718,13 +718,13 @@ func _layout_exchange_terminal_panel() -> void:
 	var viewport_size := get_viewport_rect().size
 	last_viewport_size = viewport_size
 	var panel_width := clampf(viewport_size.x * 0.32, 360.0, 510.0)
-	var panel_height := clampf(viewport_size.y - 190.0, 330.0, 446.0)
+	var panel_height := clampf(viewport_size.y - 140.0, 360.0, 560.0)
 	var panel_x := maxf(16.0, viewport_size.x - panel_width - 24.0)
 	var panel_y := clampf(122.0, 16.0, maxf(16.0, viewport_size.y - panel_height - 24.0))
 	exchange_terminal_panel.position = Vector2(panel_x, panel_y)
 	exchange_terminal_panel.size = Vector2(panel_width, panel_height)
-	exchange_terminal_summary.custom_minimum_size = Vector2(0, clampf(panel_height * 0.37, 128.0, 164.0))
-	exchange_terminal_tape.custom_minimum_size = Vector2(0, clampf(panel_height * 0.2, 72.0, 96.0))
+	exchange_terminal_summary.custom_minimum_size = Vector2(0, clampf(panel_height * 0.33, 128.0, 188.0))
+	exchange_terminal_tape.custom_minimum_size = Vector2(0, clampf(panel_height * 0.16, 72.0, 108.0))
 
 
 func _make_panel(rect: Rect2, title: String) -> Dictionary:
@@ -2933,7 +2933,7 @@ func _refresh_visual_macro_state() -> void:
 	if not subregion_name.is_empty():
 		area_label = "%s · %s" % [district_name, subregion_name]
 	var visual_summary := _compose_visual_macro_summary(snapshot.get("macro_summary", {}))
-	overview_label.text = "第 %s 天  时刻: %s  现金: %s 铜币\n信用: %s  声望: %s  当前区域: %s\n阶层: %s  货物库存: %s  持股种类: %s" % [
+	overview_label.text = "第 %s 天  时刻: %s  现金: %s 铜币\n信用: %s  声望: %s  当前区域: %s\n阶层: %s  生命: %s  货物库存: %s  持股种类: %s" % [
 		int(snapshot.get("day", 1)) + visual_day_offset,
 		visual_summary.get("clock_label", "08:00"),
 		player_data.get("cash", 0),
@@ -2941,6 +2941,7 @@ func _refresh_visual_macro_state() -> void:
 		player_data.get("reputation", 0),
 		area_label,
 		player_data.get("class_position", "底层"),
+		player_data.get("health", 100),
 		player_data.get("goods_inventory", {}),
 		player_data.get("stock_holdings", {}).keys().size()
 	]
@@ -3001,6 +3002,9 @@ func _on_snapshot_updated(snapshot: Dictionary) -> void:
 		"开" if show_hearing_debug else "关"
 	]
 	status_label.text += "  ·  天气: %s" % weather_label
+	var ending_state: Dictionary = snapshot.get("ending_state", {})
+	if bool(ending_state.get("game_over", false)):
+		status_label.text += "  ·  结局: %s" % str(ending_state.get("title", "失败结局"))
 	_update_compact_hud(snapshot, district_name)
 	_update_goods(snapshot.get("goods", []), player_data.get("goods_inventory", {}))
 	_update_stocks(snapshot.get("stocks", []), player_data.get("stock_holdings", {}), snapshot.get("stock_trade_tape", []))
@@ -3917,6 +3921,7 @@ func _set_ledger_ui_visible(enabled: bool) -> void:
 	ledger_ui_visible = enabled
 	if enabled:
 		_open_interactable_actions()
+	_update_exchange_terminal(last_snapshot)
 	_apply_visibility_modes()
 	if ledger_ui_visible:
 		GameState.add_toast("账本界面已展开。")
@@ -4437,7 +4442,9 @@ func _submit_modal_trade(quote: Dictionary) -> void:
 
 
 func _exchange_terminal_active() -> bool:
-	return interior_mode and str(current_house_data.get("id", "")) in ["stock_exchange", "exchange_house", "stock_exchange_6"]
+	if interior_mode and str(current_house_data.get("id", "")) in ["stock_exchange", "exchange_house", "stock_exchange_6"]:
+		return true
+	return ledger_ui_visible and not modal_overlay.visible
 
 
 func _update_exchange_terminal(snapshot: Dictionary) -> void:
@@ -4450,9 +4457,11 @@ func _update_exchange_terminal(snapshot: Dictionary) -> void:
 			child.queue_free()
 		return
 	var exchange_view: Dictionary = snapshot.get("stock_exchange_view", {})
+	var phone_mode := not interior_mode
+	exchange_terminal_title.text = "暗池手机终端" if phone_mode else "证券交易终端"
 	var stocks: Array = exchange_view.get("stocks", [])
 	var tape: Array = exchange_view.get("tape", [])
-	var session_label := str(exchange_view.get("session_label", "08:00-18:00"))
+	var session_label := str(exchange_view.get("session_label", "00:00-24:00"))
 	var clock_label := str(exchange_view.get("clock_label", "08:00"))
 	var feedback := _sanitize_visible_text(str(exchange_view.get("feedback", "")), "")
 	var market_open := bool(exchange_view.get("market_open", true))
@@ -4460,6 +4469,15 @@ func _update_exchange_terminal(snapshot: Dictionary) -> void:
 	var reputation: Dictionary = exchange_view.get("reputation", {})
 	var shadow: Dictionary = exchange_view.get("shadow_reputation", {})
 	var warnings: Array = exchange_view.get("warnings", [])
+	var margin_debt := int(exchange_view.get("margin_debt", 0))
+	var maintenance_margin := int(exchange_view.get("maintenance_margin", 0))
+	var equity := int(exchange_view.get("equity", 0))
+	var buying_power := int(exchange_view.get("buying_power", 0))
+	var player_health := int(exchange_view.get("player_health", 100))
+	var route_label := str(exchange_view.get("financial_route", "暗池精英"))
+	var account_locked := bool(exchange_view.get("account_locked", false))
+	var liquidation_pending := bool(exchange_view.get("liquidation_pending", false))
+	var account_note := str(exchange_view.get("account_lock_reason", ""))
 	var lines: Array[String] = []
 	for stock in stocks:
 		var stock_name := str(stock.get("display_name", stock.get("name", "")))
@@ -4496,12 +4514,23 @@ func _update_exchange_terminal(snapshot: Dictionary) -> void:
 	var warning_lines: Array[String] = []
 	for warning in warnings.slice(0, min(2, warnings.size())):
 		warning_lines.append(" - %s" % str(warning))
-	exchange_terminal_summary.text = "[b]账户[/b] %s  杠杆 %s  现金 %s  持仓总值 %s  总资产 %s\n[b]交易所状态[/b] %s  当前时间 %s  交易时段 %s\n[b]革命税[/b] 玩家累计 %s  全市场累计 %s  起义军武装等级 WL %s\n[b]声望[/b] FC %s / FB %s / SN %s\n[b]影子盘[/b] SUI %s / ST %s / 风险 %s / 警局 %s\n%s%s" % [
+	if liquidation_pending and not account_note.is_empty():
+		warning_lines.insert(0, " - %s" % account_note)
+	elif account_locked and not account_note.is_empty():
+		warning_lines.insert(0, " - %s" % account_note)
+	exchange_terminal_summary.text = "[b]账户[/b] %s  杠杆 %s  现金 %s  持仓总值 %s  总资产 %s\n[b]风险仓位[/b] 净值 %s  负债 %s  维持保证金 %s  可买额度 %s\n[b]人物状态[/b] 路线 %s  生命 %s  账户%s\n[b]交易所状态[/b] %s  当前时间 %s  交易时段 %s\n[b]革命税[/b] 玩家累计 %s  全市场累计 %s  起义军武装等级 WL %s\n[b]声望[/b] FC %s / FB %s / SN %s\n[b]影子盘[/b] SUI %s / ST %s / 风险 %s / 警局 %s\n%s%s" % [
 		str(account_tier.get("label", "青铜级")),
 		str(account_tier.get("leverage", "1x-10x")),
 		int(exchange_view.get("player_cash", 0)),
 		int(exchange_view.get("player_holdings_value", 0)),
 		int(exchange_view.get("player_total_wealth", 0)),
+		equity,
+		margin_debt,
+		maintenance_margin,
+		buying_power,
+		route_label,
+		player_health,
+		"冻结" if account_locked else "正常",
 		status_line,
 		clock_label,
 		session_label,
@@ -4528,6 +4557,7 @@ func _update_exchange_terminal(snapshot: Dictionary) -> void:
 		child.queue_free()
 	for stock in stocks:
 		var stock_name := str(stock.get("name", ""))
+		var stock_key := str(stock.get("ticker", stock_name))
 		var row := HBoxContainer.new()
 		row.add_theme_constant_override("separation", 8)
 		var row_label := Label.new()
@@ -4542,27 +4572,73 @@ func _update_exchange_terminal(snapshot: Dictionary) -> void:
 			{"text": "买10", "mode": "buy_stock", "qty": 10, "base": Color("2f6f4f"), "hover": Color("3f8a60"), "press": Color("244f3a")},
 			{"text": "卖10", "mode": "sell_stock", "qty": 10, "base": Color("6c4a2a"), "hover": Color("8a6037"), "press": Color("4f3520")},
 		]:
+			var mode := str(spec.get("mode", "buy_stock"))
+			var qty := int(spec.get("qty", 1))
 			var button := Button.new()
 			button.text = str(spec.get("text", "交易"))
 			button.custom_minimum_size = Vector2(58, 32)
 			_style_button(button, spec.get("base", Color("6c4a2a")), spec.get("hover", Color("8a6037")), spec.get("press", Color("4f3520")))
 			button.pressed.connect(func() -> void:
-				_submit_exchange_stock_trade(stock_name, str(spec.get("mode", "buy_stock")), int(spec.get("qty", 1)))
+				_submit_exchange_stock_trade(stock_name, stock_key, mode, qty)
 			)
 			row.add_child(button)
 		exchange_terminal_actions.add_child(row)
+	var ops_label := Label.new()
+	ops_label.text = "金融操纵"
+	ops_label.add_theme_font_size_override("font_size", 16)
+	ops_label.add_theme_color_override("font_color", Color("d8c28e"))
+	exchange_terminal_actions.add_child(ops_label)
+	for row_specs in [
+		[
+			{"text": "拉SWC", "mode": "fake_boom_report", "hint": "虚假繁荣报道"},
+			{"text": "砸TSL", "mode": "manufacture_dock_conflict", "hint": "制造码头冲突"},
+			{"text": "稳AMB", "mode": "emergency_bond_issue", "hint": "紧急增发债券"},
+		],
+		[
+			{"text": "收维克多", "mode": "hostile_takeover", "hint": "敌意收购对手盘"},
+			{"text": "买温斯顿", "mode": "policy_shield", "hint": "政策保护伞"},
+			{"text": "雇刀疤", "mode": "hire_scar_cover", "hint": "空头头寸物理保障"},
+		],
+	]:
+		var ops_row := HBoxContainer.new()
+		ops_row.add_theme_constant_override("separation", 8)
+		for spec in row_specs:
+			var special_mode := str(spec.get("mode", ""))
+			var op_button := Button.new()
+			op_button.text = str(spec.get("text", "操盘"))
+			op_button.tooltip_text = str(spec.get("hint", ""))
+			op_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			op_button.custom_minimum_size = Vector2(0, 30)
+			_style_button(op_button, Color("475d78"), Color("5b7697"), Color("314258"))
+			op_button.pressed.connect(func() -> void:
+				_submit_exchange_special_action(special_mode)
+			)
+			ops_row.add_child(op_button)
+		exchange_terminal_actions.add_child(ops_row)
 
 
-func _submit_exchange_stock_trade(stock_name: String, action_type: String, quantity: int) -> void:
-	if stock_name.is_empty() or quantity <= 0:
+func _submit_exchange_stock_trade(stock_name: String, stock_key: String, action_type: String, quantity: int) -> void:
+	if (stock_name.is_empty() and stock_key.is_empty()) or quantity <= 0:
 		return
 	_submit_interaction({
 		"action_type": action_type,
 		"district": _current_district_for_position(player.position if not interior_mode else house_interior.get_player_position()),
 		"payload": {
 			"stock_name": stock_name,
+			"stock_key": stock_key,
+			"ticker": stock_key,
 			"quantity": quantity,
 		},
+	})
+
+
+func _submit_exchange_special_action(action_type: String) -> void:
+	if action_type.is_empty():
+		return
+	_submit_interaction({
+		"action_type": action_type,
+		"district": _current_district_for_position(player.position if not interior_mode else house_interior.get_player_position()),
+		"payload": {},
 	})
 
 

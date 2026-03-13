@@ -1837,5 +1837,82 @@ class WorldEngineTest(unittest.TestCase):
         self.assertTrue(hotspot_counts)
         self.assertTrue(all(count <= 2 for count in hotspot_counts.values()))
 
+    def test_stock_exchange_view_exposes_margin_route_and_health(self) -> None:
+        snapshot = self.engine.snapshot()
+        exchange = snapshot["stock_exchange_view"]
+        self.assertIn("margin_debt", exchange)
+        self.assertIn("maintenance_margin", exchange)
+        self.assertIn("equity", exchange)
+        self.assertIn("financial_route", exchange)
+        self.assertEqual(exchange["player_health"], 100)
+
+    def test_margin_buy_uses_financing_and_sell_reduces_debt(self) -> None:
+        self.engine.state["player"]["cash"] = 1_000
+        buy_result = self.engine.action("buy_stock", "交易所", {"stock_name": "龟甲物流", "quantity": 30})
+        self.assertGreater(int(buy_result.world_state["player"]["stock_margin_debt"]), 0)
+        debt_after_buy = int(buy_result.world_state["player"]["stock_margin_debt"])
+        sell_result = self.engine.action("sell_stock", "交易所", {"stock_name": "龟甲物流", "quantity": 10})
+        self.assertLess(int(sell_result.world_state["player"]["stock_margin_debt"]), debt_after_buy)
+
+    def test_margin_call_sets_pending_and_then_triggers_physical_liquidation(self) -> None:
+        player = self.engine.state["player"]
+        player["cash"] = 200
+        player["stock_holdings"]["海藻重工"] = 50
+        player["stock_margin_debt"] = 7_000
+        self.engine._check_stock_account_state(trigger="scheduled")
+        self.assertTrue(player["stock_liquidation_pending"])
+        result = self.engine.ai_pulse(trigger="scheduled", allow_live_llm=False)
+        player_after = result.world_state["player"]
+        self.assertEqual(player_after["health"], 50)
+        self.assertEqual(player_after["cash"], 0)
+        self.assertTrue(player_after["stock_account_locked"])
+        self.assertEqual(player_after["financial_route"], "负债工贼")
+
+    def test_bronze_account_blocks_high_tier_intel_and_high_finance_bribe(self) -> None:
+        self.engine.state["player"]["cash"] = 8_000
+        self.engine.state["player"]["stock_holdings"] = {"海藻重工": 0, "市政债券": 0, "龟甲物流": 0}
+        self.engine._npc_can_sell_info = lambda npc: True  # type: ignore[method-assign]
+        self.engine._npc_intel_price = lambda npc, topic=None: 5_000  # type: ignore[method-assign]
+        high_finance_npc = next(row for row in self.engine.state["npcs"] if self.engine._high_finance_contact(row))
+        intel_result = self.engine.action("buy_intel", str(high_finance_npc["district"]), {"npc_id": str(high_finance_npc["id"]), "amount": 5_000})
+        bribe_result = self.engine.action("gift_money", str(high_finance_npc["district"]), {"npc_id": str(high_finance_npc["id"]), "amount": 100})
+        self.assertIn("账户权限", intel_result.message)
+        self.assertIn("没有资格", bribe_result.message)
+
+    def test_agent_prompt_mentions_player_financial_state(self) -> None:
+        snapshot = self.engine.snapshot()
+        npc = next(row for row in snapshot["npcs"] if row["id"] == "npc_01")
+        self.assertIn("玩家金融状态", npc["agent_prompt"])
+
+    def test_fake_boom_report_raises_swc_and_sets_rep_drag(self) -> None:
+        swc_before = next(row for row in self.engine.state["stocks"] if row["ticker"] == "SWC")["current_price"]
+        cash_before = int(self.engine.state["player"]["cash"])
+        result = self.engine.action("fake_boom_report", "交易所", {})
+        swc_after = next(row for row in result.world_state["stocks"] if row["ticker"] == "SWC")["current_price"]
+        self.assertEqual(int(result.world_state["player"]["cash"]), cash_before - 3_000)
+        self.assertGreater(int(swc_after), int(swc_before))
+        self.assertGreater(int(result.world_state["story_metrics"]["stock_ops"]["rep_drag_until_tick"]), self.engine._world_tick())
+
+    def test_policy_shield_sets_active_window_and_lowers_visible_sui(self) -> None:
+        self.engine.state["macro"]["worker_unrest"] = 90
+        _, shadow_before = self.engine._derive_story_reputation()
+        result = self.engine.action("policy_shield", "交易所", {})
+        shadow_after = result.world_state["stock_exchange_view"]["shadow_reputation"]
+        self.assertTrue(bool(result.world_state["story_metrics"]["stock_ops"]["policy_shield_until_tick"]))
+        self.assertLessEqual(float(shadow_after["SUI"]), float(shadow_before["SUI"]))
+
+    def test_scar_cover_hides_player_trade_from_exchange_heat(self) -> None:
+        base_heat = float(self.engine.state["district_signals"]["交易所"]["trade_heat"])
+        self.engine.action("hire_scar_cover", "交易所", {})
+        result = self.engine.action("buy_stock", "交易所", {"stock_name": "龟甲物流", "ticker": "TSL", "quantity": 1})
+        self.assertAlmostEqual(float(result.world_state["district_signals"]["交易所"]["trade_heat"]), base_heat, places=3)
+
+    def test_hostile_takeover_marks_victor_security_as_weakened(self) -> None:
+        swc = next(row for row in self.engine.state["stocks"] if row["ticker"] == "SWC")
+        swc["current_price"] = 70
+        result = self.engine.action("hostile_takeover", "交易所", {})
+        self.assertTrue(bool(result.world_state["story_metrics"]["stock_ops"]["victor_takeover_done"]))
+        self.assertIn("私保体系开始松动", result.world_state["stock_exchange_view"]["feedback"])
+
 if __name__ == "__main__":
     unittest.main()

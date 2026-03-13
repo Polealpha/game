@@ -328,8 +328,16 @@ class WorldEngine:
                 "player": {
                     "cash": 1_000_000,
                     "credit": 20,
+                    "health": 100,
                     "reputation": 5,
                     "class_position": "底层",
+                    "financial_route": "暗池精英",
+                    "stock_margin_debt": 0,
+                    "stock_account_locked": False,
+                    "stock_account_lock_reason": "",
+                    "stock_liquidation_pending": False,
+                    "stock_liquidation_note": "",
+                    "stock_liquidation_due_tick": 0,
                     "attitude_style": "respectful",
                     "last_talk_approach": "cautious",
                     "goods_inventory": {"面包": 1, "煤": 0, "罐头": 0},
@@ -418,6 +426,7 @@ class WorldEngine:
                 "pending_events": [],
                 "npc_highlights": [],
                 "npc_cards": [],
+                "ending_state": {},
                 "house_states": {},
                 "macro_summary": {},
                 "quick_hud": {},
@@ -467,11 +476,28 @@ class WorldEngine:
             return cached
         return self.snapshot()
 
+    def _snapshot_after_refresh(self, rebuild_agent_prompts: bool = True) -> dict[str, Any]:
+        self._check_stock_account_state(trigger="refresh")
+        self._refresh_derived_views(rebuild_agent_prompts=rebuild_agent_prompts)
+        cached = copy.deepcopy(self._snapshot_cache)
+        if cached:
+            return cached
+        return copy.deepcopy(self.state)
+
     def action(self, action_type: str, district: str, payload: dict[str, Any] | None = None) -> ActionResult:
         payload = payload or {}
         with self.lock:
+            if bool(self.state.get("ending_state", {}).get("game_over", False)):
+                ending = dict(self.state.get("ending_state", {}))
+                title = str(ending.get("title", "结局已触发"))
+                body = str(ending.get("body", "当前存档已经进入失败结局。"))
+                return ActionResult(f"{title}：{body}", self.snapshot_cached())
             self._advance_realtime_clock()
             self._advance_clock(16)
+            self._check_stock_account_state(trigger=action_type)
+            if bool(self.state.get("ending_state", {}).get("game_over", False)):
+                ending = dict(self.state.get("ending_state", {}))
+                return ActionResult(str(ending.get("body", "当前存档已经进入失败结局。")), self._snapshot_after_refresh(rebuild_agent_prompts=False))
             match action_type:
                 case "work":
                     return self._do_work(district)
@@ -490,13 +516,27 @@ class WorldEngine:
                 case "sell_goods":
                     return self._trade_good(payload["good_name"], int(payload.get("quantity", 1)), -1, payload)
                 case "buy_stock":
-                    return self._trade_stock_v2(payload["stock_name"], int(payload.get("quantity", 1)), 1)
+                    stock_ref = str(payload.get("stock_name") or payload.get("stock_key") or payload.get("ticker") or payload.get("id") or "")
+                    return self._trade_stock_v2(stock_ref, int(payload.get("quantity", 1)), 1)
                 case "sell_stock":
-                    return self._trade_stock_v2(payload["stock_name"], int(payload.get("quantity", 1)), -1)
+                    stock_ref = str(payload.get("stock_name") or payload.get("stock_key") or payload.get("ticker") or payload.get("id") or "")
+                    return self._trade_stock_v2(stock_ref, int(payload.get("quantity", 1)), -1)
                 case "gift_money":
                     return self._gift_money_to_npc(str(payload.get("npc_id", "")), int(payload.get("amount", 0)), district)
                 case "buy_intel":
                     return self._buy_intel_from_npc(str(payload.get("npc_id", "")), int(payload.get("amount", 0)), str(payload.get("topic_id", "")), district)
+                case "fake_boom_report":
+                    return self._run_stock_special_operation("fake_boom_report")
+                case "manufacture_dock_conflict":
+                    return self._run_stock_special_operation("manufacture_dock_conflict")
+                case "emergency_bond_issue":
+                    return self._run_stock_special_operation("emergency_bond_issue")
+                case "hostile_takeover":
+                    return self._run_stock_special_operation("hostile_takeover")
+                case "policy_shield":
+                    return self._run_stock_special_operation("policy_shield")
+                case "hire_scar_cover":
+                    return self._run_stock_special_operation("hire_scar_cover")
                 case "collective_intervene":
                     return self._intervene_collective(district, payload)
                 case "accept_task":
@@ -509,6 +549,10 @@ class WorldEngine:
     def end_day(self) -> ActionResult:
         with self.lock:
             self._advance_realtime_clock()
+            self._check_stock_account_state(trigger="end_day")
+            if bool(self.state.get("ending_state", {}).get("game_over", False)):
+                ending = dict(self.state.get("ending_state", {}))
+                return ActionResult(str(ending.get("body", "当前存档已经进入失败结局。")), self._snapshot_after_refresh(rebuild_agent_prompts=False))
             self._run_livelihood_tick("end_day")
             self._settle_company_operations("end_day")
             previous_clock = int(self.state.get("clock_minutes", 8 * 60))
@@ -543,6 +587,10 @@ class WorldEngine:
         with self.lock:
             self._advance_realtime_clock()
             self._advance_clock(6)
+            self._check_stock_account_state(trigger=trigger)
+            if bool(self.state.get("ending_state", {}).get("game_over", False)):
+                ending = dict(self.state.get("ending_state", {}))
+                return ActionResult(str(ending.get("body", "当前存档已经进入失败结局。")), self._snapshot_after_refresh(rebuild_agent_prompts=False))
             self._run_livelihood_tick(trigger)
             self._settle_company_operations(trigger)
             self._apply_institution_actions(trigger)
@@ -2275,14 +2323,32 @@ class WorldEngine:
         npc["player_memory"] = memory
         return memory
 
+    def _high_finance_contact(self, npc: dict[str, Any]) -> bool:
+        name = str(npc.get("name", ""))
+        title = str(npc.get("title", ""))
+        role = str(npc.get("role", ""))
+        if name in {"戈登", "伊莎贝拉", "温斯顿", "伊芙琳"}:
+            return True
+        return role in {"镇长", "律师", "银行经理"} or any(token in title for token in ["局长", "镇长", "法律", "银行"])
+
+    def _intel_required_tier_rank(self, charge: int) -> int:
+        if charge >= 5_000:
+            return 3
+        if charge >= 1_000:
+            return 2
+        return 1
+
     def _gift_money_to_npc(self, npc_id: str, amount: int, district: str) -> ActionResult:
         npc = self._find_npc(npc_id)
         if not npc:
             return ActionResult("找不到这个人。", self.snapshot())
-        player = self.state["player"]
+        player = self._ensure_player_financial_state()
         amount = max(0, int(amount))
         if amount <= 0:
             return ActionResult("送钱至少也得掏出一点真铜币。", self.snapshot())
+        tier = self._stock_account_tier()
+        if self._high_finance_contact(npc) and int(tier.get("rank", 1)) < 3:
+            return ActionResult("你的账户等级不够，暂时没有资格收买这种级别的人物。", self.snapshot())
         if int(player.get("cash", 0)) < amount:
             return ActionResult("你手头没有这么多钱。", self.snapshot())
         player["cash"] = int(player.get("cash", 0)) - amount
@@ -2339,10 +2405,15 @@ class WorldEngine:
             return ActionResult("找不到这个人。", self.snapshot())
         if not self._npc_can_sell_info(npc):
             return ActionResult(f"{npc['name']} 现在还不肯拿真消息换钱。", self.snapshot())
-        player = self.state["player"]
+        player = self._ensure_player_financial_state()
         topic = self._intel_topic_for_npc(npc, district, topic_id)
         price = self._npc_intel_price(npc, topic)
         charge = max(price, int(amount or 0))
+        tier = self._stock_account_tier()
+        required_rank = self._intel_required_tier_rank(charge)
+        if int(tier.get("rank", 1)) < required_rank:
+            label = "白银级" if required_rank == 2 else "黄金级"
+            return ActionResult(f"这条内幕需要 {label} 账户权限。你现在的账户等级还不够。", self.snapshot())
         if int(player.get("cash", 0)) < charge:
             return ActionResult(f"这条口风要 {charge} 铜币，你现在拿不出来。", self.snapshot())
         player["cash"] = int(player.get("cash", 0)) - charge
@@ -2525,16 +2596,14 @@ class WorldEngine:
 
     @staticmethod
     def _stock_market_session_bounds() -> tuple[int, int]:
-        return 8 * 60, 18 * 60
+        return 0, 24 * 60 - 1
 
     def _stock_market_is_open(self) -> bool:
-        start_minutes, end_minutes = self._stock_market_session_bounds()
-        clock_minutes = int(self.state.get("clock_minutes", 8 * 60))
-        return start_minutes <= clock_minutes <= end_minutes
+        return True
 
     def _stock_market_session_label(self) -> str:
         start_minutes, end_minutes = self._stock_market_session_bounds()
-        return f"{start_minutes // 60:02d}:{start_minutes % 60:02d}-{end_minutes // 60:02d}:{end_minutes % 60:02d}"
+        return f"{start_minutes // 60:02d}:{start_minutes % 60:02d}-{(end_minutes + 1) // 60:02d}:{(end_minutes + 1) % 60:02d}"
 
     def _stock_by_ticker(self, ticker: str) -> dict[str, Any] | None:
         needle = str(ticker).strip().upper()
@@ -2563,13 +2632,122 @@ class WorldEngine:
         metrics.setdefault("shadow_reputation", {"S_WWI": 15, "S_DBH": 10, "S_NAC": 20, "SUI": 15, "ST": 1.0, "WL": 1})
         return metrics
 
+    def _stock_ops_state(self) -> dict[str, Any]:
+        metrics = self._story_metrics_state()
+        ops = metrics.setdefault("stock_ops", {})
+        ops.setdefault("policy_shield_until_tick", 0)
+        ops.setdefault("scar_cover_until_tick", 0)
+        ops.setdefault("rep_drag_until_tick", 0)
+        ops.setdefault("victor_takeover_done", False)
+        ops.setdefault("gala_invite_unlocked", False)
+        ops.setdefault("last_action", "")
+        return ops
+
+    def _ensure_player_financial_state(self) -> dict[str, Any]:
+        player = self.state.setdefault("player", {})
+        player.setdefault("health", 100)
+        player.setdefault("financial_route", "暗池精英")
+        player.setdefault("stock_margin_debt", 0)
+        player.setdefault("stock_account_locked", False)
+        player.setdefault("stock_account_lock_reason", "")
+        player.setdefault("stock_liquidation_pending", False)
+        player.setdefault("stock_liquidation_note", "")
+        player.setdefault("stock_liquidation_due_tick", 0)
+        self.state.setdefault("ending_state", {})
+        return player
+
+    def _player_stock_holdings_value(self) -> int:
+        player = self._ensure_player_financial_state()
+        stock_rows = self.state.get("stocks", [])
+        return sum(
+            int(player.get("stock_holdings", {}).get(str(row.get("name", "")), 0)) * int(row.get("current_price", 0))
+            for row in stock_rows
+        )
+
+    def _player_stock_margin_debt(self) -> int:
+        player = self._ensure_player_financial_state()
+        return max(0, int(player.get("stock_margin_debt", 0)))
+
+    def _stock_tier_rank(self, label: str) -> int:
+        return {"青铜级": 1, "白银级": 2, "黄金级": 3}.get(str(label), 1)
+
     def _stock_account_tier(self) -> dict[str, Any]:
         wealth = self._player_total_wealth()
         if wealth > 50_000:
-            return {"label": "黄金级", "fee_rate": 0.12, "leverage": "1x-50x"}
+            return {"label": "黄金级", "fee_rate": 0.12, "leverage": "1x-50x", "max_leverage": 50, "rank": 3}
         if wealth > 10_000:
-            return {"label": "白银级", "fee_rate": 0.08, "leverage": "1x-30x"}
-        return {"label": "青铜级", "fee_rate": 0.05, "leverage": "1x-10x"}
+            return {"label": "白银级", "fee_rate": 0.08, "leverage": "1x-30x", "max_leverage": 30, "rank": 2}
+        return {"label": "青铜级", "fee_rate": 0.05, "leverage": "1x-10x", "max_leverage": 10, "rank": 1}
+
+    def _player_stock_equity(self) -> int:
+        player = self._ensure_player_financial_state()
+        return int(player.get("cash", 0)) + self._player_stock_holdings_value() - self._player_stock_margin_debt()
+
+    def _stock_maintenance_margin(self) -> int:
+        player = self._ensure_player_financial_state()
+        debt = self._player_stock_margin_debt()
+        if debt <= 0:
+            return 0
+        gross_exposure = self._player_stock_holdings_value()
+        shadow = dict(self._story_metrics_state().get("shadow_reputation", {}))
+        ratio = 0.15
+        if float(shadow.get("SUI", 15.0)) >= 80.0:
+            ratio += 0.05
+        elif float(shadow.get("SUI", 15.0)) >= 50.0:
+            ratio += 0.02
+        swc = self._stock_by_ticker("SWC") or {}
+        if int(player.get("stock_holdings", {}).get(str(swc.get("name", "")), 0)) > 0 and float(shadow.get("SUI", 15.0)) >= 31.0:
+            ratio += 0.03
+        return int(round(max(500.0, gross_exposure * ratio)))
+
+    def _player_stock_buying_power(self) -> int:
+        equity = max(0, self._player_stock_equity())
+        tier = self._stock_account_tier()
+        max_exposure = max(500, equity) * int(tier.get("max_leverage", 10))
+        return max(0, int(max_exposure - self._player_stock_holdings_value()))
+
+    def _stock_op_active(self, key: str) -> bool:
+        return int(self._stock_ops_state().get(key, 0)) > self._world_tick()
+
+    def _set_stock_op_window(self, key: str, ap_count: int) -> None:
+        self._stock_ops_state()[key] = self._world_tick() + max(1, ap_count) * 16 + 1
+
+    def _push_system_news(self, title: str, body: str, tags: list[str] | None = None, *, scope: str = "city") -> None:
+        payload = {
+            "title": title,
+            "body": body,
+            "line": body,
+            "tags": list(tags or []),
+            "scope": scope,
+        }
+        self.state.setdefault("global_news", []).insert(0, payload)
+        self.state["global_news"] = list(self.state.get("global_news", []))[:8]
+
+    def _find_npc_by_name(self, name: str) -> dict[str, Any] | None:
+        needle = str(name).strip()
+        if not needle:
+            return None
+        for npc in self.state.get("npcs", []):
+            if str(npc.get("name", "")).strip() == needle:
+                return npc
+        return None
+
+    def _shock_stock_price(self, ticker: str, pct: float, *, pressure_delta: float = 0.0, note: str = "") -> dict[str, Any] | None:
+        stock = self._stock_by_ticker(ticker)
+        if not stock:
+            return None
+        previous = int(stock.get("current_price", 0))
+        next_price = max(3, int(round(previous * (1.0 + pct))))
+        stock["current_price"] = next_price
+        stock["reference_price"] = round(float(stock.get("reference_price", previous)) * 0.9 + next_price * 0.1, 3)
+        if pressure_delta:
+            name = str(stock.get("name", ""))
+            current = float(self.state.get("market_pressure", {}).get("stocks", {}).get(name, 0.0))
+            self.state["market_pressure"]["stocks"][name] = max(-0.8, min(0.8, current + pressure_delta))
+        self._append_stock_history_point(str(stock.get("name", "")), next_price)
+        if note:
+            self._push_system_news(f"{ticker} 盘面异动", note, ["暗池", ticker, "操纵"])
+        return stock
 
     def _append_stock_history_point(self, stock_name: str, price: int) -> None:
         history_map = self.state.setdefault("stock_price_history", {})
@@ -2643,6 +2821,13 @@ class WorldEngine:
         s_nac = int(max(0, min(100, round(20 + sn * 0.58 + max(0, (90 - amb_price)) * 0.16 + max(0, (swc_price - 140)) * 0.08))))
         sui = round(s_wwi * 0.5 + s_dbh * 0.3 + s_nac * 0.2, 1)
         st = round((swc_price / 150.0 * 0.6) + (80.0 / amb_price * 0.4), 2)
+        ops = self._stock_ops_state()
+        if self._stock_op_active("policy_shield_until_tick"):
+            sui = round(15.0 + (sui - 15.0) * 0.5, 1)
+        if self._stock_op_active("rep_drag_until_tick"):
+            fc = max(0, fc - 6)
+            fb = max(0, fb - 4)
+            sn = max(0, sn - 5)
         revolution_fund = int(self._story_metrics_state().get("sam_revolution_fund", 0))
         wl = 4 if revolution_fund > 20_000 else 3 if revolution_fund > 8_000 else 2 if revolution_fund > 2_000 else 1
         shadow = {
@@ -2655,11 +2840,12 @@ class WorldEngine:
             "sam_revolution_fund": revolution_fund,
             "police_side": "精英猎犬" if amb_price > 100 else "消极待命" if amb_price < 40 else "摇摆观望",
             "market_risk": "临界点" if sui >= 86 else "动荡期" if sui >= 61 else "摩擦期" if sui >= 31 else "缄默期",
+            "policy_shield_active": self._stock_op_active("policy_shield_until_tick"),
         }
         return {"FC": fc, "FB": fb, "SN": sn}, shadow
 
     def _build_stock_exchange_view(self) -> dict[str, Any]:
-        player = self.state.get("player", {})
+        player = self._ensure_player_financial_state()
         holdings = {str(name): int(value) for name, value in dict(player.get("stock_holdings", {})).items()}
         stocks_view: list[dict[str, Any]] = []
         holdings_value = 0
@@ -2716,6 +2902,12 @@ class WorldEngine:
         ]
         sui = float(shadow.get("SUI", 15.0))
         market_risk = str(shadow.get("market_risk", "缄默期"))
+        margin_debt = self._player_stock_margin_debt()
+        equity = self._player_stock_equity()
+        maintenance_margin = self._stock_maintenance_margin()
+        liquidation_pending = bool(player.get("stock_liquidation_pending", False))
+        account_locked = bool(player.get("stock_account_locked", False))
+        ops = self._stock_ops_state()
         warnings: list[str] = []
         if sui >= 86:
             warnings.append("系统性风险极高：盘口可能出现临时熔断与黑天鹅抛压。")
@@ -2725,16 +2917,40 @@ class WorldEngine:
             warnings.append("摩擦期：SWC 保证金要求上升，盘口波动开始放大。")
         if float(shadow.get("ST", 1.0)) > 1.5:
             warnings.append("社会张力上升：底层生存压力正在反向压迫市场。")
+        if margin_debt > 0:
+            warnings.append(f"融资仓位已开启：当前负债 {margin_debt}，维持保证金 {maintenance_margin}。")
+        if liquidation_pending:
+            warnings.append(str(player.get("stock_liquidation_note", "萨姆已经把你的坐标卖出去了。")))
+        elif account_locked:
+            warnings.append(str(player.get("stock_account_lock_reason", "暗池账户已被冻结，需要 5000 现金重新入场。")))
+        if self._stock_op_active("policy_shield_until_tick"):
+            warnings.append("政策保护伞生效：未来几个 AP 内，SUI 的自然升温会被压低。")
+        if self._stock_op_active("scar_cover_until_tick"):
+            warnings.append("刀疤护盘中：这一个 AP 里的交易动作会更隐蔽。")
+        if self._stock_op_active("rep_drag_until_tick"):
+            warnings.append("虚假繁荣仍在覆盖舆论：街上的真实声望增长被压慢了。")
+        if bool(ops.get("victor_takeover_done", False)):
+            warnings.append("维克多质押盘已被打穿：海藻资本的安保调度正在失血。")
         return {
             "market_open": self._stock_market_is_open(),
             "session_label": self._stock_market_session_label(),
             "clock_label": self._clock_label(),
             "feedback": str(self.state.get("stock_exchange_feedback", "")),
+            "player_health": int(player.get("health", 100)),
             "player_cash": int(player.get("cash", 0)),
             "player_holdings_value": holdings_value,
             "player_total_wealth": self._player_total_wealth(),
             "market_total_value": market_total,
             "account_tier": account_tier,
+            "account_locked": account_locked,
+            "account_lock_reason": str(player.get("stock_account_lock_reason", "")),
+            "financial_route": str(player.get("financial_route", "暗池精英")),
+            "liquidation_pending": liquidation_pending,
+            "liquidation_note": str(player.get("stock_liquidation_note", "")),
+            "margin_debt": margin_debt,
+            "maintenance_margin": maintenance_margin,
+            "equity": equity,
+            "buying_power": self._player_stock_buying_power(),
             "sam_tax_total": int(metrics.get("sam_tax_total", 0)),
             "player_trading_fees": int(metrics.get("player_trading_fees", 0)),
             "revolution_fund": int(metrics.get("sam_revolution_fund", 0)),
@@ -2742,9 +2958,245 @@ class WorldEngine:
             "shadow_reputation": shadow,
             "market_risk": market_risk,
             "warnings": warnings,
+            "stock_ops": copy.deepcopy(ops),
             "stocks": stocks_view,
             "tape": tape,
+            "ending_state": copy.deepcopy(self.state.get("ending_state", {})),
         }
+
+    def _maybe_restore_dark_pool_access(self) -> None:
+        player = self._ensure_player_financial_state()
+        if not bool(player.get("stock_account_locked", False)):
+            return
+        if bool(self.state.get("ending_state", {}).get("game_over", False)):
+            return
+        if int(player.get("cash", 0)) < 5_000:
+            return
+        player["stock_account_locked"] = False
+        player["stock_account_lock_reason"] = ""
+        player["stock_liquidation_note"] = ""
+        self.state["stock_exchange_feedback"] = "萨姆重新给你开了暗池账户。你可以再次入场，但这次没人会替你擦屁股。"
+        self._push_system_news(
+            "暗池账户恢复",
+            "你拿着 5000 现金重新敲开了萨姆的门。黑市账户恢复，但之前的信用已经清空。",
+            ["暗池", "账户恢复", "萨姆"],
+        )
+
+    def _trigger_financial_ending(self, ending_id: str, title: str, body: str) -> None:
+        current = dict(self.state.get("ending_state", {}))
+        if current.get("id") == ending_id and current.get("game_over"):
+            return
+        self.state["ending_state"] = {
+            "id": ending_id,
+            "title": title,
+            "body": body,
+            "game_over": True,
+            "clock": self._clock_label(),
+            "day": int(self.state.get("day", 1)),
+        }
+        self.state["stock_exchange_feedback"] = body
+        self._push_system_news(title, body, ["结局", "金融", ending_id])
+
+    def _resolve_debt_liquidation(self, *, fatal: bool, reason: str) -> None:
+        player = self._ensure_player_financial_state()
+        player["health"] = max(0, int(player.get("health", 100)) - 50)
+        player["cash"] = 0
+        player["stock_margin_debt"] = 0
+        player["stock_holdings"] = {str(name): 0 for name in dict(player.get("stock_holdings", {})).keys()}
+        player["goods_inventory"] = {str(name): 0 for name in dict(player.get("goods_inventory", {})).keys()}
+        player["stock_liquidation_pending"] = False
+        player["stock_liquidation_due_tick"] = 0
+        player["stock_account_locked"] = True
+        player["stock_account_lock_reason"] = "暗池账户已冻结，需要至少 5000 现金才能重新入场。"
+        player["stock_liquidation_note"] = "刀疤已经收完账。你被打掉半条命，账户和存货都被清空。"
+        player["financial_route"] = "负债工贼"
+        player["class_position"] = "负债工贼"
+        note = "刀疤上门完成了物理清算：生命 -50，账户归零，所有存货被抄走。"
+        self.state["stock_exchange_feedback"] = note
+        self._push_system_news("刀疤上门", note, ["刀疤", "清算", reason])
+        if fatal or int(player.get("health", 0)) <= 0:
+            self._trigger_financial_ending(
+                "debt_bodily_liquidation",
+                "债务的肉体清算",
+                "你在暗池穿仓后没能补上保证金。萨姆卖掉了你的坐标，刀疤上门完成了最后清算。",
+            )
+
+    def _force_dark_pool_auto_close(self, stock: dict[str, Any], reason: str) -> None:
+        player = self._ensure_player_financial_state()
+        stock_name = str(stock.get("name", ""))
+        held = int(player.get("stock_holdings", {}).get(stock_name, 0))
+        if held <= 0:
+            return
+        unit_price = int(stock.get("current_price", 0))
+        trade_value = unit_price * held
+        fee = self._record_stock_fee(trade_value, player_paid=True)
+        realized_cash = max(0, trade_value - fee)
+        paydown = min(self._player_stock_margin_debt(), realized_cash)
+        player["stock_margin_debt"] = self._player_stock_margin_debt() - paydown
+        player["cash"] = int(player.get("cash", 0)) + max(0, realized_cash - paydown)
+        player["stock_holdings"][stock_name] = 0
+        self._record_stock_trade(
+            actor_kind="system",
+            actor_id="dark_pool",
+            actor_name="暗池风控",
+            stock_name=stock_name,
+            quantity=held,
+            direction=-1,
+            unit_price=unit_price,
+            source=reason,
+        )
+        self.state["stock_exchange_feedback"] = f"暗池风控强平 {stock_name} x{held}，回笼 {realized_cash}，手续费 {fee}。"
+        self._push_system_news(
+            "暗池强平",
+            f"由于 {reason}，暗池系统强行平掉了你在 {stock_name} 的仓位。",
+            ["暗池", "强平", stock_name],
+        )
+
+    def _check_stock_account_state(self, *, trigger: str) -> None:
+        player = self._ensure_player_financial_state()
+        self._maybe_restore_dark_pool_access()
+        ending = dict(self.state.get("ending_state", {}))
+        if bool(ending.get("game_over", False)):
+            return
+        equity = self._player_stock_equity()
+        maintenance_margin = self._stock_maintenance_margin()
+        debt = self._player_stock_margin_debt()
+        if equity < 0:
+            self._resolve_debt_liquidation(fatal=True, reason="global_margin_call")
+            return
+        if bool(player.get("stock_liquidation_pending", False)):
+            due_tick = int(player.get("stock_liquidation_due_tick", 0))
+            if self._world_tick() >= due_tick and trigger != "trade_preview":
+                self._resolve_debt_liquidation(fatal=False, reason="margin_call")
+                return
+        if debt > 0 and maintenance_margin > 0 and equity <= maintenance_margin and not bool(player.get("stock_liquidation_pending", False)):
+            player["stock_liquidation_pending"] = True
+            player["stock_liquidation_due_tick"] = self._world_tick() + 1
+            player["stock_account_locked"] = True
+            player["stock_account_lock_reason"] = "保证金不足，暗池交易权限已被冻结。"
+            player["stock_liquidation_note"] = "PDA 震动：萨姆留言“有人来收账了，祝你好运。”"
+            self.state["stock_exchange_feedback"] = str(player["stock_liquidation_note"])
+            self._push_system_news(
+                "暗池追保",
+                "你的账户净值已经跌穿维持保证金。萨姆冻结了交易权限，并把坐标准备卖给刀疤。",
+                ["保证金", "刀疤", "暗池"],
+            )
+        if int(self.state.get("day", 1)) >= 3 and int(self.state.get("clock_minutes", 0)) >= 20 * 60:
+            shadow = dict(self._story_metrics_state().get("shadow_reputation", {}))
+            if int(player.get("cash", 0)) < 5_000 and float(shadow.get("SUI", 15.0)) >= 70.0 and int(shadow.get("WL", 1)) >= 3:
+                self._trigger_financial_ending(
+                    "guikong_scapegoat",
+                    "归空结局：被抛弃的替罪羊",
+                    "第三天夜里，AMB 形同归零。你既没钱压低 SUI，也没本钱加固安保，最终被旧秩序当成替罪羊一起丢进废墟里。",
+                )
+
+    def _run_stock_special_operation(self, operation: str) -> ActionResult:
+        player = self._ensure_player_financial_state()
+        if bool(self.state.get("ending_state", {}).get("game_over", False)):
+            ending = dict(self.state.get("ending_state", {}))
+            return ActionResult(str(ending.get("body", "当前存档已经进入失败结局。")), self._snapshot_after_refresh(rebuild_agent_prompts=False))
+        if bool(player.get("stock_account_locked", False)):
+            return ActionResult(str(player.get("stock_account_lock_reason", "暗池账户已冻结。")), self._snapshot_after_refresh(rebuild_agent_prompts=False))
+        tier = self._stock_account_tier()
+        tier_rank = int(tier.get("rank", 1))
+        ops = self._stock_ops_state()
+        message = "操作未执行。"
+        success = False
+        match operation:
+            case "fake_boom_report":
+                if tier_rank < 3:
+                    message = "虚假繁荣报道需要黄金级账户。"
+                elif int(player.get("cash", 0)) < 3_000:
+                    message = "现金不足，无法买通报馆洗白 SWC。"
+                else:
+                    player["cash"] = int(player.get("cash", 0)) - 3_000
+                    self._shock_stock_price("SWC", 0.10, pressure_delta=0.14, note="报馆头版开始为海藻资本粉饰太平，SWC 被强行拉抬。")
+                    self.state["macro"]["media_sentiment"] = min(100, int(self.state["macro"].get("media_sentiment", 50)) + 8)
+                    self.state["macro"]["worker_unrest"] = min(100, int(self.state["macro"].get("worker_unrest", 50)) + 4)
+                    self._set_stock_op_window("rep_drag_until_tick", 3)
+                    message = "你砸下 3000 铜币买通报馆，SWC 被强行拉升，街上的真实怨气也被一层假象压住了。"
+                    success = True
+            case "manufacture_dock_conflict":
+                if tier_rank < 2:
+                    message = "制造码头冲突至少需要白银级账户。"
+                elif int(player.get("cash", 0)) < 5_000:
+                    message = "现金不足，无法雇人把港口点起来。"
+                else:
+                    player["cash"] = int(player.get("cash", 0)) - 5_000
+                    self._shock_stock_price("TSL", -0.25, pressure_delta=-0.22, note="港口冲突被人为点燃，TSL 盘口被狠狠砸穿。")
+                    self._bump_district_signal("港口", "fear", 0.28)
+                    self._bump_district_signal("港口", "gossip", 0.24)
+                    self._bump_district_signal("港口", "labor_heat", 0.18)
+                    message = "港口冲突被你做出来了，TSL 短线跳水，码头那边已经开始骂娘。"
+                    success = True
+            case "emergency_bond_issue":
+                if tier_rank < 2:
+                    message = "紧急增发债券至少需要白银级账户。"
+                elif int(player.get("cash", 0)) < 8_000:
+                    message = "现金不足，无法替镇政府托底 AMB。"
+                else:
+                    player["cash"] = int(player.get("cash", 0)) - 8_000
+                    bond = self._shock_stock_price("AMB", 0.18, pressure_delta=0.18, note="镇政府紧急增发债券，AMB 被短暂托住。")
+                    if bond and int(bond.get("current_price", 0)) < 70:
+                        bond["current_price"] = 70
+                    mayor = self._find_npc_by_name("温斯顿")
+                    if mayor:
+                        mayor["player_trust"] = min(100.0, float(mayor.get("player_trust", 0.0)) + 6.0)
+                        mayor["player_relation"] = int(mayor.get("player_relation", 0)) + 4
+                    ops["gala_invite_unlocked"] = True
+                    message = "你用 8000 铜币替温斯顿托了 AMB 一口气，高级酒会的门缝也被撬开了一点。"
+                    success = True
+            case "hostile_takeover":
+                swc = self._stock_by_ticker("SWC") or {}
+                if tier_rank < 3:
+                    message = "定向收购维克多的对手盘需要黄金级账户。"
+                elif int(self._player_total_wealth()) < 100_000:
+                    message = "你的总资产还不够，没资格去吞维克多的质押盘。"
+                elif int(swc.get("current_price", 0)) >= 80:
+                    message = "SWC 还没跌到 80 以下，维克多的质押仓现在还撬不动。"
+                elif bool(ops.get("victor_takeover_done", False)):
+                    message = "维克多的质押仓已经被你动过一次了。"
+                else:
+                    ops["victor_takeover_done"] = True
+                    self.state["market_pressure"]["families"]["海藻资本"] = float(self.state["market_pressure"]["families"].get("海藻资本", 0.0)) - 0.25
+                    self.state["macro"]["worker_unrest"] = max(0, int(self.state["macro"].get("worker_unrest", 50)) - 4)
+                    victor = self._find_npc_by_name("维克多")
+                    if victor:
+                        victor["loyalty"] = max(0, int(victor.get("loyalty", 0)) - 18)
+                        victor["fear"] = min(100, int(victor.get("fear", 0)) + 12)
+                    message = "你强平了维克多的一部分质押盘。海藻资本的私保体系开始松动，第三夜的反扑会更弱。"
+                    self._push_system_news("维克多仓位被打穿", message, ["维克多", "暗池", "敌意收购"])
+                    success = True
+            case "policy_shield":
+                if tier_rank < 3:
+                    message = "政策保护伞需要黄金级账户。"
+                elif int(player.get("cash", 0)) < 20_000:
+                    message = "现金不足，没法让温斯顿替你按住治安法案。"
+                else:
+                    player["cash"] = int(player.get("cash", 0)) - 20_000
+                    self._set_stock_op_window("policy_shield_until_tick", 3)
+                    mayor = self._find_npc_by_name("温斯顿")
+                    if mayor:
+                        mayor["player_trust"] = min(100.0, float(mayor.get("player_trust", 0.0)) + 10.0)
+                        mayor["player_relation"] = int(mayor.get("player_relation", 0)) + 6
+                    message = "温斯顿替你签了紧急治安法案。接下来 3 个 AP 内，SUI 的自然升温会被硬压一半。"
+                    self._push_system_news("政策保护伞生效", message, ["温斯顿", "治安法案", "SUI"])
+                    success = True
+            case "hire_scar_cover":
+                if int(player.get("cash", 0)) < 5_000:
+                    message = "现金不足，刀疤不会白白替你站门。"
+                else:
+                    player["cash"] = int(player.get("cash", 0)) - 5_000
+                    self._set_stock_op_window("scar_cover_until_tick", 1)
+                    message = "刀疤接单了。接下来 1 个 AP 内，你在交易所的动作不会把街口的平民目光都引过来。"
+                    self._push_system_news("刀疤护盘", message, ["刀疤", "暗池", "护盘"])
+                    success = True
+            case _:
+                message = "未识别的金融操纵动作。"
+        ops["last_action"] = operation if success else str(ops.get("last_action", ""))
+        self.state["stock_exchange_feedback"] = message
+        self._check_stock_account_state(trigger=operation)
+        return ActionResult(message, self._snapshot_after_refresh(rebuild_agent_prompts=False))
 
     def _reprice_stock_after_trade(self, stock: dict[str, Any], trade_cash: float, direction: int) -> None:
         previous = int(stock.get("current_price", 0))
@@ -2756,7 +3208,10 @@ class WorldEngine:
         mispricing = (current_price - reference_price) / max(reference_price, 1.0)
         factor = 1.0 + flow_ratio * 0.42 + existing_pressure * 0.08 - mispricing * 0.06
         factor = max(0.9, min(1.12, factor))
-        stock["current_price"] = max(3, int(round(current_price * factor)))
+        next_price = max(3, int(round(current_price * factor)))
+        if next_price == previous and abs(float(trade_cash)) >= current_price * 10.0:
+            next_price = max(3, previous + (1 if direction > 0 else -1))
+        stock["current_price"] = next_price
         stock["last_trade_price"] = int(stock["current_price"])
         stock["change_amount"] = int(stock["current_price"]) - int(stock.get("previous_close", previous))
         base = max(float(stock.get("previous_close", previous)), 1.0)
@@ -2935,13 +3390,13 @@ class WorldEngine:
         player = self.state["player"]
         stock = self._find_by_name(self.state["stocks"], stock_name)
         if not stock:
-            return ActionResult("没有这支股票。", self.snapshot())
+            return ActionResult("没有这支股票。", self._snapshot_after_refresh(rebuild_agent_prompts=False))
         stock_name = str(stock.get("name", stock_name))
         quantity = max(quantity, 1)
         cost = stock["current_price"] * quantity
         if direction > 0:
             if player["cash"] < cost:
-                return ActionResult("现金不足。", self.snapshot())
+                return ActionResult("现金不足。", self._snapshot_after_refresh(rebuild_agent_prompts=False))
             player["cash"] -= cost
             player["stock_holdings"][stock_name] = player["stock_holdings"].get(stock_name, 0) + quantity
             if stock_name == "珊瑚金控":
@@ -2960,10 +3415,9 @@ class WorldEngine:
             self._bump_district_signal("交易所", "liquidity", 0.12 * quantity)
             self._bump_district_signal("交易所", "trade_heat", 0.08 * quantity)
             self._update_player_class()
-            self._refresh_derived_views()
-            return ActionResult(f"买入 {stock_name} x{quantity}。", self.snapshot())
+            return ActionResult(f"买入 {stock_name} x{quantity}。", self._snapshot_after_refresh(rebuild_agent_prompts=False))
         if player["stock_holdings"].get(stock_name, 0) < quantity:
-            return ActionResult("持仓不足。", self.snapshot())
+            return ActionResult("持仓不足。", self._snapshot_after_refresh(rebuild_agent_prompts=False))
         player["stock_holdings"][stock_name] -= quantity
         player["cash"] += cost
         self.state["demo_metrics"]["stock_trades"] = int(self.state["demo_metrics"].get("stock_trades", 0)) + quantity
@@ -2980,30 +3434,45 @@ class WorldEngine:
         self._bump_district_signal("交易所", "liquidity", 0.1 * quantity)
         self._bump_district_signal("交易所", "trade_heat", 0.06 * quantity)
         self._update_player_class()
-        self._refresh_derived_views()
-        return ActionResult(f"卖出 {stock_name} x{quantity}。", self.snapshot())
+        return ActionResult(f"卖出 {stock_name} x{quantity}。", self._snapshot_after_refresh(rebuild_agent_prompts=False))
 
     def _trade_stock_v2(self, stock_name: str, quantity: int, direction: int) -> ActionResult:
-        player = self.state["player"]
+        player = self._ensure_player_financial_state()
         stock = self._find_by_name(self.state["stocks"], stock_name)
         if not stock:
             self.state["stock_exchange_feedback"] = "没有这支股票。"
-            return ActionResult("没有这支股票。", self.snapshot())
+            return ActionResult("没有这支股票。", self._snapshot_after_refresh(rebuild_agent_prompts=False))
         stock_name = str(stock.get("name", stock_name))
+        self._check_stock_account_state(trigger="trade_preview")
+        if bool(self.state.get("ending_state", {}).get("game_over", False)):
+            ending = dict(self.state.get("ending_state", {}))
+            return ActionResult(str(ending.get("body", "当前存档已经进入失败结局。")), self._snapshot_after_refresh(rebuild_agent_prompts=False))
+        if bool(player.get("stock_account_locked", False)):
+            message = str(player.get("stock_account_lock_reason", "暗池交易权限已被冻结。"))
+            self.state["stock_exchange_feedback"] = message
+            return ActionResult(message, self._snapshot_after_refresh(rebuild_agent_prompts=False))
         if not self._stock_market_is_open():
             message = f"交易所当前闭市，可交易时段为 {self._stock_market_session_label()}。"
             self.state["stock_exchange_feedback"] = message
-            return ActionResult(message, self.snapshot())
+            return ActionResult(message, self._snapshot_after_refresh(rebuild_agent_prompts=False))
         quantity = max(quantity, 1)
         unit_price = int(stock.get("current_price", 0))
         trade_value = unit_price * quantity
+        previous_tier_label = str(self._stock_account_tier().get("label", "青铜级"))
+        stealth_cover = self._stock_op_active("scar_cover_until_tick")
         if direction > 0:
             fee = self._record_stock_fee(trade_value, player_paid=True)
             total_cost = trade_value + fee
-            if int(player.get("cash", 0)) < total_cost:
-                self.state["stock_exchange_feedback"] = "现金不足，无法完成买入。"
-                return ActionResult("现金不足。", self.snapshot())
-            player["cash"] = int(player.get("cash", 0)) - total_cost
+            cash_available = int(player.get("cash", 0))
+            shortfall = max(0, total_cost - cash_available)
+            if shortfall > 0 and shortfall > self._player_stock_buying_power():
+                self.state["stock_exchange_feedback"] = "现金和可用融资额度都不足，无法完成买入。"
+                return ActionResult("现金不足。", self._snapshot_after_refresh(rebuild_agent_prompts=False))
+            if shortfall > 0:
+                player["cash"] = 0
+                player["stock_margin_debt"] = self._player_stock_margin_debt() + shortfall
+            else:
+                player["cash"] = cash_available - total_cost
             player["stock_holdings"][stock_name] = int(player["stock_holdings"].get(stock_name, 0)) + quantity
             if str(stock.get("ticker", "")).upper() == "AMB":
                 self._increment_task_progress("swing_trade_media", str(stock.get("name", stock_name)), quantity)
@@ -3018,18 +3487,28 @@ class WorldEngine:
                 unit_price=unit_price,
                 source="player_action",
             )
-            self._bump_district_signal("交易所", "liquidity", 0.12 * quantity)
-            self._bump_district_signal("交易所", "trade_heat", 0.08 * quantity)
+            if not stealth_cover:
+                self._bump_district_signal("交易所", "liquidity", 0.12 * quantity)
+                self._bump_district_signal("交易所", "trade_heat", 0.08 * quantity)
+            self._check_stock_account_state(trigger="buy_stock")
             self._update_player_class()
-            self.state["stock_exchange_feedback"] = f"买入 {stock_name} x{quantity}，成交额 {trade_value} 铜币，萨姆抽成 {fee}。"
-            self._refresh_derived_views()
-            return ActionResult(f"买入 {stock_name} x{quantity}。", self.snapshot())
+            tier_label = str(self._stock_account_tier().get("label", "青铜级"))
+            debt_now = self._player_stock_margin_debt()
+            debt_line = f" 当前融资负债 {debt_now}。" if debt_now > 0 else ""
+            downgrade_line = f" 账户已从 {previous_tier_label} 降到 {tier_label}。" if self._stock_tier_rank(tier_label) < self._stock_tier_rank(previous_tier_label) else ""
+            stealth_line = " 刀疤把交易所门口的人群视线都挡开了。" if stealth_cover else ""
+            self.state["stock_exchange_feedback"] = f"买入 {stock_name} x{quantity}，成交额 {trade_value} 铜币，萨姆抽成 {fee}。{debt_line}{downgrade_line}{stealth_line}".strip()
+            return ActionResult(f"买入 {stock_name} x{quantity}。", self._snapshot_after_refresh(rebuild_agent_prompts=False))
         if int(player["stock_holdings"].get(stock_name, 0)) < quantity:
             self.state["stock_exchange_feedback"] = "持仓不足，无法完成卖出。"
-            return ActionResult("持仓不足。", self.snapshot())
+            return ActionResult("持仓不足。", self._snapshot_after_refresh(rebuild_agent_prompts=False))
         fee = self._record_stock_fee(trade_value, player_paid=True)
         player["stock_holdings"][stock_name] = int(player["stock_holdings"].get(stock_name, 0)) - quantity
-        player["cash"] = int(player.get("cash", 0)) + max(0, trade_value - fee)
+        realized_cash = max(0, trade_value - fee)
+        margin_debt = self._player_stock_margin_debt()
+        paydown = min(margin_debt, realized_cash)
+        player["stock_margin_debt"] = margin_debt - paydown
+        player["cash"] = int(player.get("cash", 0)) + max(0, realized_cash - paydown)
         self.state["demo_metrics"]["stock_trades"] = int(self.state["demo_metrics"].get("stock_trades", 0)) + quantity
         self._record_stock_trade(
             actor_kind="player",
@@ -3041,12 +3520,17 @@ class WorldEngine:
             unit_price=unit_price,
             source="player_action",
         )
-        self._bump_district_signal("交易所", "liquidity", 0.1 * quantity)
-        self._bump_district_signal("交易所", "trade_heat", 0.06 * quantity)
+        if not stealth_cover:
+            self._bump_district_signal("交易所", "liquidity", 0.1 * quantity)
+            self._bump_district_signal("交易所", "trade_heat", 0.06 * quantity)
+        self._check_stock_account_state(trigger="sell_stock")
         self._update_player_class()
-        self.state["stock_exchange_feedback"] = f"卖出 {stock_name} x{quantity}，回笼资金 {max(0, trade_value - fee)} 铜币，萨姆抽成 {fee}。"
-        self._refresh_derived_views()
-        return ActionResult(f"卖出 {stock_name} x{quantity}。", self.snapshot())
+        tier_label = str(self._stock_account_tier().get("label", "青铜级"))
+        downgrade_line = f" 账户已从 {previous_tier_label} 降到 {tier_label}。" if self._stock_tier_rank(tier_label) < self._stock_tier_rank(previous_tier_label) else ""
+        repay_line = f" 其中 {paydown} 已自动用于归还融资。" if paydown > 0 else ""
+        stealth_line = " 刀疤把交易所门口的人群视线都挡开了。" if stealth_cover else ""
+        self.state["stock_exchange_feedback"] = f"卖出 {stock_name} x{quantity}，回笼资金 {realized_cash} 铜币，萨姆抽成 {fee}。{repay_line}{downgrade_line}{stealth_line}".strip()
+        return ActionResult(f"卖出 {stock_name} x{quantity}。", self._snapshot_after_refresh(rebuild_agent_prompts=False))
 
     def _accept_task(self, task_id: str) -> ActionResult:
         player = self.state["player"]
@@ -4483,7 +4967,7 @@ class WorldEngine:
             },
         ]
 
-    def _refresh_derived_views(self) -> None:
+    def _refresh_derived_views(self, rebuild_agent_prompts: bool = True) -> None:
         self.state["headline_news"] = self.state["global_news"][:3]
         self.state["house_states"] = self._build_house_states()
         self._update_player_class()
@@ -4518,18 +5002,19 @@ class WorldEngine:
         self._rebuild_stock_holder_registry()
         self.state["stock_exchange_view"] = self._build_stock_exchange_view()
         for npc in self.state["npcs"]:
-            npc["agent_prompt"] = self._npc_agent_prompt(npc)
-            npc["agent_tool_policy"] = self._npc_tool_policy(npc)
-            npc["agent_policy"] = {
-                **npc.get("agent_policy", {}),
-                "social_style": self._npc_social_style(npc),
-                "market_style": self._npc_market_style(npc),
-                "agenda": self._npc_agent_agenda(npc),
-                "budget_weight": round(max(0.4, min(1.8, self._npc_daily_agent_budget(npc) / 6.0)), 2),
-                "topic_digest": self._npc_topic_digest(npc),
-                "norm_digest": self._npc_norm_digest(npc),
-                "collective_digest": self._npc_collective_digest(npc),
-            }
+            if rebuild_agent_prompts or not str(npc.get("agent_prompt", "")).strip():
+                npc["agent_prompt"] = self._npc_agent_prompt(npc)
+                npc["agent_tool_policy"] = self._npc_tool_policy(npc)
+                npc["agent_policy"] = {
+                    **npc.get("agent_policy", {}),
+                    "social_style": self._npc_social_style(npc),
+                    "market_style": self._npc_market_style(npc),
+                    "agenda": self._npc_agent_agenda(npc),
+                    "budget_weight": round(max(0.4, min(1.8, self._npc_daily_agent_budget(npc) / 6.0)), 2),
+                    "topic_digest": self._npc_topic_digest(npc),
+                    "norm_digest": self._npc_norm_digest(npc),
+                    "collective_digest": self._npc_collective_digest(npc),
+                }
         self.state["npc_cards"] = self._build_npc_cards()
         self.state["local_rumor"] = copy.deepcopy(self.state.get("rumor_log", [])[:8])
         self.state["city_news"] = self._build_city_news()
@@ -6232,12 +6717,16 @@ class WorldEngine:
         response_share = len(self._dedupe_id_list(action.get("response_actor_ids", []), limit=12)) / potential_size
         mode_bias = 0.16 if str(action.get("response_mode", "")) == "suppress" else -0.04 if str(action.get("response_mode", "")) == "negotiate" else 0.03
         player_bias = float(action.get("player_suppression", 0.0)) * 0.08 - float(action.get("player_support", 0.0)) * 0.03 - float(action.get("player_mediation", 0.0)) * 0.05
+        takeover_drag = 0.0
+        if bool(self._stock_ops_state().get("victor_takeover_done", False)) and str(action.get("district", "")) in {"工厂区", "交易所", "富人区"}:
+            takeover_drag = 0.18
         return round(
             self._clamp(
                 response_share * 0.36
                 + float(action.get("risk", 0.0)) * 0.24
                 + mode_bias
-                + player_bias,
+                + player_bias
+                - takeover_drag,
                 -0.2,
                 1.4,
             ),
@@ -6987,6 +7476,10 @@ class WorldEngine:
             stock["current_price"] = max(3, int(round(stock["current_price"] * factor)))
             stock["reference_price"] = round(reference_price * 0.992 + float(stock["current_price"]) * 0.008, 3)
             stock["market_sentiment"] = "乐观" if stock["current_price"] > previous else "恐慌" if stock["current_price"] < previous else "谨慎"
+            move_ratio = abs(int(stock["current_price"]) - previous) / float(max(previous, 1))
+            held = int(self._ensure_player_financial_state().get("stock_holdings", {}).get(str(stock.get("name", "")), 0))
+            if sui >= 80.0 and move_ratio >= 0.10 and held > 0 and self.random.random() < 0.5:
+                self._force_dark_pool_auto_close(stock, "SUI 风险风控")
             if stock["current_price"] != previous:
                 moved.append(f"{stock['name']}{'涨' if stock['current_price'] > previous else '跌'}到{stock['current_price']}")
             self._append_stock_history_point(str(stock.get("name", "")), int(stock["current_price"]))
@@ -7461,7 +7954,7 @@ class WorldEngine:
         return "还在观察你"
 
     def _player_total_wealth(self) -> int:
-        player = self.state.get("player", {})
+        player = self._ensure_player_financial_state()
         goods_rows = self.state.get("goods", [])
         stock_rows = self.state.get("stocks", [])
         goods_value = sum(
@@ -7472,7 +7965,7 @@ class WorldEngine:
             int(player.get("stock_holdings", {}).get(str(row.get("name", "")), 0)) * int(row.get("current_price", 0))
             for row in stock_rows
         )
-        return int(player.get("cash", 0)) + goods_value + stock_value
+        return int(player.get("cash", 0)) + goods_value + stock_value - self._player_stock_margin_debt()
 
     def _player_collective_bias_for_npc(self, npc: dict[str, Any]) -> float:
         profile = self.state.get("player", {}).get("collective_profile", {})
@@ -8129,10 +8622,13 @@ class WorldEngine:
         return f"{row['name']} {mood} {row['current_price']}"
 
     def _update_player_class(self) -> None:
-        player = self.state["player"]
+        player = self._ensure_player_financial_state()
+        if str(player.get("financial_route", "")) == "负债工贼":
+            player["class_position"] = "负债工贼"
+            return
         goods_value = sum(int(good.get("current_price", 0)) * int(player["goods_inventory"].get(good["name"], 0)) for good in self.state["goods"])
         stocks_value = sum(int(stock.get("current_price", 0)) * int(player["stock_holdings"].get(stock["name"], 0)) for stock in self.state["stocks"])
-        total_wealth = int(player.get("cash", 0)) + goods_value + stocks_value
+        total_wealth = int(player.get("cash", 0)) + goods_value + stocks_value - self._player_stock_margin_debt()
         if total_wealth >= 120 or int(player.get("reputation", 0)) >= 28:
             player["class_position"] = "街头投机客"
         elif total_wealth >= 70 or int(player.get("credit", 0)) >= 35:
@@ -9431,6 +9927,8 @@ class WorldEngine:
         story_metrics = self._story_metrics_state()
         rep = dict(story_metrics.get("reputation", {}))
         shadow = dict(story_metrics.get("shadow_reputation", {}))
+        player = self._ensure_player_financial_state()
+        account_tier = self._stock_account_tier()
         social_style = self._npc_social_style(npc)
         market_style = self._npc_market_style(npc)
         agenda = self._npc_agent_agenda(npc)
@@ -9444,6 +9942,7 @@ class WorldEngine:
             f"短期计划：{agenda}\n"
             f"城里硬指标：平民声望 FC={rep.get('FC', 10)} / FB={rep.get('FB', 5)} / SN={rep.get('SN', 20)}；"
             f"影子指标 SUI={shadow.get('SUI', 15)} / ST={shadow.get('ST', 1.0)} / WL={shadow.get('WL', 1)} / 警局倾向={shadow.get('police_side', '摇摆观望')}。\n"
+            f"玩家金融状态：账户={account_tier.get('label', '青铜级')}；现金={int(player.get('cash', 0))}；股仓市值={self._player_stock_holdings_value()}；融资负债={self._player_stock_margin_debt()}；生命={int(player.get('health', 100))}；路线={player.get('financial_route', '暗池精英')}；追保状态={'是' if player.get('stock_liquidation_pending', False) else '否'}。\n"
             f"当前显式议题={topic_digest}。\n"
             f"当前显式规范={norm_digest}。\n"
             f"当前显式集体行动={collective_digest}。\n"
@@ -9551,6 +10050,8 @@ class WorldEngine:
         metrics = self._story_metrics_state()
         reputation = dict(metrics.get("reputation", {}))
         shadow = dict(metrics.get("shadow_reputation", {}))
+        player = self._ensure_player_financial_state()
+        account_tier = self._stock_account_tier()
         camp = str(npc.get("camp", npc.get("family_affiliation", "")) or "无阵营")
         route_alignment = str(npc.get("route_alignment", "") or "中立观望")
         family = str(npc.get("family_affiliation", "")) or "无"
@@ -9579,6 +10080,7 @@ class WorldEngine:
             f"短期计划：{self._npc_agent_agenda(npc)}\n"
             f"系统硬指标：FC={reputation.get('FC', 10)}；FB={reputation.get('FB', 5)}；SN={reputation.get('SN', 20)}；"
             f"SUI={shadow.get('SUI', 15)}；ST={shadow.get('ST', 1.0)}；WL={shadow.get('WL', 1)}；警局倾向={shadow.get('police_side', '摇摆观望')}。\n"
+            f"玩家金融状态：账户={account_tier.get('label', '青铜级')}；现金={int(player.get('cash', 0))}；股仓市值={self._player_stock_holdings_value()}；融资负债={self._player_stock_margin_debt()}；生命={int(player.get('health', 100))}；路线={player.get('financial_route', '暗池精英')}；追保状态={'是' if player.get('stock_liquidation_pending', False) else '否'}。\n"
             f"近期现实输入：显式议题={topic_digest}；显式规范={norm_digest}；显式集体行动={collective_digest}。\n"
             "对玩家的互动规则：玩家只是外来玩家或来访者，不预设玩家物种、血统或旧主角身份。你必须依据自己的利益、恐惧、阵营、关系和当前证据说话，不替玩家做决定。\n"
             "你不能凭空发明世界事实。你只能围绕引擎里已给出的事件、关系、价格、组织行动、谣言和制度约束去回应、试探、交易、压价、隐瞒、泄密、背叛或组织行动。\n"

@@ -212,13 +212,13 @@ func set_active(enabled: bool) -> void:
 func enter_house(data: Dictionary) -> void:
 	house_data = data.duplicate(true)
 	house_state = data.get("house_state", {}).duplicate(true)
-	if _scene_house_id() != "stock_exchange":
+	if not _is_exchange_scene():
 		exchange_hud_state.clear()
 	house_theme = _theme_for_house(house_data)
 	house_layout = _layout_for_house(house_data)
 	custom_room_texture = _load_runtime_texture(_custom_room_texture_path_for_house(_scene_house_id()), false)
 	custom_room_walk_mask_image = _load_runtime_image(_custom_room_walk_mask_path_for_house(_scene_house_id()), false)
-	if _scene_house_id() == "stock_exchange":
+	if _is_exchange_scene():
 		house_layout["entry_x"] = 1078.0
 		house_layout["entry_y"] = 724.0
 		house_layout["desk_x"] = 314.0
@@ -258,7 +258,7 @@ func update_house_state(state: Dictionary) -> void:
 
 func set_exchange_hud_state(state: Dictionary) -> void:
 	exchange_hud_state = state.duplicate(true)
-	if _scene_house_id() == "stock_exchange":
+	if _is_exchange_scene():
 		queue_redraw()
 
 
@@ -305,6 +305,10 @@ func _scene_house_id() -> String:
 	return str(house_data.get("id", ""))
 
 
+func _is_exchange_scene() -> bool:
+	return _scene_house_id() in ["stock_exchange", "stock_exchange_6", "exchange_house"]
+
+
 func get_current_house_payload() -> Dictionary:
 	return {
 		"house_id": str(house_data.get("action_house_id", house_data.get("id", ""))),
@@ -339,7 +343,7 @@ func get_nearby_interactables(limit: int) -> Array:
 
 func get_hint_text() -> String:
 	if current_interactable == null:
-		if _scene_house_id() == "stock_exchange":
+		if _is_exchange_scene():
 			return "%s 靠近交易席、终端、账桌或正门后按 E；站在门边时按 E 直接退出。" % room_caption
 		return "%s 靠近床铺、灶台、储物箱、账桌或门口后按 E。" % room_caption
 	return "靠近 %s。按 E 操作。%s" % [current_interactable.title, current_interactable.subtitle]
@@ -410,13 +414,13 @@ func _has_room_walk_mask() -> bool:
 func _current_room_base_texture() -> Texture2D:
 	if custom_room_texture != null:
 		return custom_room_texture
-	if _scene_house_id() == "stock_exchange":
+	if _is_exchange_scene():
 		return stock_exchange_interior
 	return null
 
 
 func _room_frame_rect() -> Rect2:
-	if _scene_house_id() == "stock_exchange":
+	if _is_exchange_scene():
 		return STOCK_EXCHANGE_FRAME_RECT
 	return CUSTOM_ROOM_FRAME_RECT
 
@@ -602,7 +606,7 @@ func _rebuild_interactables() -> void:
 			node.queue_free()
 	interactables.clear()
 
-	if _scene_house_id() == "stock_exchange":
+	if _is_exchange_scene():
 		_spawn_interactable_rows([
 			{"id":"trading_floor","kind":"stocks","title":"交易席","district":get_current_district(),"subtitle":"盯住三支股票的盘口、涨跌与个人持仓。","x":456.0,"y":544.0},
 			{"id":"intel_terminal","kind":"info","title":"信息终端","district":get_current_district(),"subtitle":"查看市场风向、政策耳语和交易室里的流言。","x":1036.0,"y":238.0},
@@ -646,10 +650,10 @@ func _interaction_radius_for_node(node: InteractableView) -> float:
 	if node == null:
 		return 88.0
 	if node.kind == "exit_house":
-		if _scene_house_id() == "stock_exchange":
+		if _is_exchange_scene():
 			return 160.0
 		return 112.0
-	if _scene_house_id() == "stock_exchange":
+	if _is_exchange_scene():
 		match node.kind:
 			"stocks":
 				return 118.0
@@ -661,7 +665,7 @@ func _interaction_radius_for_node(node: InteractableView) -> float:
 
 
 func _draw() -> void:
-	if _scene_house_id() == "stock_exchange":
+	if _is_exchange_scene():
 		_draw_stock_exchange_scene()
 		return
 	if _has_custom_room_scene():

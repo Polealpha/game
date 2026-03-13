@@ -142,6 +142,7 @@ var minimap_panel_node: CanvasItem
 var subtitle_panel_node: CanvasItem
 var toast_tween: Tween
 var modal_tween: Tween
+var last_viewport_size := Vector2.ZERO
 
 
 func _ready() -> void:
@@ -216,6 +217,9 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
+	var viewport_size := get_viewport_rect().size
+	if viewport_size != last_viewport_size:
+		_layout_exchange_terminal_panel()
 	_advance_visual_clock(delta)
 	_advance_news_ticker(delta)
 	_maintain_pending_dialogue_request()
@@ -432,6 +436,7 @@ func _build_ui() -> void:
 
 	exchange_terminal_actions.add_theme_constant_override("separation", 6)
 	exchange_box.add_child(exchange_terminal_actions)
+	_layout_exchange_terminal_panel()
 
 	var overview_panel := _make_panel(Rect2(18, 18, 448, 148), "乌龟账本")
 	overview_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -705,6 +710,21 @@ func _layout_modal_card() -> void:
 		modal_body_scroll.custom_minimum_size = Vector2(0, max(190.0, card_height * 0.34))
 		modal_trade_scroll.custom_minimum_size = Vector2(0, max(96.0, min(164.0, card_height * 0.2)))
 	modal_input.custom_minimum_size = Vector2(max(360.0, card_width - 210.0), 42)
+
+
+func _layout_exchange_terminal_panel() -> void:
+	if not is_instance_valid(exchange_terminal_panel):
+		return
+	var viewport_size := get_viewport_rect().size
+	last_viewport_size = viewport_size
+	var panel_width := clampf(viewport_size.x * 0.32, 360.0, 510.0)
+	var panel_height := clampf(viewport_size.y - 190.0, 330.0, 446.0)
+	var panel_x := maxf(16.0, viewport_size.x - panel_width - 24.0)
+	var panel_y := clampf(122.0, 16.0, maxf(16.0, viewport_size.y - panel_height - 24.0))
+	exchange_terminal_panel.position = Vector2(panel_x, panel_y)
+	exchange_terminal_panel.size = Vector2(panel_width, panel_height)
+	exchange_terminal_summary.custom_minimum_size = Vector2(0, clampf(panel_height * 0.37, 128.0, 164.0))
+	exchange_terminal_tape.custom_minimum_size = Vector2(0, clampf(panel_height * 0.2, 72.0, 96.0))
 
 
 func _make_panel(rect: Rect2, title: String) -> Dictionary:
@@ -4367,7 +4387,7 @@ func _house_payload_for_node(node: InteractableView) -> Dictionary:
 	var house_id := node.interaction_id
 	var state_house_id := node.interaction_id
 	var action_house_id := node.interaction_id
-	if node.kind == "house" and node.interaction_id == "exchange_house":
+	if node.kind == "house" and node.interaction_id in ["exchange_house", "stock_exchange_6"]:
 		house_id = "stock_exchange"
 	return {
 		"house_id": house_id,
@@ -4417,7 +4437,7 @@ func _submit_modal_trade(quote: Dictionary) -> void:
 
 
 func _exchange_terminal_active() -> bool:
-	return interior_mode and str(current_house_data.get("id", "")) == "stock_exchange"
+	return interior_mode and str(current_house_data.get("id", "")) in ["stock_exchange", "exchange_house", "stock_exchange_6"]
 
 
 func _update_exchange_terminal(snapshot: Dictionary) -> void:

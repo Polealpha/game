@@ -324,7 +324,7 @@ func get_nearby_interactables(limit: int) -> Array:
 	var ranked: Array = []
 	for node in interactables:
 		var distance := room_player.position.distance_to(node.position)
-		if distance <= 210.0:
+		if distance <= maxf(210.0, _interaction_radius_for_node(node) + 72.0):
 			ranked.append({
 				"id": node.interaction_id,
 				"title": node.title,
@@ -339,6 +339,8 @@ func get_nearby_interactables(limit: int) -> Array:
 
 func get_hint_text() -> String:
 	if current_interactable == null:
+		if _scene_house_id() == "stock_exchange":
+			return "%s 靠近交易席、终端、账桌或正门后按 E；站在门边时按 E 直接退出。" % room_caption
 		return "%s 靠近床铺、灶台、储物箱、账桌或门口后按 E。" % room_caption
 	return "靠近 %s。按 E 操作。%s" % [current_interactable.title, current_interactable.subtitle]
 
@@ -607,7 +609,7 @@ func _rebuild_interactables() -> void:
 			{"id":"broker_desk","kind":"desk","title":"经纪人办公桌","district":get_current_district(),"subtitle":"翻看委托、回执和你的资金记录。","x":314.0,"y":586.0},
 			{"id":"vault","kind":"storage","title":"保密金库","district":get_current_district(),"subtitle":"封存凭证、密码函和不能见光的材料。","x":180.0,"y":708.0},
 			{"id":"briefing_table","kind":"tasks","title":"晨会长桌","district":get_current_district(),"subtitle":"经纪行的临时委托、悬赏和会议纪要。","x":760.0,"y":646.0},
-			{"id":"exit_house","kind":"exit_house","title":"正门","district":get_current_district(),"subtitle":"回到交易所大楼门前。","x":1078.0,"y":730.0},
+			{"id":"exit_house","kind":"exit_house","title":"正门","district":get_current_district(),"subtitle":"回到交易所大楼门前。","x":1078.0,"y":724.0},
 		])
 		return
 
@@ -631,12 +633,31 @@ func _update_current_interactable() -> void:
 	var best_distance := 99999.0
 	for node in interactables:
 		var distance := room_player.position.distance_to(node.position)
-		if distance < 88.0 and distance < best_distance:
+		var interaction_radius := _interaction_radius_for_node(node)
+		if distance < interaction_radius and distance < best_distance:
 			best_distance = distance
 			nearest = node
 	for node in interactables:
 		node.set_highlighted(node == nearest)
 	current_interactable = nearest
+
+
+func _interaction_radius_for_node(node: InteractableView) -> float:
+	if node == null:
+		return 88.0
+	if node.kind == "exit_house":
+		if _scene_house_id() == "stock_exchange":
+			return 160.0
+		return 112.0
+	if _scene_house_id() == "stock_exchange":
+		match node.kind:
+			"stocks":
+				return 118.0
+			"tasks":
+				return 102.0
+			_:
+				return 94.0
+	return 88.0
 
 
 func _draw() -> void:

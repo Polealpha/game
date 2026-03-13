@@ -1405,8 +1405,10 @@ func _interaction_radius_for_node(node: InteractableView) -> float:
 				return 104.0 * WORLD_VISUAL_SCALE
 			"bookstore_5":
 				return 180.0 * WORLD_VISUAL_SCALE
-			"news_center_1", "capitalist_mansion_7":
-				return 120.0 * WORLD_VISUAL_SCALE
+			"news_center_1":
+				return 168.0 * WORLD_VISUAL_SCALE
+			"capitalist_mansion_7":
+				return 152.0 * WORLD_VISUAL_SCALE
 			"bar_8", "food_market_3", "food_market_4":
 				return 112.0 * WORLD_VISUAL_SCALE
 			_:

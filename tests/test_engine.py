@@ -1723,6 +1723,26 @@ class WorldEngineTest(unittest.TestCase):
         holders = snapshot["stock_holder_registry"]["海藻重工"]
         self.assertTrue(any(row["holder_id"] == "player" and int(row["shares"]) >= 12 for row in holders))
 
+    def test_player_stock_trade_changes_followup_price_path(self) -> None:
+        control = WorldEngine()
+        trade = WorldEngine()
+        trade.action("buy_stock", "交易所", {"stock_name": "海藻重工", "quantity": 60})
+        trade.action("buy_stock", "交易所", {"stock_name": "龟甲物流", "quantity": 40})
+        for _ in range(6):
+            control._apply_intraday_market_move("ai_pulse", 0.74)
+            trade._apply_intraday_market_move("ai_pulse", 0.74)
+        control._refresh_derived_views()
+        trade._refresh_derived_views()
+        control_swc = next(row for row in control.state["stocks"] if row["ticker"] == "SWC")
+        trade_swc = next(row for row in trade.state["stocks"] if row["ticker"] == "SWC")
+        self.assertEqual(int(control_swc["current_price"]), 150)
+        self.assertGreaterEqual(int(trade_swc["current_price"]), 151)
+        self.assertNotEqual(
+            control.state["stock_price_history"]["海藻重工"][-6:],
+            trade.state["stock_price_history"]["海藻重工"][-6:],
+        )
+        self.assertGreater(float(trade.state["market_pressure"]["stocks"]["海藻重工"]), 0.0)
+
     def test_social_schedule_keeps_ordinary_worker_on_the_job_without_extreme_heat(self) -> None:
         worker = next(row for row in self.engine.state["npcs"] if row["district"] == "工厂区" and row["role"] == "工人")
         self.engine.state["district_signals"]["工厂区"]["labor_heat"] = 0.24

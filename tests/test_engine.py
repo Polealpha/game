@@ -1846,6 +1846,50 @@ class WorldEngineTest(unittest.TestCase):
         self.assertIn("financial_route", exchange)
         self.assertEqual(exchange["player_health"], 100)
 
+    def test_choose_route_sets_starting_resources_without_advancing_time(self) -> None:
+        start_clock = int(self.engine.state["clock_minutes"])
+        result = self.engine.action("choose_route", "交易所", {"route": "elite"})
+        player = result.world_state["player"]
+        self.assertEqual(int(result.world_state["clock_minutes"]), start_clock)
+        self.assertEqual(player["story_route"], "精英路线")
+        self.assertEqual(player["financial_route"], "暗池精英")
+        self.assertEqual(int(player["cash"]), 500)
+        self.assertFalse(bool(player["route_intro_pending"]))
+
+    def test_choose_commoner_route_sets_low_cash_survival_start(self) -> None:
+        result = self.engine.action("choose_route", "贫民街", {"route": "commoner"})
+        player = result.world_state["player"]
+        self.assertEqual(player["story_route"], "平民路线")
+        self.assertEqual(player["financial_route"], "平民火种")
+        self.assertEqual(int(player["cash"]), 5)
+        self.assertEqual(dict(player["reputation_tracks"])["SN"], 20)
+
+    def test_day1_privatization_timeline_updates_prices_and_history(self) -> None:
+        self.engine.state["clock_minutes"] = 16 * 60 + 50
+        self.engine._apply_clock_state()
+        self.engine._advance_clock(12)
+        swc = next(row for row in self.engine.state["stocks"] if row["ticker"] == "SWC")
+        amb = next(row for row in self.engine.state["stocks"] if row["ticker"] == "AMB")
+        self.assertEqual(int(swc["current_price"]), 188)
+        self.assertEqual(int(amb["current_price"]), 42)
+        self.assertEqual(int(self.engine.state["stock_price_history"]["海藻重工"][-1]), 188)
+        self.assertEqual(int(self.engine.state["stock_price_history"]["市政债券"][-1]), 42)
+        self.assertEqual(str(self.engine.state["pending_events"][0]["id"]), "day1_privatization")
+
+    def test_day3_tom_event_forces_sui_and_zero_uprising_reprices_board(self) -> None:
+        self.engine.state["day"] = 3
+        self.engine.state["clock_minutes"] = 13 * 60 + 50
+        self.engine._apply_clock_state()
+        self.engine._advance_clock(15)
+        self.assertGreaterEqual(float(self.engine.state["story_metrics"]["shadow_reputation"]["SUI"]), 90.0)
+        self.assertEqual(str(self.engine.state["pending_events"][0]["id"]), "day3_tom_self_immolation")
+        self.engine._advance_clock(6 * 60 + 5)
+        swc = next(row for row in self.engine.state["stocks"] if row["ticker"] == "SWC")
+        amb = next(row for row in self.engine.state["stocks"] if row["ticker"] == "AMB")
+        self.assertLessEqual(int(swc["current_price"]), 100)
+        self.assertEqual(int(amb["current_price"]), 1)
+        self.assertEqual(str(self.engine.state["pending_events"][0]["id"]), "day3_zero_uprising")
+
     def test_margin_buy_uses_financing_and_sell_reduces_debt(self) -> None:
         self.engine.state["player"]["cash"] = 1_000
         buy_result = self.engine.action("buy_stock", "交易所", {"stock_name": "龟甲物流", "quantity": 30})

@@ -126,6 +126,8 @@ var modal_trade_label := RichTextLabel.new()
 var modal_trade_scroll := ScrollContainer.new()
 var modal_trade_buttons := FlowContainer.new()
 var modal_is_conversation := false
+var route_choice_modal_active := false
+var route_choice_request_pending := false
 var compact_hud_label := RichTextLabel.new()
 var market_flash_label := RichTextLabel.new()
 var news_ticker_label := RichTextLabel.new()
@@ -230,6 +232,7 @@ func _process(delta: float) -> void:
 	_advance_visual_clock(delta)
 	_advance_news_ticker(delta)
 	_maintain_pending_dialogue_request()
+	_ensure_route_choice_modal()
 	if interior_mode:
 		house_interior.tick(delta)
 		current_interactable = house_interior.get_current_interactable()
@@ -2220,6 +2223,8 @@ func _poll_world_state() -> void:
 
 
 func _handle_cancel_input() -> void:
+	if route_choice_modal_active:
+		return
 	if modal_overlay.visible:
 		_close_modal()
 		return
@@ -2608,6 +2613,8 @@ func _on_api_response(tag: String, data: Dictionary) -> void:
 		if dialogue_payload.is_empty() and data.has("world_state"):
 			dialogue_payload = data.get("world_state", {}).get("last_dialogue", {})
 	if data.has("world_state"):
+		if not _route_choice_required(data["world_state"]):
+			route_choice_request_pending = false
 		GameState.apply_snapshot(data["world_state"])
 	if tag == "player_talk":
 		var dialogue: Dictionary = dialogue_payload
@@ -2732,6 +2739,8 @@ func _handle_api_error_v3(tag: String, status_code: int, message: String) -> voi
 		backend_health_pending = false
 	if tag == "world_state":
 		backend_world_state_pending = false
+	if tag == "action":
+		route_choice_request_pending = false
 	if not pending_player_reaction.is_empty() and str(pending_player_reaction.get("tag", "")) == tag:
 		pending_player_reaction = {}
 	if tag == "player_talk":
@@ -3094,6 +3103,7 @@ func _on_snapshot_updated(snapshot: Dictionary) -> void:
 	house_interior.set_exchange_hud_state(snapshot.get("stock_exchange_view", {}))
 	house_interior.update_house_state(_house_state_for_id(str(current_house_data.get("id", ""))))
 	_update_exchange_terminal(snapshot)
+	_ensure_route_choice_modal()
 	_refresh_npcs()
 	if modal_overlay.visible and not active_dialogue_context.is_empty():
 		_refresh_modal_trade_panel(active_dialogue_context)
@@ -4115,6 +4125,7 @@ func _show_next_toast() -> void:
 
 
 func _on_modal_requested(payload: Dictionary) -> void:
+	route_choice_modal_active = false
 	var tone := str(payload.get("tone", "news"))
 	modal_is_conversation = tone == "conversation"
 	modal_title.text = _sanitize_visible_text(str(payload.get("title", "告示")), "告示")
@@ -4184,6 +4195,7 @@ func _close_modal() -> void:
 		modal_overlay.visible = false
 	)
 	active_dialogue_context = {}
+	route_choice_modal_active = false
 	modal_is_conversation = false
 	pending_dialogue_request = {}
 	modal_input.text = ""
@@ -4196,6 +4208,83 @@ func _close_modal() -> void:
 	modal_trade_buttons.visible = false
 	for child in modal_trade_buttons.get_children():
 		child.queue_free()
+
+
+func _route_choice_required(snapshot: Dictionary = last_snapshot) -> bool:
+	if snapshot.is_empty():
+		return false
+	var player_data: Dictionary = snapshot.get("player", {})
+	return bool(player_data.get("route_intro_pending", false)) or str(player_data.get("story_route", "")).strip_edges().is_empty()
+
+
+func _ensure_route_choice_modal() -> void:
+	if route_choice_request_pending:
+		return
+	if not _route_choice_required():
+		return
+	if route_choice_modal_active and modal_overlay.visible:
+		return
+	if modal_overlay.visible and not route_choice_modal_active:
+		return
+	_present_route_choice_modal()
+
+
+func _present_route_choice_modal() -> void:
+	route_choice_modal_active = true
+	active_dialogue_context = {}
+	modal_is_conversation = false
+	modal_title.text = "先选路线"
+	modal_title.add_theme_color_override("font_color", Color("6b2f23"))
+	modal_body.text = "你得先决定这三天怎么活。\n\n[b]精英路线[/b]：从暗池、事件盘和高杠杆里抢窗口。\n[b]平民路线[/b]：靠街坊、工厂、码头声望和互助网活下去。\n\n选定后，前后端会按这条路线锁定起始资源、时间线和人物反应。"
+	modal_input.visible = false
+	modal_send_button.visible = false
+	modal_send_button.disabled = false
+	modal_hint_label.visible = true
+	modal_hint_label.text = "这一步不会消耗时间。选完再进城。"
+	modal_trade_title.visible = true
+	modal_trade_title.text = "路线入口"
+	modal_trade_label.visible = true
+	modal_trade_label.text = "精英路线优先接通股市系统；平民路线优先接通声望与事件链。"
+	modal_trade_scroll.visible = true
+	modal_trade_buttons.visible = true
+	for child in modal_trade_buttons.get_children():
+		child.queue_free()
+	for spec in [
+		{"label": "精英路线", "route": "elite", "base": Color("2f6f4f"), "hover": Color("3f8a60"), "press": Color("244f3a")},
+		{"label": "平民路线", "route": "commoner", "base": Color("6c4a2a"), "hover": Color("8a6037"), "press": Color("4f3520")},
+	]:
+		var action_button := Button.new()
+		action_button.text = str(spec.get("label", "选择路线"))
+		action_button.custom_minimum_size = Vector2(190, 42)
+		_style_button(action_button, spec.get("base", Color("6c4a2a")), spec.get("hover", Color("8a6037")), spec.get("press", Color("4f3520")))
+		var route_key := str(spec.get("route", ""))
+		action_button.pressed.connect(func() -> void:
+			_submit_route_choice(route_key)
+		)
+		modal_trade_buttons.add_child(action_button)
+	_layout_modal_card()
+	modal_overlay.visible = true
+	modal_overlay.modulate = Color(1, 1, 1, 0)
+	modal_card.scale = Vector2(0.94, 0.94)
+	if is_instance_valid(modal_tween):
+		modal_tween.kill()
+	modal_tween = create_tween()
+	modal_tween.set_parallel(true)
+	modal_tween.tween_property(modal_overlay, "modulate", Color(1, 1, 1, 1), 0.18)
+	modal_tween.tween_property(modal_card, "scale", Vector2.ONE, 0.22).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+
+
+func _submit_route_choice(route_key: String) -> void:
+	if route_key.is_empty():
+		return
+	status_label.text = "正在锁定路线和起始状态……"
+	route_choice_request_pending = true
+	_close_modal()
+	_submit_interaction({
+		"action_type": "choose_route",
+		"district": _current_district_for_position(player.position if not interior_mode else house_interior.get_player_position()),
+		"payload": {"route": route_key},
+	})
 
 
 func _submit_modal_player_talk() -> void:

@@ -331,7 +331,10 @@ class WorldEngine:
                     "health": 100,
                     "reputation": 5,
                     "class_position": "底层",
+                    "story_route": "",
                     "financial_route": "暗池精英",
+                    "route_intro_pending": True,
+                    "route_selected_at": "",
                     "stock_margin_debt": 0,
                     "stock_short_positions": {"海藻重工": {"quantity": 0, "avg_price": 0.0}, "市政债券": {"quantity": 0, "avg_price": 0.0}, "龟甲物流": {"quantity": 0, "avg_price": 0.0}},
                     "stock_account_locked": False,
@@ -425,6 +428,7 @@ class WorldEngine:
                 "global_news": [],
                 "headline_news": [],
                 "pending_events": [],
+                "story_timeline": {"fired": [], "log": []},
                 "npc_highlights": [],
                 "npc_cards": [],
                 "ending_state": {},
@@ -488,6 +492,8 @@ class WorldEngine:
     def action(self, action_type: str, district: str, payload: dict[str, Any] | None = None) -> ActionResult:
         payload = payload or {}
         with self.lock:
+            if action_type == "choose_route":
+                return self._apply_route_selection(str(payload.get("route", "")))
             if bool(self.state.get("ending_state", {}).get("game_over", False)):
                 ending = dict(self.state.get("ending_state", {}))
                 title = str(ending.get("title", "结局已触发"))
@@ -2647,13 +2653,18 @@ class WorldEngine:
         ops.setdefault("rep_drag_until_tick", 0)
         ops.setdefault("victor_takeover_done", False)
         ops.setdefault("gala_invite_unlocked", False)
+        ops.setdefault("story_sui_bonus", 0.0)
+        ops.setdefault("story_st_floor", 1.0)
         ops.setdefault("last_action", "")
         return ops
 
     def _ensure_player_financial_state(self) -> dict[str, Any]:
         player = self.state.setdefault("player", {})
         player.setdefault("health", 100)
+        player.setdefault("story_route", "")
         player.setdefault("financial_route", "暗池精英")
+        player.setdefault("route_intro_pending", True)
+        player.setdefault("route_selected_at", "")
         player.setdefault("stock_margin_debt", 0)
         player.setdefault("stock_short_positions", {})
         player.setdefault("stock_account_locked", False)
@@ -2667,6 +2678,137 @@ class WorldEngine:
                 player["stock_short_positions"][stock_name] = {"quantity": 0, "avg_price": 0.0}
         self.state.setdefault("ending_state", {})
         return player
+
+    def _route_choice_required(self) -> bool:
+        player = self._ensure_player_financial_state()
+        return bool(player.get("route_intro_pending", False)) or not str(player.get("story_route", "")).strip()
+
+    def _story_timeline_state(self) -> dict[str, Any]:
+        timeline = self.state.setdefault("story_timeline", {})
+        timeline.setdefault("fired", [])
+        timeline.setdefault("log", [])
+        return timeline
+
+    def _story_event_fired(self, event_id: str) -> bool:
+        timeline = self._story_timeline_state()
+        return str(event_id) in {str(value) for value in timeline.get("fired", [])}
+
+    def _mark_story_event_fired(self, event_id: str) -> None:
+        timeline = self._story_timeline_state()
+        fired = [str(value) for value in timeline.get("fired", [])]
+        if str(event_id) not in fired:
+            fired.append(str(event_id))
+        timeline["fired"] = fired
+
+    def _append_story_timeline_log(self, event_id: str, title: str, description: str) -> None:
+        timeline = self._story_timeline_state()
+        log = list(timeline.get("log", []))
+        log.insert(
+            0,
+            {
+                "id": str(event_id),
+                "title": str(title),
+                "description": str(description),
+                "clock": self._clock_label(),
+                "day": int(self.state.get("day", 1)),
+            },
+        )
+        timeline["log"] = log[:12]
+
+    def _force_stock_price(self, ticker: str, target_price: int, *, note: str = "", pressure: float | None = None) -> dict[str, Any] | None:
+        stock = self._stock_by_ticker(ticker)
+        if not stock:
+            return None
+        stock["current_price"] = max(1, int(target_price))
+        stock["last_trade_price"] = int(stock["current_price"])
+        stock["reference_price"] = round(float(stock["current_price"]), 3)
+        stock["market_cap"] = int(int(stock.get("issued_shares", 0)) * int(stock["current_price"]))
+        stock["market_sentiment"] = "乐观" if int(stock["current_price"]) >= int(stock.get("previous_close", stock["current_price"])) else "恐慌"
+        if pressure is not None:
+            self.state["market_pressure"]["stocks"][str(stock.get("name", ""))] = float(max(-0.8, min(0.8, pressure)))
+        self._append_stock_history_point(str(stock.get("name", "")), int(stock["current_price"]))
+        if note:
+            self._push_system_news(f"{ticker} 时间线异动", note, ["时间线", ticker, "股价"])
+        return stock
+
+    def _queue_story_event(self, event_id: str, title: str, description: str) -> None:
+        event = {
+            "id": str(event_id),
+            "name": str(title),
+            "description": str(description),
+            "scope": "timeline",
+            "day": int(self.state.get("day", 1)),
+            "clock": self._clock_label(),
+        }
+        self.state["pending_events"] = [event]
+        self._append_story_timeline_log(event_id, title, description)
+
+    def _apply_route_selection(self, route_key: str) -> ActionResult:
+        player = self._ensure_player_financial_state()
+        route = str(route_key).strip().lower()
+        if route not in {"elite", "commoner"}:
+            return ActionResult("未识别的路线选择。", self._snapshot_after_refresh(rebuild_agent_prompts=False))
+        player["stock_margin_debt"] = 0
+        player["stock_liquidation_pending"] = False
+        player["stock_liquidation_due_tick"] = 0
+        player["stock_liquidation_note"] = ""
+        player["stock_account_locked"] = False
+        player["stock_account_lock_reason"] = ""
+        player["stock_holdings"] = {str(name): 0 for name in dict(player.get("stock_holdings", {})).keys()}
+        player["stock_short_positions"] = {
+            str(name): {"quantity": 0, "avg_price": 0.0}
+            for name in dict(player.get("stock_short_positions", {})).keys()
+        }
+        self.state["stock_trade_tape"] = []
+        self.state["stock_exchange_feedback"] = ""
+        self.state["story_timeline"] = {"fired": [], "log": []}
+        metrics = self._story_metrics_state()
+        metrics["sam_revolution_fund"] = 0
+        metrics["sam_tax_total"] = 0
+        metrics["player_trading_fees"] = 0
+        ops = self._stock_ops_state()
+        ops["story_sui_bonus"] = 0.0
+        ops["story_st_floor"] = 1.0
+        ops["policy_shield_until_tick"] = 0
+        ops["scar_cover_until_tick"] = 0
+        ops["rep_drag_until_tick"] = 0
+        ops["victor_takeover_done"] = False
+        ops["gala_invite_unlocked"] = False
+        ops["last_action"] = ""
+        if route == "elite":
+            player["story_route"] = "精英路线"
+            player["financial_route"] = "暗池精英"
+            player["class_position"] = "落魄精英"
+            player["cash"] = 500
+            player["health"] = 100
+            player["credit"] = 20
+            player["goods_inventory"] = {"面包": 0, "煤": 0, "罐头": 0}
+            player["reputation_tracks"] = {"FC": 5, "FB": 5, "SN": 5}
+            player["shadow_reputation"] = {"S_WWI": 10, "S_DBH": 12, "S_NAC": 8, "SUI": 15, "ST": 1.0, "WL": 1}
+            message = "你选择了精英路线。萨姆的暗池终端只给了你 500 铜币的起手气口，接下来得靠信息差和事件窗口活下来。"
+        else:
+            player["story_route"] = "平民路线"
+            player["financial_route"] = "平民火种"
+            player["class_position"] = "底层"
+            player["cash"] = 5
+            player["health"] = 100
+            player["credit"] = 5
+            player["goods_inventory"] = {"面包": 0, "煤": 0, "罐头": 0}
+            player["reputation_tracks"] = {"FC": 10, "FB": 5, "SN": 20}
+            player["shadow_reputation"] = {"S_WWI": 15, "S_DBH": 10, "S_NAC": 20, "SUI": 15, "ST": 1.0, "WL": 1}
+            message = "你选择了平民路线。手里只有 5 铜币，接下来得靠街坊、工厂和码头声望把命续下去。"
+        metrics["reputation"] = copy.deepcopy(player["reputation_tracks"])
+        metrics["shadow_reputation"] = copy.deepcopy(player["shadow_reputation"])
+        player["route_intro_pending"] = False
+        player["route_selected_at"] = self._now_label()
+        self._queue_story_event(
+            "route_choice",
+            "路线已锁定",
+            "你已经选定了接下来三天的生存方法。市场、声望和人物关系会按这条线开始咬合。",
+        )
+        self.state["stock_exchange_feedback"] = message
+        self._push_system_news("路线锁定", message, ["路线", player["story_route"]])
+        return ActionResult(message, self._snapshot_after_refresh(rebuild_agent_prompts=True))
 
     def _player_stock_holdings_value(self) -> int:
         player = self._ensure_player_financial_state()
@@ -2820,6 +2962,18 @@ class WorldEngine:
 
     def _derive_story_reputation(self) -> tuple[dict[str, int], dict[str, Any]]:
         player = self.state.get("player", {})
+        demo_metrics = dict(self.state.get("demo_metrics", {}))
+        if str(player.get("story_route", "")).strip() and not list(self._story_timeline_state().get("fired", [])):
+            metrics_total = sum(
+                int(demo_metrics.get(key, 0))
+                for key in ["work_actions", "goods_trades", "intel_actions", "stock_trades", "days_ended"]
+            )
+            if metrics_total <= 0:
+                return (
+                    copy.deepcopy(dict(player.get("reputation_tracks", {"FC": 10, "FB": 5, "SN": 20}))),
+                    copy.deepcopy(dict(player.get("shadow_reputation", {"S_WWI": 15, "S_DBH": 10, "S_NAC": 20, "SUI": 15, "ST": 1.0, "WL": 1}))),
+                )
+        player = self.state.get("player", {})
         profile = dict(player.get("collective_profile", {}))
         worker = float(profile.get("worker_standing", 0.0))
         public = float(profile.get("public_standing", 0.0))
@@ -2854,6 +3008,8 @@ class WorldEngine:
         sui = round(s_wwi * 0.5 + s_dbh * 0.3 + s_nac * 0.2, 1)
         st = round((swc_price / 150.0 * 0.6) + (80.0 / amb_price * 0.4), 2)
         ops = self._stock_ops_state()
+        sui = round(min(100.0, sui + float(ops.get("story_sui_bonus", 0.0))), 1)
+        st = round(max(st, float(ops.get("story_st_floor", 1.0))), 2)
         if self._stock_op_active("policy_shield_until_tick"):
             sui = round(15.0 + (sui - 15.0) * 0.5, 1)
         if self._stock_op_active("rep_drag_until_tick"):
@@ -2983,6 +3139,8 @@ class WorldEngine:
             "account_tier": account_tier,
             "account_locked": account_locked,
             "account_lock_reason": str(player.get("stock_account_lock_reason", "")),
+            "story_route": str(player.get("story_route", "")),
+            "route_pending": bool(player.get("route_intro_pending", False)),
             "financial_route": str(player.get("financial_route", "暗池精英")),
             "liquidation_pending": liquidation_pending,
             "liquidation_note": str(player.get("stock_liquidation_note", "")),
@@ -5353,13 +5511,15 @@ class WorldEngine:
         lead_institution = self.state["institution_actions"][0] if self.state.get("institution_actions") else {}
         metrics = self.state.get("demo_metrics", {})
         objective = "先在街上看一圈，摸清地形和价格。"
-        if int(metrics.get("work_actions", 0)) + int(metrics.get("goods_trades", 0)) > 0:
+        if self._route_choice_required():
+            objective = "先选路线：精英路线走暗池和事件盘，平民路线靠声望和互助求生。"
+        elif int(metrics.get("work_actions", 0)) + int(metrics.get("goods_trades", 0)) > 0:
             objective = "去打听一条风声，看看消息怎么推市场。"
-        if int(metrics.get("intel_actions", 0)) > 0 or player.get("rumors"):
+        elif int(metrics.get("intel_actions", 0)) > 0 or player.get("rumors"):
             objective = "去交易所买卖一支股票，感受舆论和价格联动。"
-        if int(metrics.get("stock_trades", 0)) > 0:
+        elif int(metrics.get("stock_trades", 0)) > 0:
             objective = "敲响日钟，看事件、新闻和街区状态怎么反馈。"
-        if int(metrics.get("days_ended", 0)) > 0:
+        elif int(metrics.get("days_ended", 0)) > 0:
             objective = "Demo 闭环已经形成，可以继续试不同赚钱路径。"
         self.state["quick_hud"] = {
             "objective": objective,
@@ -8873,6 +9033,10 @@ class WorldEngine:
         goods_value = sum(int(good.get("current_price", 0)) * int(player["goods_inventory"].get(good["name"], 0)) for good in self.state["goods"])
         stocks_value = sum(int(stock.get("current_price", 0)) * int(player["stock_holdings"].get(stock["name"], 0)) for stock in self.state["stocks"])
         total_wealth = int(player.get("cash", 0)) + goods_value + stocks_value - self._player_stock_margin_debt()
+        story_route = str(player.get("story_route", ""))
+        if story_route == "精英路线":
+            player["class_position"] = "暗池精英" if total_wealth >= 50_000 else "落魄精英"
+            return
         if total_wealth >= 120 or int(player.get("reputation", 0)) >= 28:
             player["class_position"] = "街头投机客"
         elif total_wealth >= 70 or int(player.get("credit", 0)) >= 35:
@@ -9017,6 +9181,7 @@ class WorldEngine:
         current = int(self.state.get("clock_minutes", 8 * 60))
         self.state["clock_minutes"] = min(23 * 60 + 45, current + minutes)
         self._apply_clock_state()
+        self._apply_story_timeline_between(current, int(self.state.get("clock_minutes", current)))
         self._apply_collective_followups(minutes)
         self._apply_npc_schedule()
 
@@ -9044,6 +9209,115 @@ class WorldEngine:
         light = round(max(0.18, min(1.0, 0.18 + solar_ratio * 0.82 - weather_dim)), 2)
         self.state["time_period"] = period
         self.state["light_level"] = light
+
+    def _apply_story_timeline_between(self, previous_minutes: int, current_minutes: int) -> None:
+        day = int(self.state.get("day", 1))
+        checkpoints: list[tuple[int, str]] = []
+        if day == 1:
+            checkpoints = [(17 * 60, "day1_privatization")]
+        elif day == 2:
+            checkpoints = [(12 * 60, "day2_arthur_assassination")]
+        elif day == 3:
+            checkpoints = [(14 * 60, "day3_tom_self_immolation"), (20 * 60, "day3_zero_uprising")]
+        for threshold, event_id in checkpoints:
+            if previous_minutes < threshold <= current_minutes and not self._story_event_fired(event_id):
+                self._apply_story_timeline_event(event_id)
+
+    def _apply_story_timeline_event(self, event_id: str) -> None:
+        if self._story_event_fired(event_id):
+            return
+        metrics = self._story_metrics_state()
+        shadow = dict(metrics.get("shadow_reputation", {}))
+        player = self._ensure_player_financial_state()
+        ops = self._stock_ops_state()
+        match event_id:
+            case "day1_privatization":
+                self._force_stock_price(
+                    "SWC",
+                    max(188, int((self._stock_by_ticker("SWC") or {}).get("current_price", 188))),
+                    note="管网私有化公报发布，海藻资本的垄断预期被写进了盘面。",
+                    pressure=0.34,
+                )
+                self._force_stock_price(
+                    "AMB",
+                    min(42, int((self._stock_by_ticker("AMB") or {}).get("current_price", 42))),
+                    note="市政资产被一元转出，AMB 被直接砸穿到信用塌陷区。",
+                    pressure=-0.36,
+                )
+                self.state["macro"]["worker_unrest"] = min(100, int(self.state["macro"].get("worker_unrest", 50)) + 12)
+                self.state["macro"]["media_sentiment"] = min(100, int(self.state["macro"].get("media_sentiment", 50)) + 6)
+                self._bump_district_signal("交易所", "trade_heat", 0.24)
+                self._bump_district_signal("贫民街", "fear", 0.22)
+                description = "17:00 管网私有化公报落地。SWC 被硬顶到 188，AMB 被砸到 42，街头对涨价和断水的怨气同时升温。"
+                self._queue_story_event("day1_privatization", "管网私有化公报", description)
+                self._push_system_news("管网私有化", description, ["时间线", "SWC", "AMB", "私有化"])
+            case "day2_arthur_assassination":
+                self._force_stock_price(
+                    "SWC",
+                    max(210, int((self._stock_by_ticker("SWC") or {}).get("current_price", 210))),
+                    note="亚瑟被清除后，海藻资本的审计威胁被从盘面上抹掉。",
+                    pressure=0.42,
+                )
+                self._force_stock_price(
+                    "AMB",
+                    min(25, int((self._stock_by_ticker("AMB") or {}).get("current_price", 25))),
+                    note="税务官当街遇刺，市政信用和警局工资同时被市场抛弃。",
+                    pressure=-0.48,
+                )
+                self.state["macro"]["worker_unrest"] = min(100, int(self.state["macro"].get("worker_unrest", 50)) + 16)
+                self._bump_district_signal("交易所", "fear", 0.3)
+                self._bump_district_signal("交易所", "gossip", 0.28)
+                ops["story_sui_bonus"] = max(float(ops.get("story_sui_bonus", 0.0)), 15.0)
+                shadow["SUI"] = min(100.0, max(float(shadow.get("SUI", 15.0)), 30.0))
+                metrics["shadow_reputation"] = shadow
+                player["shadow_reputation"] = copy.deepcopy(shadow)
+                description = "12:00 广场血案落地。SWC 被推到 210，AMB 直接坠到 25，警局和镇政府开始准备弃守。"
+                self._queue_story_event("day2_arthur_assassination", "亚瑟被暗杀", description)
+                self._push_system_news("广场血案", description, ["时间线", "亚瑟", "SWC", "AMB"])
+            case "day3_tom_self_immolation":
+                self._bump_district_signal("交易所", "fear", 0.35)
+                self._bump_district_signal("工厂区", "labor_heat", 0.32)
+                self._bump_district_signal("贫民街", "gossip", 0.28)
+                ops["story_sui_bonus"] = max(float(ops.get("story_sui_bonus", 0.0)), 28.0)
+                ops["story_st_floor"] = max(float(ops.get("story_st_floor", 1.0)), 2.5)
+                shadow["SUI"] = min(100.0, max(float(shadow.get("SUI", 15.0)), 90.0))
+                shadow["ST"] = max(float(shadow.get("ST", 1.0)), 2.5)
+                metrics["shadow_reputation"] = shadow
+                player["shadow_reputation"] = copy.deepcopy(shadow)
+                description = "14:00 汤姆在交易所广场自焚。全城动荡被直接顶到 90 以上，盘口开始进入临界波动。"
+                self._queue_story_event("day3_tom_self_immolation", "汤姆自焚", description)
+                self._push_system_news("广场自焚", description, ["时间线", "汤姆", "SUI"])
+            case "day3_zero_uprising":
+                swc_now = int((self._stock_by_ticker("SWC") or {}).get("current_price", 120))
+                tsl_now = int((self._stock_by_ticker("TSL") or {}).get("current_price", 45))
+                self._force_stock_price(
+                    "SWC",
+                    max(18, int(round(swc_now * 0.4))),
+                    note="零号起义夜里，海藻资本的物理资产和安保预期同时被拔掉。",
+                    pressure=-0.62,
+                )
+                self._force_stock_price(
+                    "TSL",
+                    max(int(round(tsl_now * 1.5)), tsl_now + 12),
+                    note="秩序崩掉以后，码头和走私网络反而成了唯一还能流动的命脉。",
+                    pressure=0.4,
+                )
+                self._force_stock_price(
+                    "AMB",
+                    1,
+                    note="AMB 在起义夜里被市场判成废纸，镇政府信用归零。",
+                    pressure=-0.8,
+                )
+                ops["story_sui_bonus"] = max(float(ops.get("story_sui_bonus", 0.0)), 36.0)
+                ops["story_st_floor"] = max(float(ops.get("story_st_floor", 1.0)), 3.0)
+                shadow["SUI"] = min(100.0, max(float(shadow.get("SUI", 15.0)), 96.0))
+                shadow["ST"] = max(float(shadow.get("ST", 1.0)), 3.0)
+                metrics["shadow_reputation"] = shadow
+                player["shadow_reputation"] = copy.deepcopy(shadow)
+                description = "20:00 零号起义进入结算。SWC 崩塌、TSL 狂飙、AMB 归零，整座城正式进入旧秩序坍缩态。"
+                self._queue_story_event("day3_zero_uprising", "零号起义结算", description)
+                self._push_system_news("零号起义结算", description, ["时间线", "起义", "SWC", "TSL", "AMB"])
+        self._mark_story_event_fired(event_id)
 
     def _update_weather(self, minutes: int) -> dict[str, Any]:
         day = int(self.state.get("day", 1))
@@ -10186,7 +10460,7 @@ class WorldEngine:
             f"短期计划：{agenda}\n"
             f"城里硬指标：平民声望 FC={rep.get('FC', 10)} / FB={rep.get('FB', 5)} / SN={rep.get('SN', 20)}；"
             f"影子指标 SUI={shadow.get('SUI', 15)} / ST={shadow.get('ST', 1.0)} / WL={shadow.get('WL', 1)} / 警局倾向={shadow.get('police_side', '摇摆观望')}。\n"
-            f"玩家金融状态：账户={account_tier.get('label', '青铜级')}；现金={int(player.get('cash', 0))}；股仓市值={self._player_stock_holdings_value()}；融资负债={self._player_stock_margin_debt()}；生命={int(player.get('health', 100))}；路线={player.get('financial_route', '暗池精英')}；追保状态={'是' if player.get('stock_liquidation_pending', False) else '否'}。\n"
+            f"玩家金融状态：账户={account_tier.get('label', '青铜级')}；现金={int(player.get('cash', 0))}；股仓市值={self._player_stock_holdings_value()}；融资负债={self._player_stock_margin_debt()}；生命={int(player.get('health', 100))}；路线={player.get('story_route', '') or player.get('financial_route', '暗池精英')}；金融标签={player.get('financial_route', '暗池精英')}；追保状态={'是' if player.get('stock_liquidation_pending', False) else '否'}。\n"
             f"当前显式议题={topic_digest}。\n"
             f"当前显式规范={norm_digest}。\n"
             f"当前显式集体行动={collective_digest}。\n"
@@ -10324,7 +10598,7 @@ class WorldEngine:
             f"短期计划：{self._npc_agent_agenda(npc)}\n"
             f"系统硬指标：FC={reputation.get('FC', 10)}；FB={reputation.get('FB', 5)}；SN={reputation.get('SN', 20)}；"
             f"SUI={shadow.get('SUI', 15)}；ST={shadow.get('ST', 1.0)}；WL={shadow.get('WL', 1)}；警局倾向={shadow.get('police_side', '摇摆观望')}。\n"
-            f"玩家金融状态：账户={account_tier.get('label', '青铜级')}；现金={int(player.get('cash', 0))}；股仓市值={self._player_stock_holdings_value()}；融资负债={self._player_stock_margin_debt()}；生命={int(player.get('health', 100))}；路线={player.get('financial_route', '暗池精英')}；追保状态={'是' if player.get('stock_liquidation_pending', False) else '否'}。\n"
+            f"玩家金融状态：账户={account_tier.get('label', '青铜级')}；现金={int(player.get('cash', 0))}；股仓市值={self._player_stock_holdings_value()}；融资负债={self._player_stock_margin_debt()}；生命={int(player.get('health', 100))}；路线={player.get('story_route', '') or player.get('financial_route', '暗池精英')}；金融标签={player.get('financial_route', '暗池精英')}；追保状态={'是' if player.get('stock_liquidation_pending', False) else '否'}。\n"
             f"近期现实输入：显式议题={topic_digest}；显式规范={norm_digest}；显式集体行动={collective_digest}。\n"
             "对玩家的互动规则：玩家只是外来玩家或来访者，不预设玩家物种、血统或旧主角身份。你必须依据自己的利益、恐惧、阵营、关系和当前证据说话，不替玩家做决定。\n"
             "你不能凭空发明世界事实。你只能围绕引擎里已给出的事件、关系、价格、组织行动、谣言和制度约束去回应、试探、交易、压价、隐瞒、泄密、背叛或组织行动。\n"

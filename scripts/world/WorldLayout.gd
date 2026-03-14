@@ -2,7 +2,7 @@ extends RefCounted
 class_name WorldLayout
 
 const WORLD_RECT := Rect2(Vector2.ZERO, Vector2(3072, 2048))
-const PLAYER_START := Vector2(548, 452)
+const PLAYER_START := Vector2(610, 560)
 const ROAD_MASK_TEXTURE_PATH := "res://road_layer_2.png"
 const ROAD_MASK_WORLD_RECT := Rect2(0.0, 261.89134045077105, 3064.3116672694396, 1559.6682997458058)
 const ROAD_MASK_ALPHA_THRESHOLD := 0.3

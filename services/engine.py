@@ -9230,6 +9230,15 @@ class WorldEngine:
             if previous_minutes < threshold <= current_minutes and not self._story_event_fired(event_id):
                 self._apply_story_timeline_event(event_id)
 
+    def _story_event_schedule(self, event_id: str) -> tuple[int, int] | None:
+        mapping = {
+            "day1_privatization": (1, 17 * 60),
+            "day2_arthur_assassination": (2, 12 * 60),
+            "day3_tom_self_immolation": (3, 14 * 60),
+            "day3_zero_uprising": (3, 20 * 60),
+        }
+        return mapping.get(str(event_id))
+
     def _route_timeline_copy(self, event_id: str) -> dict[str, str]:
         route = str(self._ensure_player_financial_state().get("story_route", ""))
         is_commoner = route == "平民路线"
@@ -9287,6 +9296,13 @@ class WorldEngine:
     def _apply_story_timeline_event(self, event_id: str) -> None:
         if self._story_event_fired(event_id):
             return
+        scheduled = self._story_event_schedule(event_id)
+        if scheduled is not None:
+            scheduled_day, scheduled_minute = scheduled
+            if int(self.state.get("day", 1)) < scheduled_day:
+                return
+            if int(self.state.get("day", 1)) == scheduled_day and int(self.state.get("clock_minutes", 0)) < scheduled_minute:
+                return
         metrics = self._story_metrics_state()
         shadow = dict(metrics.get("shadow_reputation", {}))
         player = self._ensure_player_financial_state()

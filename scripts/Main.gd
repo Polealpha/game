@@ -842,6 +842,8 @@ func _load_runtime_texture(resource_path: String) -> Texture2D:
 func _show_startup_screen() -> void:
 	startup_screen_active = true
 	startup_reset_pending = false
+	player.position = _to_world_position(WorldLayout.snap_to_walkable(WorldLayout.PLAYER_START))
+	_clear_player_input_state()
 	last_snapshot = {}
 	GameState.apply_snapshot({})
 	visual_time_synced = false
@@ -869,6 +871,8 @@ func _dismiss_startup_screen() -> void:
 func _finish_startup_after_reset() -> void:
 	startup_reset_pending = false
 	startup_screen_active = false
+	player.position = _to_world_position(WorldLayout.snap_to_walkable(WorldLayout.PLAYER_START))
+	_clear_player_input_state()
 	startup_overlay.visible = false
 	startup_button.disabled = false
 	poll_timer.start()
@@ -882,6 +886,9 @@ func _layout_modal_card() -> void:
 	var viewport_size := get_viewport_rect().size
 	var card_width := clampf(viewport_size.x - 140.0, 760.0, 1040.0)
 	var card_height := clampf(viewport_size.y - 120.0, 430.0, 760.0)
+	if not proactive_invitation_context.is_empty():
+		card_width = clampf(viewport_size.x - 120.0, 820.0, 1080.0)
+		card_height = clampf(viewport_size.y - 100.0, 520.0, 780.0)
 	modal_card.size = Vector2(card_width, card_height)
 	modal_card.position = (viewport_size - modal_card.size) * 0.5
 	modal_card.pivot_offset = modal_card.size * 0.5
@@ -1415,7 +1422,7 @@ func _present_proactive_invitation(dialogue_context: Dictionary) -> void:
 	active_dialogue_context = {}
 	pending_dialogue_request = {}
 	_clear_player_input_state()
-	modal_is_conversation = false
+	modal_is_conversation = true
 	route_choice_modal_active = false
 	modal_title.text = _sanitize_visible_text(str(dialogue_context.get("title", "主动搭话")), "主动搭话")
 	modal_title.add_theme_color_override("font_color", Color("315748"))

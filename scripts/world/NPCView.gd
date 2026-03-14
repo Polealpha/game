@@ -4,6 +4,8 @@ class_name NPCView
 const BODY_OUTLINE := Color("221710")
 const SPEECH_BUBBLE_TEXTURE_PATH := "res://assets/vendor/opengameart/pixel_speech_bubbles/Sprite Sheet.png"
 const PORTRAIT_BASE_PATH := "res://assets/generated/portrait_people"
+const MAX_TARGET_STEP_IDLE := 84.0
+const MAX_TARGET_STEP_TRAVEL := 132.0
 const SPEECH_BUBBLE_FRAME := Vector2i(32, 32)
 const SPEECH_BUBBLE_STEP := 34
 const ROLE_PROP_ICON_PATHS := {
@@ -123,7 +125,17 @@ func apply_data(data: Dictionary, debug_enabled: bool) -> void:
 	var previous_target := target_home_position
 	npc_data = data
 	show_hearing_debug = debug_enabled
-	target_home_position = Vector2(float(data.get("x", 0.0)), float(data.get("y", 0.0)))
+	var incoming_target := Vector2(float(data.get("x", 0.0)), float(data.get("y", 0.0)))
+	var activity := str(data.get("activity", ""))
+	var max_step := MAX_TARGET_STEP_TRAVEL if activity in ["commuting", "returning", "traveling", "patrolling"] else MAX_TARGET_STEP_IDLE
+	if previous_target != Vector2.ZERO and home_position != Vector2.ZERO:
+		var desired_delta := incoming_target - previous_target
+		if desired_delta.length() > max_step:
+			target_home_position = previous_target.move_toward(incoming_target, max_step)
+		else:
+			target_home_position = incoming_target
+	else:
+		target_home_position = incoming_target
 	if previous_target == Vector2.ZERO and home_position == Vector2.ZERO:
 		home_position = target_home_position
 		position = target_home_position

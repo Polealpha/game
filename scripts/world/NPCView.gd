@@ -9,6 +9,8 @@ const WORLD_VISUAL_SCALE := 2.0
 const MOVE_SPEED := 120.0
 const WALL_CLEARANCE := 14.0
 const RENDER_CLEARANCE := 8.0
+const MAX_TARGET_STEP_IDLE := 84.0
+const MAX_TARGET_STEP_TRAVEL := 132.0
 const SPEECH_BUBBLE_FRAME := Vector2i(32, 32)
 const SPEECH_BUBBLE_STEP := 34
 const ROLE_PROP_ICON_PATHS := {
@@ -128,7 +130,17 @@ func apply_data(data: Dictionary, debug_enabled: bool) -> void:
 	var previous_target := target_home_position
 	npc_data = data
 	show_hearing_debug = debug_enabled
-	target_home_position = _snap_world_position_to_walkable(Vector2(float(data.get("x", 0.0)), float(data.get("y", 0.0))))
+	var incoming_target := _snap_world_position_to_walkable(Vector2(float(data.get("x", 0.0)), float(data.get("y", 0.0))))
+	var activity := str(data.get("activity", ""))
+	var max_step := MAX_TARGET_STEP_TRAVEL if activity in ["commuting", "returning", "traveling", "patrolling"] else MAX_TARGET_STEP_IDLE
+	if previous_target != Vector2.ZERO and home_position != Vector2.ZERO:
+		var desired_delta := incoming_target - previous_target
+		if desired_delta.length() > max_step:
+			target_home_position = previous_target.move_toward(incoming_target, max_step)
+		else:
+			target_home_position = incoming_target
+	else:
+		target_home_position = incoming_target
 	if previous_target == Vector2.ZERO and home_position == Vector2.ZERO:
 		home_position = target_home_position
 		position = target_home_position
@@ -353,7 +365,7 @@ func _process(delta: float) -> void:
 	if linger_timer > 0.0:
 		desired_home = linger_anchor + linger_offset
 	desired_home = _snap_world_position_to_walkable(desired_home)
-	var next_home := home_position.move_toward(desired_home, MOVE_SPEED * delta)
+	var next_home := home_position.move_toward(desired_home, MOVE_SPEED * social_travel_scale * delta)
 	home_position = next_home if _is_world_position_walkable(next_home, WALL_CLEARANCE) else _snap_world_position_to_walkable(next_home)
 	var velocity := home_position - previous_home
 	var wants_walk := velocity.length() > 0.3 or desired_home.distance_to(home_position) > 3.2

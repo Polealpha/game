@@ -90,6 +90,7 @@ var visual_time_synced := false
 var last_visual_clock_label := ""
 var last_visual_period := ""
 var active_dialogue_context: Dictionary = {}
+var proactive_invitation_context: Dictionary = {}
 var news_ticker_items: Array[String] = []
 var news_ticker_index := 0
 var news_ticker_elapsed := 0.0
@@ -241,12 +242,16 @@ func _process(delta: float) -> void:
 	_advance_news_ticker(delta)
 	_maintain_pending_dialogue_request()
 	_ensure_route_choice_modal()
+	var movement_locked := modal_overlay.visible or ledger_ui_visible or inspection_mode or route_choice_modal_active
 	if interior_mode:
 		house_interior.tick(delta)
 		current_interactable = house_interior.get_current_interactable()
 		hint_label.text = house_interior.get_hint_text()
 	else:
-		_move_player(delta)
+		if movement_locked:
+			_clear_player_input_state()
+		else:
+			_move_player(delta)
 		_update_world_camera(delta)
 		_update_current_interactable()
 		_update_npc_attention()
@@ -1215,6 +1220,43 @@ func _maybe_trigger_proactive_npc_talk(delta: float) -> void:
 	npc_auto_talk_elapsed += delta
 	if npc_auto_talk_elapsed < NPC_AUTO_TALK_SECONDS:
 		return
+	var nearby_npcs_clean := _get_nearby_npcs(3)
+	if nearby_npcs_clean.is_empty():
+		return
+	for npc_card_clean in nearby_npcs_clean:
+		var npc_id_clean := str(npc_card_clean.get("id", ""))
+		if npc_id_clean.is_empty() or not npc_views.has(npc_id_clean):
+			continue
+		if npc_id_clean == npc_last_auto_talker and nearby_npcs_clean.size() > 1:
+			continue
+		var view_clean: NPCView = npc_views[npc_id_clean]
+		var distance_clean := float(npc_card_clean.get("distance", 99999.0))
+		if distance_clean > NPC_AUTO_TALK_RADIUS * WORLD_VISUAL_SCALE:
+			continue
+		var proactive_interest_clean := clampf(float(view_clean.npc_data.get("proactive_interest", 0.32)), 0.12, 0.92)
+		if music_rng.randf() > proactive_interest_clean:
+			continue
+		npc_auto_talk_elapsed = 0.0
+		npc_last_auto_talker = npc_id_clean
+		view_clean.trigger_social_beat(player.position, true, "speaker", 1.08, 1.0)
+		var npc_card_detail_clean := _npc_card_for_id(npc_id_clean)
+		var npc_name_clean := str(npc_card_clean.get("name", str(npc_card_detail_clean.get("name", "附近角色"))))
+		var proactive_quotes_clean := _fallback_trade_quotes(npc_card_detail_clean)
+		var proactive_dialogue_clean := {
+			"npc_id": npc_id_clean,
+			"district": _current_district_for_position(player.position),
+			"topic_id": "",
+			"approach": "friendly",
+			"intent": "继续追问",
+			"source": "shell",
+			"title": "%s 主动搭话" % npc_name_clean,
+			"body": "%s 朝你看了一眼，像是在等你先开口。你可以先看对方的身份和报价，再决定怎么问。" % npc_name_clean,
+			"npc_name": npc_name_clean,
+			"trade_quotes": proactive_quotes_clean,
+		}
+		_present_proactive_invitation(proactive_dialogue_clean)
+		status_label.text = "%s 想先和你搭话，你可以接受或拒绝。" % npc_name_clean
+		return
 	if true:
 		var nearby_npcs_shell := _get_nearby_npcs(3)
 		if nearby_npcs_shell.is_empty():
@@ -1367,6 +1409,76 @@ func _maybe_trigger_proactive_npc_talk(delta: float) -> void:
 		}, "player_talk")
 		return
 
+
+func _present_proactive_invitation(dialogue_context: Dictionary) -> void:
+	proactive_invitation_context = dialogue_context.duplicate(true)
+	active_dialogue_context = {}
+	pending_dialogue_request = {}
+	_clear_player_input_state()
+	modal_is_conversation = false
+	route_choice_modal_active = false
+	modal_title.text = _sanitize_visible_text(str(dialogue_context.get("title", "主动搭话")), "主动搭话")
+	modal_title.add_theme_color_override("font_color", Color("315748"))
+	modal_body.text = _sanitize_visible_text(str(dialogue_context.get("body", "对方像是在等你先开口。")), "对方像是在等你先开口。")
+	modal_input.text = ""
+	modal_input.visible = false
+	modal_send_button.visible = false
+	modal_send_button.disabled = false
+	modal_hint_label.visible = true
+	modal_hint_label.text = "接受后会进入对话窗口；拒绝则这轮先不搭话。"
+	modal_trade_title.visible = true
+	modal_trade_title.text = "主动搭话"
+	modal_trade_label.visible = true
+	modal_trade_label.text = "[b]%s[/b]\n你可以接受这次搭话，或先拒绝。" % str(dialogue_context.get("npc_name", "附近角色"))
+	modal_trade_scroll.visible = true
+	modal_trade_buttons.visible = true
+	for child in modal_trade_buttons.get_children():
+		child.queue_free()
+	var accept_button := Button.new()
+	accept_button.text = "接受"
+	accept_button.custom_minimum_size = Vector2(150, 42)
+	_style_button(accept_button, Color("2f6f4f"), Color("3f8a60"), Color("244f3a"))
+	accept_button.pressed.connect(_accept_proactive_invitation)
+	modal_trade_buttons.add_child(accept_button)
+	var reject_button := Button.new()
+	reject_button.text = "拒绝"
+	reject_button.custom_minimum_size = Vector2(150, 42)
+	_style_button(reject_button, Color("6c4a2a"), Color("8a6037"), Color("4f3520"))
+	reject_button.pressed.connect(_decline_proactive_invitation)
+	modal_trade_buttons.add_child(reject_button)
+	_layout_modal_card()
+	modal_overlay.visible = true
+	modal_overlay.modulate = Color(1, 1, 1, 0)
+	modal_card.scale = Vector2(0.94, 0.94)
+	if is_instance_valid(modal_tween):
+		modal_tween.kill()
+	modal_tween = create_tween()
+	modal_tween.set_parallel(true)
+	modal_tween.tween_property(modal_overlay, "modulate", Color(1, 1, 1, 1), 0.18)
+	modal_tween.tween_property(modal_card, "scale", Vector2.ONE, 0.22).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+
+
+func _accept_proactive_invitation() -> void:
+	if proactive_invitation_context.is_empty():
+		return
+	var dialogue_context := proactive_invitation_context.duplicate(true)
+	proactive_invitation_context = {}
+	_open_dialogue_shell(
+		dialogue_context,
+		str(dialogue_context.get("title", "主动搭话")),
+		str(dialogue_context.get("body", "对方像是在等你先开口。"))
+	)
+	status_label.text = "你接受了主动搭话，可以直接输入你的第一句话。"
+
+
+func _decline_proactive_invitation() -> void:
+	var npc_name := str(proactive_invitation_context.get("npc_name", "对方"))
+	proactive_invitation_context = {}
+	_close_modal()
+	status_label.text = "你没有接这轮搭话。"
+	GameState.add_toast("%s 这轮没有继续搭话。" % npc_name)
+
+
 func _talk_topics_for_npc(npc_id: String, district_name: String) -> Array:
 	var topics: Array = GameState.snapshot.get("talk_topics", [])
 	var filtered: Array = []
@@ -1421,7 +1533,9 @@ func _topic_intent(topic: Dictionary) -> String:
 
 func _open_dialogue_shell(dialogue_context: Dictionary, title: String, body: String) -> void:
 	active_dialogue_context = dialogue_context.duplicate(true)
+	proactive_invitation_context = {}
 	pending_dialogue_request = {}
+	_clear_player_input_state()
 	modal_send_button.disabled = false
 	UiRouter.push_modal(
 		title,
@@ -1522,6 +1636,18 @@ func _move_player(delta: float) -> void:
 	var slide_y_position := Vector2(player.position.x, desired_position.y)
 	if WorldLayout.is_walkable_point(slide_y_position / WORLD_VISUAL_SCALE):
 		player.position = slide_y_position
+		return
+	var snapped_layout_position := WorldLayout.snap_to_walkable(desired_layout_position)
+	if desired_layout_position.distance_to(snapped_layout_position) <= 18.0:
+		player.position = _to_world_position(snapped_layout_position)
+
+
+func _clear_player_input_state() -> void:
+	last_move_input = Vector2.ZERO
+	if is_instance_valid(player):
+		player.set_movement_direction(Vector2.ZERO)
+	for action in ["move_left", "move_right", "move_up", "move_down"]:
+		Input.action_release(action)
 
 
 func _update_world_camera(delta: float) -> void:
@@ -2359,15 +2485,19 @@ func _handle_cancel_input() -> void:
 	if route_choice_modal_active:
 		return
 	if modal_overlay.visible:
+		proactive_invitation_context = {}
 		_close_modal()
 		return
 	if ledger_ui_visible:
+		_clear_player_input_state()
 		_set_ledger_ui_visible(false)
 		return
 	if inspection_mode:
+		_clear_player_input_state()
 		_set_inspection_mode(false)
 		return
 	if interior_mode:
+		_clear_player_input_state()
 		_set_interior_mode(false)
 
 
@@ -4116,10 +4246,13 @@ func _to_world_position(pos: Vector2) -> Vector2:
 
 
 func _coerce_npc_backend_position(pos: Vector2) -> Vector2:
-	return Vector2(
+	var clamped := Vector2(
 		clampf(pos.x, WORLD_RECT.position.x + 6.0, WORLD_RECT.end.x - 6.0),
 		clampf(pos.y, WORLD_RECT.position.y + 6.0, WORLD_RECT.end.y - 6.0)
 	)
+	if WorldLayout.is_walkable_point(clamped):
+		return clamped
+	return WorldLayout.snap_to_walkable(clamped)
 
 
 func _scaled_district_rects() -> Dictionary:
@@ -4273,6 +4406,7 @@ func _show_next_toast() -> void:
 
 func _on_modal_requested(payload: Dictionary) -> void:
 	route_choice_modal_active = false
+	_clear_player_input_state()
 	var tone := str(payload.get("tone", "news"))
 	modal_is_conversation = tone == "conversation"
 	modal_title.text = _sanitize_visible_text(str(payload.get("title", "告示")), "告示")
@@ -4332,6 +4466,7 @@ func _on_modal_requested(payload: Dictionary) -> void:
 func _close_modal() -> void:
 	if not modal_overlay.visible:
 		return
+	_clear_player_input_state()
 	if is_instance_valid(modal_tween):
 		modal_tween.kill()
 	modal_tween = create_tween()
@@ -4342,6 +4477,7 @@ func _close_modal() -> void:
 		modal_overlay.visible = false
 	)
 	active_dialogue_context = {}
+	proactive_invitation_context = {}
 	route_choice_modal_active = false
 	modal_is_conversation = false
 	pending_dialogue_request = {}
@@ -4378,6 +4514,7 @@ func _ensure_route_choice_modal() -> void:
 
 func _present_route_choice_modal() -> void:
 	route_choice_modal_active = true
+	_clear_player_input_state()
 	active_dialogue_context = {}
 	modal_is_conversation = false
 	modal_title.text = "先选路线"

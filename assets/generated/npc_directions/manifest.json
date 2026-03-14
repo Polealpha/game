@@ -1,0 +1,446 @@
+{
+  "count": 31,
+  "canvas_size": 256,
+  "directions": [
+    "front",
+    "left",
+    "right",
+    "back"
+  ],
+  "items": [
+    {
+      "seq": 1,
+      "source": "33ecc144d82e23733c6b2f3a9acb8512.png",
+      "size": [
+        1024,
+        300
+      ],
+      "outputs": {
+        "front": "npc_01_front.png",
+        "left": "npc_01_left.png",
+        "right": "npc_01_right.png",
+        "back": "npc_01_back.png"
+      }
+    },
+    {
+      "seq": 2,
+      "source": "1764cf6a33b450acb860338bfd601fa1.png",
+      "size": [
+        1536,
+        1024
+      ],
+      "outputs": {
+        "front": "npc_02_front.png",
+        "left": "npc_02_left.png",
+        "right": "npc_02_right.png",
+        "back": "npc_02_back.png"
+      }
+    },
+    {
+      "seq": 3,
+      "source": "f8e4632d70147cef88c0fa4a69fabe94.png",
+      "size": [
+        1536,
+        1024
+      ],
+      "outputs": {
+        "front": "npc_03_front.png",
+        "left": "npc_03_left.png",
+        "right": "npc_03_right.png",
+        "back": "npc_03_back.png"
+      }
+    },
+    {
+      "seq": 4,
+      "source": "d3f8c203682e235cb6cdba2e40d9543d.png",
+      "size": [
+        1536,
+        1024
+      ],
+      "outputs": {
+        "front": "npc_04_front.png",
+        "left": "npc_04_left.png",
+        "right": "npc_04_right.png",
+        "back": "npc_04_back.png"
+      }
+    },
+    {
+      "seq": 5,
+      "source": "14a8a7b60597b3bf3b4fc06a8144284d.png",
+      "size": [
+        1536,
+        1024
+      ],
+      "outputs": {
+        "front": "npc_05_front.png",
+        "left": "npc_05_left.png",
+        "right": "npc_05_right.png",
+        "back": "npc_05_back.png"
+      }
+    },
+    {
+      "seq": 6,
+      "source": "df22eaa4155757d448db96cb5e396f0b.png",
+      "size": [
+        1536,
+        1024
+      ],
+      "outputs": {
+        "front": "npc_06_front.png",
+        "left": "npc_06_left.png",
+        "right": "npc_06_right.png",
+        "back": "npc_06_back.png"
+      }
+    },
+    {
+      "seq": 7,
+      "source": "8ee966aa74e2339519a75ada2d81fd1e.png",
+      "size": [
+        1536,
+        1024
+      ],
+      "outputs": {
+        "front": "npc_07_front.png",
+        "left": "npc_07_left.png",
+        "right": "npc_07_right.png",
+        "back": "npc_07_back.png"
+      }
+    },
+    {
+      "seq": 8,
+      "source": "ef7bac2106f99fb30e89c5c8f1b7886b.png",
+      "size": [
+        1536,
+        1024
+      ],
+      "outputs": {
+        "front": "npc_08_front.png",
+        "left": "npc_08_left.png",
+        "right": "npc_08_right.png",
+        "back": "npc_08_back.png"
+      }
+    },
+    {
+      "seq": 9,
+      "source": "10f8f59be68e0d5b052562904b7be098.png",
+      "size": [
+        1536,
+        1024
+      ],
+      "outputs": {
+        "front": "npc_09_front.png",
+        "left": "npc_09_left.png",
+        "right": "npc_09_right.png",
+        "back": "npc_09_back.png"
+      }
+    },
+    {
+      "seq": 10,
+      "source": "2653db945493466a03602f1c4a7aeeff.png",
+      "size": [
+        1536,
+        1024
+      ],
+      "outputs": {
+        "front": "npc_10_front.png",
+        "left": "npc_10_left.png",
+        "right": "npc_10_right.png",
+        "back": "npc_10_back.png"
+      }
+    },
+    {
+      "seq": 11,
+      "source": "ef6752d0ca7a9928a42a0e725448e8be.png",
+      "size": [
+        1536,
+        1024
+      ],
+      "outputs": {
+        "front": "npc_11_front.png",
+        "left": "npc_11_left.png",
+        "right": "npc_11_right.png",
+        "back": "npc_11_back.png"
+      }
+    },
+    {
+      "seq": 12,
+      "source": "9d7561b3efc7c2f4bff501f5d9940afb.png",
+      "size": [
+        1536,
+        1024
+      ],
+      "outputs": {
+        "front": "npc_12_front.png",
+        "left": "npc_12_left.png",
+        "right": "npc_12_right.png",
+        "back": "npc_12_back.png"
+      }
+    },
+    {
+      "seq": 13,
+      "source": "46f1c0826d626835125461429284a538.png",
+      "size": [
+        1536,
+        1024
+      ],
+      "outputs": {
+        "front": "npc_13_front.png",
+        "left": "npc_13_left.png",
+        "right": "npc_13_right.png",
+        "back": "npc_13_back.png"
+      }
+    },
+    {
+      "seq": 14,
+      "source": "5df4fa7b82605366c800809c27554864.png",
+      "size": [
+        1536,
+        1024
+      ],
+      "outputs": {
+        "front": "npc_14_front.png",
+        "left": "npc_14_left.png",
+        "right": "npc_14_right.png",
+        "back": "npc_14_back.png"
+      }
+    },
+    {
+      "seq": 15,
+      "source": "0c01be8105aacd7944b7f537191d40c2.png",
+      "size": [
+        1536,
+        1024
+      ],
+      "outputs": {
+        "front": "npc_15_front.png",
+        "left": "npc_15_left.png",
+        "right": "npc_15_right.png",
+        "back": "npc_15_back.png"
+      }
+    },
+    {
+      "seq": 16,
+      "source": "f31eb6171120f38724641c8699b91e5b.png",
+      "size": [
+        1536,
+        1024
+      ],
+      "outputs": {
+        "front": "npc_16_front.png",
+        "left": "npc_16_left.png",
+        "right": "npc_16_right.png",
+        "back": "npc_16_back.png"
+      }
+    },
+    {
+      "seq": 17,
+      "source": "4907f5018a23674872f2931e0349ad80.png",
+      "size": [
+        1536,
+        1024
+      ],
+      "outputs": {
+        "front": "npc_17_front.png",
+        "left": "npc_17_left.png",
+        "right": "npc_17_right.png",
+        "back": "npc_17_back.png"
+      }
+    },
+    {
+      "seq": 18,
+      "source": "51b3cc7b4a5ff745bf568c122db14d6e.png",
+      "size": [
+        1536,
+        1024
+      ],
+      "outputs": {
+        "front": "npc_18_front.png",
+        "left": "npc_18_left.png",
+        "right": "npc_18_right.png",
+        "back": "npc_18_back.png"
+      }
+    },
+    {
+      "seq": 19,
+      "source": "98e899112244e9dc426d69cbb9fb7a41.png",
+      "size": [
+        1536,
+        1024
+      ],
+      "outputs": {
+        "front": "npc_19_front.png",
+        "left": "npc_19_left.png",
+        "right": "npc_19_right.png",
+        "back": "npc_19_back.png"
+      }
+    },
+    {
+      "seq": 20,
+      "source": "45d12291748a4ae74636204e7beaf826.png",
+      "size": [
+        1536,
+        1024
+      ],
+      "outputs": {
+        "front": "npc_20_front.png",
+        "left": "npc_20_left.png",
+        "right": "npc_20_right.png",
+        "back": "npc_20_back.png"
+      }
+    },
+    {
+      "seq": 21,
+      "source": "015371e93ce57f78727b5cf968273e0a.png",
+      "size": [
+        1536,
+        1024
+      ],
+      "outputs": {
+        "front": "npc_21_front.png",
+        "left": "npc_21_left.png",
+        "right": "npc_21_right.png",
+        "back": "npc_21_back.png"
+      }
+    },
+    {
+      "seq": 22,
+      "source": "7c706ef2c86887ee0ead49bca6db77c1.png",
+      "size": [
+        1536,
+        1024
+      ],
+      "outputs": {
+        "front": "npc_22_front.png",
+        "left": "npc_22_left.png",
+        "right": "npc_22_right.png",
+        "back": "npc_22_back.png"
+      }
+    },
+    {
+      "seq": 23,
+      "source": "3dc2969e2983da59e11493ee64390b30.png",
+      "size": [
+        1536,
+        1024
+      ],
+      "outputs": {
+        "front": "npc_23_front.png",
+        "left": "npc_23_left.png",
+        "right": "npc_23_right.png",
+        "back": "npc_23_back.png"
+      }
+    },
+    {
+      "seq": 24,
+      "source": "cb5fdea03a52665dd3d6e3478acedcb6.png",
+      "size": [
+        1536,
+        1024
+      ],
+      "outputs": {
+        "front": "npc_24_front.png",
+        "left": "npc_24_left.png",
+        "right": "npc_24_right.png",
+        "back": "npc_24_back.png"
+      }
+    },
+    {
+      "seq": 25,
+      "source": "3b13428db892120dbb5243e47d06d9bf.png",
+      "size": [
+        1536,
+        1024
+      ],
+      "outputs": {
+        "front": "npc_25_front.png",
+        "left": "npc_25_left.png",
+        "right": "npc_25_right.png",
+        "back": "npc_25_back.png"
+      }
+    },
+    {
+      "seq": 26,
+      "source": "222543a2518fe07661954cf695b10a24.png",
+      "size": [
+        1536,
+        1024
+      ],
+      "outputs": {
+        "front": "npc_26_front.png",
+        "left": "npc_26_left.png",
+        "right": "npc_26_right.png",
+        "back": "npc_26_back.png"
+      }
+    },
+    {
+      "seq": 27,
+      "source": "2e9a6c562cc5a677039dcf374efaf344.png",
+      "size": [
+        1536,
+        1024
+      ],
+      "outputs": {
+        "front": "npc_27_front.png",
+        "left": "npc_27_left.png",
+        "right": "npc_27_right.png",
+        "back": "npc_27_back.png"
+      }
+    },
+    {
+      "seq": 28,
+      "source": "946cd1cc220188dbdf72a166b36ae1fb.png",
+      "size": [
+        1536,
+        1024
+      ],
+      "outputs": {
+        "front": "npc_28_front.png",
+        "left": "npc_28_left.png",
+        "right": "npc_28_right.png",
+        "back": "npc_28_back.png"
+      }
+    },
+    {
+      "seq": 29,
+      "source": "bf7961f2b3c7f0efa0d513ae044e3106.png",
+      "size": [
+        1536,
+        1024
+      ],
+      "outputs": {
+        "front": "npc_29_front.png",
+        "left": "npc_29_left.png",
+        "right": "npc_29_right.png",
+        "back": "npc_29_back.png"
+      }
+    },
+    {
+      "seq": 30,
+      "source": "5bd95095b1fe5b8d5b7e888912fd347f.png",
+      "size": [
+        1536,
+        1024
+      ],
+      "outputs": {
+        "front": "npc_30_front.png",
+        "left": "npc_30_left.png",
+        "right": "npc_30_right.png",
+        "back": "npc_30_back.png"
+      }
+    },
+    {
+      "seq": 31,
+      "source": "ace2661fc106c8a2179ff3bb8b2c25b2.png",
+      "size": [
+        1536,
+        1024
+      ],
+      "outputs": {
+        "front": "npc_31_front.png",
+        "left": "npc_31_left.png",
+        "right": "npc_31_right.png",
+        "back": "npc_31_back.png"
+      }
+    }
+  ]
+}

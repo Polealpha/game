@@ -1,11 +1,14 @@
 extends Node2D
 class_name NPCView
 
+const WorldLayout = preload("res://scripts/world/WorldLayout.gd")
 const BODY_OUTLINE := Color("221710")
 const SPEECH_BUBBLE_TEXTURE_PATH := "res://assets/vendor/opengameart/pixel_speech_bubbles/Sprite Sheet.png"
 const PORTRAIT_BASE_PATH := "res://assets/generated/portrait_people"
-const MAX_TARGET_STEP_IDLE := 84.0
-const MAX_TARGET_STEP_TRAVEL := 132.0
+const WORLD_VISUAL_SCALE := 2.0
+const MOVE_SPEED := 120.0
+const WALL_CLEARANCE := 14.0
+const RENDER_CLEARANCE := 8.0
 const SPEECH_BUBBLE_FRAME := Vector2i(32, 32)
 const SPEECH_BUBBLE_STEP := 34
 const ROLE_PROP_ICON_PATHS := {
@@ -125,17 +128,7 @@ func apply_data(data: Dictionary, debug_enabled: bool) -> void:
 	var previous_target := target_home_position
 	npc_data = data
 	show_hearing_debug = debug_enabled
-	var incoming_target := Vector2(float(data.get("x", 0.0)), float(data.get("y", 0.0)))
-	var activity := str(data.get("activity", ""))
-	var max_step := MAX_TARGET_STEP_TRAVEL if activity in ["commuting", "returning", "traveling", "patrolling"] else MAX_TARGET_STEP_IDLE
-	if previous_target != Vector2.ZERO and home_position != Vector2.ZERO:
-		var desired_delta := incoming_target - previous_target
-		if desired_delta.length() > max_step:
-			target_home_position = previous_target.move_toward(incoming_target, max_step)
-		else:
-			target_home_position = incoming_target
-	else:
-		target_home_position = incoming_target
+	target_home_position = _snap_world_position_to_walkable(Vector2(float(data.get("x", 0.0)), float(data.get("y", 0.0))))
 	if previous_target == Vector2.ZERO and home_position == Vector2.ZERO:
 		home_position = target_home_position
 		position = target_home_position
@@ -359,10 +352,9 @@ func _process(delta: float) -> void:
 	var desired_home := target_home_position
 	if linger_timer > 0.0:
 		desired_home = linger_anchor + linger_offset
-	home_position = home_position.lerp(
-		desired_home,
-		min(delta * (float(visual_profile.get("travel_rate", 2.4)) + float(visual_profile.get("pace", 0.0))) * social_travel_scale * 0.62, 1.0)
-	)
+	desired_home = _snap_world_position_to_walkable(desired_home)
+	var next_home := home_position.move_toward(desired_home, MOVE_SPEED * delta)
+	home_position = next_home if _is_world_position_walkable(next_home, WALL_CLEARANCE) else _snap_world_position_to_walkable(next_home)
 	var velocity := home_position - previous_home
 	var wants_walk := velocity.length() > 0.3 or desired_home.distance_to(home_position) > 3.2
 	walk_blend = move_toward(walk_blend, 1.0 if wants_walk else 0.0, delta * float(visual_profile.get("walk_blend_rate", 4.0)))
@@ -382,7 +374,8 @@ func _process(delta: float) -> void:
 		sin(wobble_time * (1.2 + float(visual_profile.get("idle_rate", 0.0))) + posture_phase) * (1.8 + float(visual_profile.get("restless", 0.0)) * 0.6),
 		cos(wobble_time * (1.05 + float(visual_profile.get("idle_rate", 0.0)) * 0.6) + movement_seed * 1.4 + posture_phase) * (0.9 + head_bob_bias * 0.25)
 	) * (1.0 - walk_blend)
-	position = home_position + idle_drift
+	var rendered_position := home_position + idle_drift
+	position = rendered_position if _is_world_position_walkable(rendered_position, RENDER_CLEARANCE) else home_position
 
 	var desired_head_turn := sin(wobble_time * 0.72 + posture_phase) * (0.14 + float(visual_profile.get("look_bias", 0.0)) * 0.03) * (1.0 - walk_blend)
 	if observer_attention > 0.01:
@@ -1610,6 +1603,15 @@ func _portrait_paths_for_id(npc_id: String) -> Dictionary:
 		"idle_path": idle_path,
 		"move_path": move_path,
 	}
+
+
+func _snap_world_position_to_walkable(world_pos: Vector2) -> Vector2:
+	var backend_pos := world_pos / WORLD_VISUAL_SCALE
+	return WorldLayout.snap_to_walkable_with_clearance(backend_pos, WALL_CLEARANCE) * WORLD_VISUAL_SCALE
+
+
+func _is_world_position_walkable(world_pos: Vector2, clearance: float = 0.0) -> bool:
+	return WorldLayout.is_walkable_point_with_clearance(world_pos / WORLD_VISUAL_SCALE, clearance)
 
 
 func _direction_name_for_vector(value: Vector2) -> String:

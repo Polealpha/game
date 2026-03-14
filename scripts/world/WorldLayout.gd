@@ -285,6 +285,27 @@ static func is_walkable_point(pos: Vector2) -> bool:
 	return false
 
 
+static func is_walkable_point_with_clearance(pos: Vector2, clearance: float) -> bool:
+	if not is_walkable_point(pos):
+		return false
+	if clearance <= 0.0:
+		return true
+	for radius in [clearance * 0.5, clearance]:
+		for direction in [
+			Vector2.RIGHT,
+			Vector2.LEFT,
+			Vector2.UP,
+			Vector2.DOWN,
+			Vector2(0.70710678, 0.70710678),
+			Vector2(-0.70710678, 0.70710678),
+			Vector2(0.70710678, -0.70710678),
+			Vector2(-0.70710678, -0.70710678),
+		]:
+			if not is_walkable_point(pos + direction * radius):
+				return false
+	return true
+
+
 static func snap_to_walkable(pos: Vector2) -> Vector2:
 	var clamped := Vector2(
 		clampf(pos.x, WORLD_RECT.position.x, WORLD_RECT.end.x),
@@ -377,6 +398,31 @@ static func _snap_to_road_mask(pos: Vector2) -> Vector2:
 				fallback_distance = distance
 				fallback_best = sample
 	return fallback_best
+
+
+static func snap_to_walkable_with_clearance(pos: Vector2, clearance: float) -> Vector2:
+	var candidate := snap_to_walkable(pos)
+	if is_walkable_point_with_clearance(candidate, clearance):
+		return candidate
+	var best_point := candidate
+	var best_score := INF
+	var max_radius := int(maxf(clearance * 4.0, 24.0))
+	for radius in range(0, max_radius + 1, 6):
+		var sample_count := 16 if radius <= 18 else 24
+		for index in range(sample_count):
+			var angle := TAU * float(index) / float(sample_count)
+			var sample := candidate + Vector2(cos(angle), sin(angle)) * float(radius)
+			if not WORLD_RECT.has_point(sample):
+				continue
+			if not is_walkable_point_with_clearance(sample, clearance):
+				continue
+			var score := pos.distance_squared_to(sample)
+			if score < best_score:
+				best_score = score
+				best_point = sample
+		if best_score < INF:
+			return best_point
+	return candidate
 
 
 static func water_areas() -> Array:

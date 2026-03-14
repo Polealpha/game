@@ -27,6 +27,10 @@ const NPC_AUTO_TALK_SECONDS := 12.0
 const NPC_AUTO_TALK_RADIUS := 112.0
 const DIRECT_TALK_RADIUS := 88.0
 const HOUSE_ENTRY_RADIUS := 64.0
+const DEFAULT_START_HOUSE_ID := "slum_house"
+const DEFAULT_START_HOUSE_TITLE := "山坡租屋"
+const DEFAULT_START_HOUSE_DISTRICT := "贫民街"
+const DEFAULT_START_HOUSE_SUBTITLE := "床铺、火炉和储物箱都在里面。"
 const BACKEND_RETRY_MSEC := 5000
 const BACKEND_HEALTHCHECK_MSEC := 1600
 const PLAYER_TALK_TIMEOUT_MSEC := 18000
@@ -135,10 +139,15 @@ var compact_hud_label := RichTextLabel.new()
 var market_flash_label := RichTextLabel.new()
 var news_ticker_label := RichTextLabel.new()
 var interaction_badge_label := Label.new()
+var proactive_invite_panel := PanelContainer.new()
+var proactive_invite_title := Label.new()
+var proactive_invite_body := Label.new()
+var proactive_invite_hint := Label.new()
 var inspect_badge := Label.new()
 var hud_badge := Label.new()
 var market_flash_panel_node: CanvasItem
 var news_ticker_panel_node: CanvasItem
+var proactive_invite_panel_node: CanvasItem
 var exchange_terminal_panel := PanelContainer.new()
 var exchange_terminal_title := Label.new()
 var exchange_terminal_scroll := ScrollContainer.new()
@@ -210,7 +219,6 @@ func _ready() -> void:
 	GameState.toast_added.connect(_enqueue_toast)
 	UiRouter.modal_requested.connect(_on_modal_requested)
 	UiRouter.guide_updated.connect(_on_guide_updated)
-
 	poll_timer.wait_time = 1.6
 	poll_timer.timeout.connect(_poll_world_state)
 	add_child(poll_timer)
@@ -242,7 +250,7 @@ func _process(delta: float) -> void:
 	_advance_news_ticker(delta)
 	_maintain_pending_dialogue_request()
 	_ensure_route_choice_modal()
-	var movement_locked := modal_overlay.visible or ledger_ui_visible or inspection_mode or route_choice_modal_active
+	var movement_locked := modal_overlay.visible or ledger_ui_visible or inspection_mode or route_choice_modal_active or _has_proactive_talk_invite()
 	if interior_mode:
 		house_interior.tick(delta)
 		current_interactable = house_interior.get_current_interactable()
@@ -271,6 +279,11 @@ func _process(delta: float) -> void:
 		_set_ledger_ui_visible(not ledger_ui_visible)
 	if Input.is_action_just_pressed("toggle_inspect_view"):
 		_set_inspection_mode(not inspection_mode)
+	if _has_proactive_talk_invite():
+		if Input.is_physical_key_pressed(KEY_Z):
+			_accept_proactive_talk_invite()
+		elif Input.is_physical_key_pressed(KEY_X):
+			_reject_proactive_talk_invite()
 	if Input.is_action_just_pressed("ui_cancel"):
 		_handle_cancel_input()
 
@@ -676,6 +689,49 @@ func _build_ui() -> void:
 	interaction_badge_label.add_theme_color_override("font_color", Color("f5e8c6"))
 	interaction_margin.add_child(interaction_badge_label)
 
+	var proactive_style := StyleBoxFlat.new()
+	proactive_style.bg_color = Color(0.1, 0.13, 0.11, 0.94)
+	proactive_style.border_color = Color("d7bc8c")
+	proactive_style.border_width_left = 3
+	proactive_style.border_width_top = 3
+	proactive_style.border_width_right = 3
+	proactive_style.border_width_bottom = 3
+	proactive_style.corner_radius_top_left = 12
+	proactive_style.corner_radius_top_right = 12
+	proactive_style.corner_radius_bottom_left = 12
+	proactive_style.corner_radius_bottom_right = 12
+	proactive_invite_panel.position = Vector2(1078, 620)
+	proactive_invite_panel.size = Vector2(462, 150)
+	proactive_invite_panel.visible = false
+	proactive_invite_panel.add_theme_stylebox_override("panel", proactive_style)
+	ui_root.add_child(proactive_invite_panel)
+	proactive_invite_panel_node = proactive_invite_panel
+
+	var proactive_margin := MarginContainer.new()
+	proactive_margin.set_anchors_preset(Control.PRESET_FULL_RECT)
+	proactive_margin.add_theme_constant_override("margin_left", 16)
+	proactive_margin.add_theme_constant_override("margin_top", 14)
+	proactive_margin.add_theme_constant_override("margin_right", 16)
+	proactive_margin.add_theme_constant_override("margin_bottom", 14)
+	proactive_invite_panel.add_child(proactive_margin)
+
+	var proactive_box := VBoxContainer.new()
+	proactive_box.add_theme_constant_override("separation", 6)
+	proactive_margin.add_child(proactive_box)
+
+	proactive_invite_title.add_theme_font_size_override("font_size", 24)
+	proactive_invite_title.add_theme_color_override("font_color", Color("f4e3bd"))
+	proactive_box.add_child(proactive_invite_title)
+
+	proactive_invite_body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	proactive_invite_body.add_theme_font_size_override("font_size", 16)
+	proactive_invite_body.add_theme_color_override("font_color", Color("efe1c0"))
+	proactive_box.add_child(proactive_invite_body)
+
+	proactive_invite_hint.add_theme_font_size_override("font_size", 15)
+	proactive_invite_hint.add_theme_color_override("font_color", Color("c7d7bf"))
+	proactive_box.add_child(proactive_invite_hint)
+
 	inspect_badge.position = Vector2(1290, 842)
 	inspect_badge.size = Vector2(270, 42)
 	inspect_badge.text = "查看模式已开启 [Tab]"
@@ -873,6 +929,7 @@ func _finish_startup_after_reset() -> void:
 	startup_screen_active = false
 	player.position = _to_world_position(WorldLayout.snap_to_walkable(WorldLayout.PLAYER_START))
 	_clear_player_input_state()
+	_enter_default_spawn_house()
 	startup_overlay.visible = false
 	startup_button.disabled = false
 	poll_timer.start()
@@ -886,9 +943,6 @@ func _layout_modal_card() -> void:
 	var viewport_size := get_viewport_rect().size
 	var card_width := clampf(viewport_size.x - 140.0, 760.0, 1040.0)
 	var card_height := clampf(viewport_size.y - 120.0, 430.0, 760.0)
-	if not proactive_invitation_context.is_empty():
-		card_width = clampf(viewport_size.x - 120.0, 820.0, 1080.0)
-		card_height = clampf(viewport_size.y - 100.0, 520.0, 780.0)
 	modal_card.size = Vector2(card_width, card_height)
 	modal_card.position = (viewport_size - modal_card.size) * 0.5
 	modal_card.pivot_offset = modal_card.size * 0.5
@@ -1417,73 +1471,49 @@ func _maybe_trigger_proactive_npc_talk(delta: float) -> void:
 		return
 
 
+func _has_proactive_talk_invite() -> bool:
+	return not proactive_invitation_context.is_empty()
+
+
 func _present_proactive_invitation(dialogue_context: Dictionary) -> void:
 	proactive_invitation_context = dialogue_context.duplicate(true)
-	active_dialogue_context = {}
-	pending_dialogue_request = {}
 	_clear_player_input_state()
-	modal_is_conversation = true
-	route_choice_modal_active = false
-	modal_title.text = _sanitize_visible_text(str(dialogue_context.get("title", "主动搭话")), "主动搭话")
-	modal_title.add_theme_color_override("font_color", Color("315748"))
-	modal_body.text = _sanitize_visible_text(str(dialogue_context.get("body", "对方像是在等你先开口。")), "对方像是在等你先开口。")
-	modal_input.text = ""
-	modal_input.visible = false
-	modal_send_button.visible = false
-	modal_send_button.disabled = false
-	modal_hint_label.visible = true
-	modal_hint_label.text = "接受后会进入对话窗口；拒绝则这轮先不搭话。"
-	modal_trade_title.visible = true
-	modal_trade_title.text = "主动搭话"
-	modal_trade_label.visible = true
-	modal_trade_label.text = "[b]%s[/b]\n你可以接受这次搭话，或先拒绝。" % str(dialogue_context.get("npc_name", "附近角色"))
-	modal_trade_scroll.visible = true
-	modal_trade_buttons.visible = true
-	for child in modal_trade_buttons.get_children():
-		child.queue_free()
-	var accept_button := Button.new()
-	accept_button.text = "接受"
-	accept_button.custom_minimum_size = Vector2(150, 42)
-	_style_button(accept_button, Color("2f6f4f"), Color("3f8a60"), Color("244f3a"))
-	accept_button.pressed.connect(_accept_proactive_invitation)
-	modal_trade_buttons.add_child(accept_button)
-	var reject_button := Button.new()
-	reject_button.text = "拒绝"
-	reject_button.custom_minimum_size = Vector2(150, 42)
-	_style_button(reject_button, Color("6c4a2a"), Color("8a6037"), Color("4f3520"))
-	reject_button.pressed.connect(_decline_proactive_invitation)
-	modal_trade_buttons.add_child(reject_button)
-	_layout_modal_card()
-	modal_overlay.visible = true
-	modal_overlay.modulate = Color(1, 1, 1, 0)
-	modal_card.scale = Vector2(0.94, 0.94)
-	if is_instance_valid(modal_tween):
-		modal_tween.kill()
-	modal_tween = create_tween()
-	modal_tween.set_parallel(true)
-	modal_tween.tween_property(modal_overlay, "modulate", Color(1, 1, 1, 1), 0.18)
-	modal_tween.tween_property(modal_card, "scale", Vector2.ONE, 0.22).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	var npc_name := str(proactive_invitation_context.get("npc_name", "附近角色"))
+	proactive_invite_title.text = "%s 想和你搭话" % npc_name
+	proactive_invite_body.text = str(proactive_invitation_context.get("body", "%s 正在看着你，像是想先聊两句。" % npc_name))
+	proactive_invite_hint.text = "[Z] 接受搭话    [X] 礼貌拒绝"
+	_apply_visibility_modes()
 
 
-func _accept_proactive_invitation() -> void:
-	if proactive_invitation_context.is_empty():
+func _clear_proactive_talk_invite() -> void:
+	proactive_invitation_context = {}
+	proactive_invite_title.text = ""
+	proactive_invite_body.text = ""
+	proactive_invite_hint.text = ""
+	if is_instance_valid(proactive_invite_panel_node):
+		proactive_invite_panel_node.visible = false
+
+
+func _accept_proactive_talk_invite() -> void:
+	if not _has_proactive_talk_invite():
 		return
 	var dialogue_context := proactive_invitation_context.duplicate(true)
-	proactive_invitation_context = {}
+	_clear_proactive_talk_invite()
 	_open_dialogue_shell(
 		dialogue_context,
 		str(dialogue_context.get("title", "主动搭话")),
 		str(dialogue_context.get("body", "对方像是在等你先开口。"))
 	)
-	status_label.text = "你接受了主动搭话，可以直接输入你的第一句话。"
+	status_label.text = "你接住了这轮话头，可以继续输入追问。"
 
 
-func _decline_proactive_invitation() -> void:
+func _reject_proactive_talk_invite() -> void:
+	if not _has_proactive_talk_invite():
+		return
 	var npc_name := str(proactive_invitation_context.get("npc_name", "对方"))
-	proactive_invitation_context = {}
-	_close_modal()
-	status_label.text = "你没有接这轮搭话。"
-	GameState.add_toast("%s 这轮没有继续搭话。" % npc_name)
+	_clear_proactive_talk_invite()
+	status_label.text = "你暂时没有接这轮话头。"
+	GameState.add_toast("你朝 %s 摆了摆手，先不接话。" % npc_name)
 
 
 func _talk_topics_for_npc(npc_id: String, district_name: String) -> Array:
@@ -1540,7 +1570,7 @@ func _topic_intent(topic: Dictionary) -> String:
 
 func _open_dialogue_shell(dialogue_context: Dictionary, title: String, body: String) -> void:
 	active_dialogue_context = dialogue_context.duplicate(true)
-	proactive_invitation_context = {}
+	_clear_proactive_talk_invite()
 	pending_dialogue_request = {}
 	_clear_player_input_state()
 	modal_send_button.disabled = false
@@ -2492,8 +2522,11 @@ func _handle_cancel_input() -> void:
 	if route_choice_modal_active:
 		return
 	if modal_overlay.visible:
-		proactive_invitation_context = {}
+		_clear_proactive_talk_invite()
 		_close_modal()
+		return
+	if _has_proactive_talk_invite():
+		_reject_proactive_talk_invite()
 		return
 	if ledger_ui_visible:
 		_clear_player_input_state()
@@ -4315,6 +4348,8 @@ func _apply_visibility_modes() -> void:
 		market_flash_panel_node.visible = compact_visible and not _exchange_interior_active()
 	if is_instance_valid(news_ticker_panel_node):
 		news_ticker_panel_node.visible = compact_visible and not _exchange_interior_active()
+	if is_instance_valid(proactive_invite_panel_node):
+		proactive_invite_panel_node.visible = _has_proactive_talk_invite() and not modal_overlay.visible and not interior_mode
 	var exchange_visible := _exchange_terminal_active() and not inspection_mode
 	for node in exchange_terminal_nodes:
 		if is_instance_valid(node):
@@ -4357,6 +4392,20 @@ func _set_interior_mode(enabled: bool, house_data: Dictionary = {}) -> void:
 		current_interactable = null
 		GameState.add_toast("你回到了街上。")
 	_apply_visibility_modes()
+
+
+func _enter_default_spawn_house() -> void:
+	var door_position := WorldLayout.house_door_for_id(DEFAULT_START_HOUSE_ID)
+	player.position = _to_world_position(WorldLayout.snap_to_walkable(door_position))
+	world_camera.position = player.position
+	_set_interior_mode(true, {
+		"id": DEFAULT_START_HOUSE_ID,
+		"state_house_id": DEFAULT_START_HOUSE_ID,
+		"action_house_id": DEFAULT_START_HOUSE_ID,
+		"title": DEFAULT_START_HOUSE_TITLE,
+		"subtitle": DEFAULT_START_HOUSE_SUBTITLE,
+		"district": DEFAULT_START_HOUSE_DISTRICT
+	})
 
 
 func _current_house_action_payload() -> Dictionary:

@@ -471,6 +471,10 @@ class WorldEngine:
 
     def snapshot(self) -> dict[str, Any]:
         with self.lock:
+            if self._route_choice_required():
+                self.state["last_tick_at"] = time.time()
+                self._refresh_derived_views()
+                return copy.deepcopy(self.state)
             self._advance_realtime_clock()
             self._refresh_derived_views()
             return copy.deepcopy(self.state)
@@ -9166,6 +9170,9 @@ class WorldEngine:
         return ((a["x"] - b["x"]) ** 2 + (a["y"] - b["y"]) ** 2) ** 0.5
 
     def _advance_realtime_clock(self) -> None:
+        if self._route_choice_required():
+            self.state["last_tick_at"] = time.time()
+            return
         last_tick = float(self.state.get("last_tick_at", time.time()))
         now = time.time()
         elapsed = max(0.0, now - last_tick)

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import os
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -78,6 +79,9 @@ async def pulse_loop() -> None:
     while True:
         await asyncio.sleep(engine.pulse_interval_seconds)
         with contextlib.suppress(Exception):
+            if engine._route_choice_required():
+                engine.state["last_tick_at"] = time.time()
+                continue
             await asyncio.to_thread(engine.ai_pulse, trigger="scheduled", allow_live_llm=False)
 
 
@@ -126,6 +130,9 @@ def world_end_day(_payload: WorldActionRequest) -> dict[str, Any]:
 def ai_pulse(payload: AIPulseRequest) -> dict[str, Any]:
     trigger = str(payload.trigger or "manual")
     allow_live_llm = trigger not in {"scheduled", "scheduled_scene"}
+    if engine._route_choice_required():
+        engine.state["last_tick_at"] = time.time()
+        return {"message": "先选路线。", "world_state": engine.snapshot_cached()}
     result = engine.ai_pulse(
         trigger=trigger,
         allow_live_llm=allow_live_llm,

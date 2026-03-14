@@ -1864,6 +1864,13 @@ class WorldEngineTest(unittest.TestCase):
         self.assertEqual(int(player["cash"]), 5)
         self.assertEqual(dict(player["reputation_tracks"])["SN"], 20)
 
+    def test_snapshot_does_not_advance_time_before_route_choice(self) -> None:
+        self.engine.state["last_tick_at"] = 0.0
+        start_clock = int(self.engine.state["clock_minutes"])
+        snapshot = self.engine.snapshot()
+        self.assertTrue(bool(snapshot["player"]["route_intro_pending"]))
+        self.assertEqual(int(snapshot["clock_minutes"]), start_clock)
+
     def test_day1_privatization_timeline_updates_prices_and_history(self) -> None:
         self.engine.state["clock_minutes"] = 16 * 60 + 50
         self.engine._apply_clock_state()

@@ -101,7 +101,7 @@ class ArkClient:
             task_type="dialogue_turn",
             schema_hint='{"lines":["玩家原话","NPC回话"],"stance":"谨慎/强硬/敷衍/热心","truthfulness":0.58,"revealed_topic_ids":["market_whisper"]}',
             system_prompt=(
-                "你是《壳与市场》的 NPC 对话引擎。"
+                "你是《Aociety》的 NPC 对话引擎。"
                 "你只负责生成一轮贴近身份的中文对话。"
                 "玩家台词必须原样复述到 lines[0]。"
                 "NPC 台词放到 lines[1]。"
@@ -141,7 +141,7 @@ class ArkClient:
             task_type="news_copy",
             schema_hint='{"title":"标题","body":"正文","tags":["街区","市场"],"tone":"冷静/煽动/审慎"}',
             system_prompt=(
-                "你是《壳与市场》的城内新闻编辑。"
+                "你是《Aociety》的城内新闻编辑。"
                 "只把输入里已经存在的市场变化、街区情绪和事件包装成一条短新闻。"
                 "不要编造额外价格、余额或世界结果。"
             ),
@@ -169,7 +169,7 @@ class ArkClient:
             task_type="scene_read",
             schema_hint='{"director_note":"导演旁白","headline_title":"标题","headline_body":"一句摘要"}',
             system_prompt=(
-                "你是《壳与市场》的场景导演。"
+                "你是《Aociety》的场景导演。"
                 "只总结画面氛围、街头紧张感、交易热度和舆论温度。"
                 "不要编造成败结果。"
             ),
@@ -300,7 +300,7 @@ class ArkClient:
                 '"company_updates":[{"id":"company_id","headline":"一句状态","worker_note":"工人感受","risk_note":"风险提示","signal":"steady"}]}'
             ),
             system_prompt=(
-                "你是《壳与市场》的分钟级 AI 脉冲编辑。"
+                "你是《Aociety》的分钟级 AI 脉冲编辑。"
                 "topics 字段给出的显式议题对象是当前真实社会变量摘要。"
                 "norms 字段给出的显式规范对象是当前正在形成或被挑战的社会约束。"
                 "collective_actions 字段给出的显式集体行动对象是当前正在酝酿或执行的现实组织过程。"

@@ -4235,7 +4235,7 @@ func _present_route_choice_modal() -> void:
 	modal_is_conversation = false
 	modal_title.text = "先选路线"
 	modal_title.add_theme_color_override("font_color", Color("6b2f23"))
-	modal_body.text = "你得先决定这三天怎么活。\n\n[b]精英路线[/b]：从暗池、事件盘和高杠杆里抢窗口。\n[b]平民路线[/b]：靠街坊、工厂、码头声望和互助网活下去。\n\n选定后，前后端会按这条路线锁定起始资源、时间线和人物反应。"
+	modal_body.text = "你得先决定这三天怎么活。\n\n[b]精英路线[/b]：常规交易账户被封禁，从暗池交易终端和事件窗口里求生。\n[b]平民路线[/b]：从底层公寓醒来，靠街坊、工厂、码头的声望和互助网活下去。\n\n选定后，前后端会按这条路线接通起始资源、时间线和人物反应。"
 	modal_input.visible = false
 	modal_send_button.visible = false
 	modal_send_button.disabled = false
@@ -4634,7 +4634,7 @@ func _update_exchange_terminal(snapshot: Dictionary) -> void:
 	var buying_power := int(exchange_view.get("buying_power", 0))
 	var short_exposure := int(exchange_view.get("short_exposure", 0))
 	var player_health := int(exchange_view.get("player_health", 100))
-	var route_label := str(exchange_view.get("financial_route", "暗池精英"))
+	var route_label := str(exchange_view.get("story_route", exchange_view.get("financial_route", "未定")))
 	var account_locked := bool(exchange_view.get("account_locked", false))
 	var liquidation_pending := bool(exchange_view.get("liquidation_pending", false))
 	var account_note := str(exchange_view.get("account_lock_reason", ""))

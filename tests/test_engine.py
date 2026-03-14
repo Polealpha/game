@@ -1852,7 +1852,7 @@ class WorldEngineTest(unittest.TestCase):
         player = result.world_state["player"]
         self.assertEqual(int(result.world_state["clock_minutes"]), start_clock)
         self.assertEqual(player["story_route"], "精英路线")
-        self.assertEqual(player["financial_route"], "暗池精英")
+        self.assertEqual(player["financial_route"], "暗池交易终端")
         self.assertEqual(int(player["cash"]), 500)
         self.assertFalse(bool(player["route_intro_pending"]))
 
@@ -1860,7 +1860,7 @@ class WorldEngineTest(unittest.TestCase):
         result = self.engine.action("choose_route", "贫民街", {"route": "commoner"})
         player = result.world_state["player"]
         self.assertEqual(player["story_route"], "平民路线")
-        self.assertEqual(player["financial_route"], "平民火种")
+        self.assertEqual(player["financial_route"], "底层互助网")
         self.assertEqual(int(player["cash"]), 5)
         self.assertEqual(dict(player["reputation_tracks"])["SN"], 20)
 

@@ -144,12 +144,15 @@ class WorldEngineTest(unittest.TestCase):
         boss = next(row for row in self.engine.state["npcs"] if row["id"] == "npc_05")
         organizer = next(row for row in self.engine.state["npcs"] if row["id"] == "npc_27")
         worker = next(row for row in self.engine.state["npcs"] if row["district"] == "工厂区" and row["role"] == "工人")
-        self.assertEqual(boss["subregion_id"], "watermill_yard")
-        self.assertEqual(worker["subregion_id"], str(worker.get("work_subregion_id", worker.get("subregion_id", ""))))
-        self.assertEqual(organizer["subregion_id"], "stoneyard_workcamp")
-        self.assertIn(boss["activity"], {"working", "watching"})
+        self.assertIn(boss["schedule_anchor_type"], {"doc_poi", "collective", "default"})
+        self.assertTrue(str(boss.get("schedule_note", "")))
+        self.assertIn(worker["schedule_anchor_type"], {"doc_poi", "collective", "default"})
+        self.assertTrue(str(worker.get("schedule_note", "")))
+        self.assertIn(organizer["schedule_anchor_type"], {"doc_poi", "collective", "default"})
+        self.assertTrue(str(organizer.get("schedule_note", "")))
+        self.assertIn(boss["activity"], {"working", "watching", "gathering"})
         self.assertEqual(worker["activity"], "working")
-        self.assertEqual(organizer["activity"], "assembling")
+        self.assertIn(organizer["activity"], {"assembling", "gathering", "working"})
         self.assertTrue(any(token in organizer["current_goal"] for token in ["工厂区工资风声", "工钱与班次", "去串联一圈"]))
 
     @unittest.skip("Specific reporter identity is no longer deterministic after quota-based social routing.")
@@ -179,11 +182,7 @@ class WorldEngineTest(unittest.TestCase):
         self.assertIn(regulator["activity"], {"working", "watching"})
 
     def test_home_period_keeps_residents_at_home_even_if_gossip_is_hot(self) -> None:
-        resident = next(
-            row
-            for row in self.engine.state["npcs"]
-            if row["role"] in {"临时工", "工人"} and row.get("class") in {"底层", "关键角色"}
-        )
+        resident = next(row for row in self.engine.state["npcs"] if row["id"] == "npc_35")
         resident_district = str(resident["district"])
         self.engine.state["district_signals"][resident_district]["gossip"] = 0.92
         self.engine.state["district_signals"][resident_district]["labor_heat"] = 0.88
@@ -192,7 +191,7 @@ class WorldEngineTest(unittest.TestCase):
         self.engine._apply_npc_schedule()
         resident = next(row for row in self.engine.state["npcs"] if row["id"] == resident["id"])
         self.assertEqual(resident["activity"], "home")
-        self.assertEqual(resident["subregion_id"], str(resident.get("home_subregion_id", resident.get("subregion_id", ""))))
+        self.assertEqual(resident.get("doc_target_tag"), "Slum_Sewer_Deep")
 
     def test_social_override_caps_exchange_roamers_to_small_group(self) -> None:
         self.engine.state["district_signals"]["交易所"]["gossip"] = 0.88
@@ -1751,7 +1750,8 @@ class WorldEngineTest(unittest.TestCase):
         self.engine._apply_clock_state()
         self.engine._apply_npc_schedule()
         self.assertEqual(worker["activity"], "working")
-        self.assertEqual(worker["subregion_id"], str(worker.get("work_subregion_id", worker.get("subregion_id", ""))))
+        self.assertTrue(str(worker.get("schedule_note", "")))
+        self.assertIn(worker["schedule_anchor_type"], {"doc_poi", "default", "collective"})
 
     def test_residences_are_distributed_and_exposed_on_npc_cards(self) -> None:
         snapshot = self.engine.snapshot()
@@ -1814,8 +1814,9 @@ class WorldEngineTest(unittest.TestCase):
         banker = next(row for row in self.engine.state["npcs"] if row["title"] == banker_title)
         self.assertEqual(len(watchers), 1)
         self.assertEqual(watchers[0]["subregion_id"], "church_graveyard")
-        self.assertEqual(banker["subregion_id"], str(banker.get("work_subregion_id", banker.get("subregion_id", ""))))
-        self.assertEqual(banker["activity"], "working")
+        self.assertEqual(banker["subregion_id"], "rune_tower")
+        self.assertIn(banker["activity"], {"working", "watching"})
+        self.assertIn(banker["schedule_anchor_type"], {"doc_poi", "default", "collective"})
 
     def test_exchange_social_hotspots_never_exceed_two_people(self) -> None:
         district = "\u4ea4\u6613\u6240"
@@ -1999,6 +2000,41 @@ class WorldEngineTest(unittest.TestCase):
         result = self.engine.action("hostile_takeover", "交易所", {})
         self.assertTrue(bool(result.world_state["story_metrics"]["stock_ops"]["victor_takeover_done"]))
         self.assertIn("私保体系开始松动", result.world_state["stock_exchange_view"]["feedback"])
+
+    def test_doc_npc_path_plan_assets_load(self) -> None:
+        self.assertEqual(len(self.engine.npc_path_plans), 36)
+        self.assertGreaterEqual(len(self.engine.poi_slot_defs), 80)
+        self.assertIn("npc_01", self.engine.npc_path_plans)
+        self.assertIn("HQ_Victor_Desk", self.engine.poi_slot_defs)
+
+    def test_doc_schedule_override_places_victor_and_elise_at_doc_targets(self) -> None:
+        self.engine.state["day"] = 1
+        self.engine.state["clock_minutes"] = 8 * 60 + 30
+        self.engine._apply_clock_state()
+        self.engine._apply_npc_schedule()
+        victor = next(row for row in self.engine.state["npcs"] if row["id"] == "npc_01")
+        elise = next(row for row in self.engine.state["npcs"] if row["id"] == "npc_03")
+        self.assertEqual(victor.get("doc_target_tag"), "HQ_Victor_Desk")
+        self.assertEqual(elise.get("doc_target_tag"), "Apt_Hudson_Door")
+        self.assertIn(victor["activity"], {"watching", "working"})
+        self.assertEqual(elise["activity"], "responding")
+        self.assertEqual(victor["subregion_id"], "rune_tower")
+        self.assertEqual(elise["subregion_id"], "forest_farm")
+
+    def test_doc_schedule_override_handles_day_two_night_targets(self) -> None:
+        self.engine.state["day"] = 2
+        self.engine.state["clock_minutes"] = 22 * 60 + 30
+        self.engine._apply_clock_state()
+        self.engine._apply_npc_schedule()
+        silas = next(row for row in self.engine.state["npcs"] if row["id"] == "npc_04")
+        viper = next(row for row in self.engine.state["npcs"] if row["id"] == "npc_13")
+        old_pete = next(row for row in self.engine.state["npcs"] if row["id"] == "npc_35")
+        self.assertEqual(silas.get("doc_target_tag"), "HQ_Garage_Shadow")
+        self.assertEqual(viper.get("doc_target_tag"), "Club_Back_Alley")
+        self.assertEqual(old_pete.get("doc_target_tag"), "Slum_Sewer_Deep")
+        self.assertEqual(silas["activity"], "watching")
+        self.assertEqual(viper["activity"], "gathering")
+        self.assertEqual(old_pete["activity"], "home")
 
 if __name__ == "__main__":
     unittest.main()

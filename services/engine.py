@@ -5,6 +5,7 @@ import json
 import math
 import os
 import random
+import re
 import sys
 import threading
 import time
@@ -209,6 +210,8 @@ class WorldEngine:
         self.dialogue_templates = self._load_json("dialogue_templates.json")
         self.demo_flow = self._load_json("demo_flow.json")
         self.task_defs = self._load_json("tasks.json")
+        self.npc_path_plans = self._load_json_optional("npc_path_plans.json", {})
+        self.poi_slot_defs = self._load_json_optional("poi_slots.json", {})
         self.state: dict[str, Any] = {}
         self._snapshot_cache: dict[str, Any] = {}
         self.reset()
@@ -1120,6 +1123,12 @@ class WorldEngine:
     def _load_json(self, filename: str) -> Any:
         return json.loads((DATA_DIR / filename).read_text(encoding="utf-8"))
 
+    def _load_json_optional(self, filename: str, default: Any) -> Any:
+        path = DATA_DIR / filename
+        if not path.exists():
+            return copy.deepcopy(default)
+        return json.loads(path.read_text(encoding="utf-8"))
+
     def _flatten_subregions(self, districts: list[dict[str, Any]]) -> list[dict[str, Any]]:
         rows: list[dict[str, Any]] = []
         for district in districts:
@@ -1141,6 +1150,203 @@ class WorldEngine:
             return rows
         legacy = self._house_for_district(district_name)
         return [legacy] if legacy else []
+
+    def _doc_plan_for_npc(self, npc: dict[str, Any]) -> dict[str, Any]:
+        npc_id = str(npc.get("id", "")).strip()
+        plan = self.npc_path_plans.get(npc_id, {})
+        return plan if isinstance(plan, dict) else {}
+
+    def _doc_schedule_day_matches(self, day_key: str, day: int) -> bool:
+        value = str(day_key).strip()
+        if not value.startswith("Day_"):
+            return False
+        day_numbers = [int(token) for token in re.findall(r"\d+", value)]
+        if not day_numbers:
+            return False
+        if len(day_numbers) == 1:
+            return day_numbers[0] == day
+        return day_numbers[0] <= day <= day_numbers[-1]
+
+    @staticmethod
+    def _doc_parse_clock_label(value: str) -> int:
+        hour_text, minute_text = str(value).split(":", 1)
+        hour = int(hour_text)
+        minute = int(minute_text)
+        if hour == 24:
+            return 24 * 60
+        return hour * 60 + minute
+
+    def _doc_schedule_time_matches(self, window: str, minutes: int) -> bool:
+        value = str(window).strip()
+        if "-" not in value:
+            return False
+        start_text, end_text = [part.strip() for part in value.split("-", 1)]
+        try:
+            start_minutes = self._doc_parse_clock_label(start_text)
+            end_minutes = self._doc_parse_clock_label(end_text)
+        except Exception:
+            return False
+        if start_minutes == end_minutes:
+            return True
+        if end_minutes <= 24 * 60 and start_minutes < end_minutes:
+            return start_minutes <= minutes < end_minutes
+        normalized_minutes = minutes
+        return normalized_minutes >= start_minutes or normalized_minutes < min(end_minutes, 24 * 60)
+
+    def _doc_pick_target_tag(self, npc: dict[str, Any], entry: dict[str, Any], minutes: int) -> str:
+        target = entry.get("TargetTag")
+        if isinstance(target, list):
+            tags = [str(value).strip() for value in target if str(value).strip()]
+            if not tags:
+                return ""
+            if not bool(entry.get("Loop", False)) or len(tags) == 1:
+                return tags[0]
+            seed = sum(ord(ch) for ch in str(npc.get("id", "")))
+            index = int(minutes // 30 + seed) % len(tags)
+            return tags[index]
+        return str(target).strip()
+
+    def _doc_poi_slot(self, tag: str) -> dict[str, Any]:
+        if not tag:
+            return {}
+        slot = self.poi_slot_defs.get(str(tag), {})
+        return copy.deepcopy(slot) if isinstance(slot, dict) else {}
+
+    def _doc_action_activity(self, action: str) -> str:
+        value = str(action).strip().upper()
+        if value in {
+            "SIT_HOMELESS",
+            "SLEEP_ON_CARDBOARD",
+            "SLEEP_ON_DESK",
+            "REST_BORED",
+            "WAIT_FOR_END",
+        }:
+            return "home"
+        if value in {
+            "SPEECH_UNDERGROUND",
+            "LEAD_PROTEST",
+            "SIT_SILENTLY_PROTEST",
+            "TRUTH_BROADCAST",
+            "ARGUE_WITH_OFFICERS",
+            "ASSAULT_BUILDING",
+            "FIRE_HEAVY_WEAPON",
+        }:
+            return "protesting"
+        if value in {
+            "SECRET_MEETING",
+            "GOLF_SWING_AND_TALK",
+            "SOCIALIZE_ELEGANTLY",
+            "DRINK_BEER",
+            "DRINK_SOLITARY",
+            "DRINK_HEAVILY_DEPRESSED",
+            "TEND_BAR_AND_LISTEN",
+            "SIP_COFFEE_READ",
+            "HOST_PARTY",
+            "WAIT_FOR_TRADE",
+            "DEAL_SMUGGLE",
+            "NOD_OBSEQUIOUSLY",
+        }:
+            return "gathering"
+        if value in {
+            "LOOK_AROUND_PARANOID",
+            "LOOK_DOWN_WINDOW",
+            "PASSIVE_STANDBY",
+            "EAVESDROP_HIGH_LEVEL",
+            "STARE_AT_STOCK_TICKER",
+            "STARE_AT_HQ",
+            "OBSERVE_CROWD",
+            "LEAN_AND_WATCH",
+            "WAIT_FOR_BRIBE",
+        }:
+            return "watching"
+        if value in {
+            "SIGN_PAPERS",
+            "STAMP_DOCUMENT_QUICK",
+            "ORGANIZE_DOCUMENTS_COLD",
+            "COUNT_MONEY",
+            "COUNT_DIRTY_MONEY",
+            "TYPE_KEYBOARD_FRANTIC",
+            "TYPE_SILENTLY",
+            "TYPE_TYPEWRITER",
+            "WRITE_URGENT",
+            "COPY_DOCUMENTS",
+            "PASTE_NEWSPAPER",
+            "PASTE_RED_NEWSPAPER",
+            "PLAY_GUITAR_METAPHOR",
+            "SIGNAL_RELAY",
+            "PREPARE_BROADCAST",
+            "HACKING_TERMINAL",
+            "SEND_MESSAGE",
+            "SHRED_DOCUMENTS",
+        }:
+            return "working"
+        if value in {
+            "EVICT_TENANT",
+            "INTIMIDATE_AND_EXTORT",
+            "PATROL_WALK",
+            "ASSIST_EVICTION",
+            "READY_TO_RUN",
+        }:
+            return "responding"
+        return "working"
+
+    def _doc_sync_offset(self, npc: dict[str, Any], entry: dict[str, Any]) -> tuple[float, float]:
+        raw_sync = str(entry.get("Sync_With_NPC", "")).strip()
+        sync_numbers = re.findall(r"\d+", raw_sync)
+        sync_id = int(sync_numbers[0]) if sync_numbers else 0
+        if sync_id <= 0:
+            return 0.0, 0.0
+        try:
+            npc_num = int(str(npc.get("id", "0")).split("_")[-1])
+        except ValueError:
+            npc_num = 0
+        if npc_num == sync_id:
+            return 0.0, 0.0
+        return (-16.0, 0.0) if npc_num < sync_id else (16.0, 0.0)
+
+    def _doc_schedule_override(self, npc: dict[str, Any], minutes: int) -> dict[str, Any]:
+        plan = self._doc_plan_for_npc(npc)
+        schedules = plan.get("Daily_Schedules", {})
+        if not isinstance(schedules, dict):
+            return {}
+        day = int(self.state.get("day", 1))
+        active_entry: dict[str, Any] | None = None
+        for day_key, entries in schedules.items():
+            if not self._doc_schedule_day_matches(str(day_key), day):
+                continue
+            if not isinstance(entries, list):
+                continue
+            for entry in entries:
+                if not isinstance(entry, dict):
+                    continue
+                if self._doc_schedule_time_matches(str(entry.get("Time", "")), minutes):
+                    active_entry = entry
+                    break
+            if active_entry:
+                break
+        if not active_entry:
+            return {}
+        target_tag = self._doc_pick_target_tag(npc, active_entry, minutes)
+        slot = self._doc_poi_slot(target_tag)
+        if not slot:
+            return {}
+        offset_x, offset_y = self._doc_sync_offset(npc, active_entry)
+        action = str(active_entry.get("Action", "")).strip()
+        activity = self._doc_action_activity(action)
+        target_subregion_id = str(slot.get("subregion_id", npc.get("subregion_id", "")))
+        return {
+            "activity": activity,
+            "x": round(float(slot.get("x", npc.get("x", 0.0))) + offset_x, 1),
+            "y": round(float(slot.get("y", npc.get("y", 0.0))) + offset_y, 1),
+            "target_subregion_id": target_subregion_id,
+            "target_subregion_name": self._subregion_name(target_subregion_id),
+            "goal": str(active_entry.get("Detail", "")).strip() or str(plan.get("Identity", plan.get("Faction", ""))).strip(),
+            "current_target": target_tag,
+            "schedule_note": str(active_entry.get("Detail", "")).strip() or "%s → %s" % [str(plan.get("Name", npc.get("name", ""))), target_tag],
+            "anchor_type": "doc_poi",
+            "doc_action": action,
+            "target_tag": target_tag,
+        }
 
     def _residence_for_npc(
         self,
@@ -9596,11 +9802,14 @@ class WorldEngine:
             target = work_anchor
             activity = "working"
             home_state = "away"
+            npc["schedule_anchor_type"] = "default"
             npc["subregion_id"] = str(npc.get("work_subregion_id", npc.get("subregion_id", "")))
             npc["subregion_name"] = str(npc.get("work_subregion_name", npc.get("subregion_name", "")))
             npc["collective_action_id"] = ""
             npc["collective_role"] = ""
             npc["response_mode"] = ""
+            npc["doc_action"] = ""
+            npc["doc_target_tag"] = ""
             social_override: dict[str, Any] = {}
             if work_start <= minutes < work_end:
                 target = self._schedule_patrol_anchor(npc, work_anchor, "work", minutes)
@@ -9630,6 +9839,18 @@ class WorldEngine:
                     home_state = "evening_home"
                 else:
                     home_state = "resting"
+            doc_override = self._doc_schedule_override(npc, minutes)
+            if doc_override:
+                target = {"x": float(doc_override.get("x", target["x"])), "y": float(doc_override.get("y", target["y"]))}
+                activity = str(doc_override.get("activity", activity))
+                home_state = "away" if activity != "home" else "resting"
+                npc["subregion_id"] = str(doc_override.get("target_subregion_id", npc.get("subregion_id", "")))
+                npc["subregion_name"] = str(doc_override.get("target_subregion_name", npc.get("subregion_name", "")))
+                npc["current_goal"] = str(doc_override.get("goal", npc.get("current_goal", "")))
+                npc["current_target"] = str(doc_override.get("current_target", npc.get("current_target", "")))
+                npc["schedule_anchor_type"] = str(doc_override.get("anchor_type", "doc_poi"))
+                npc["doc_action"] = str(doc_override.get("doc_action", ""))
+                npc["doc_target_tag"] = str(doc_override.get("target_tag", ""))
             collective_override = self._collective_schedule_override(npc, minutes)
             if collective_override:
                 target = {"x": float(collective_override.get("x", target["x"])), "y": float(collective_override.get("y", target["y"]))}
@@ -9673,6 +9894,8 @@ class WorldEngine:
             npc["carry_alpha"] = carry_alpha
             if collective_override:
                 npc["schedule_note"] = str(collective_override.get("schedule_note", npc.get("schedule_note", "")))
+            elif doc_override:
+                npc["schedule_note"] = str(doc_override.get("schedule_note", npc.get("schedule_note", "")))
             elif social_override:
                 npc["schedule_note"] = str(social_override.get("schedule_note", npc.get("schedule_note", "")))
             else:

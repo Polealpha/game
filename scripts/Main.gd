@@ -128,6 +128,7 @@ var modal_trade_buttons := FlowContainer.new()
 var modal_is_conversation := false
 var route_choice_modal_active := false
 var route_choice_request_pending := false
+var startup_screen_active := true
 var compact_hud_label := RichTextLabel.new()
 var market_flash_label := RichTextLabel.new()
 var news_ticker_label := RichTextLabel.new()
@@ -149,6 +150,12 @@ var exchange_terminal_actions := VBoxContainer.new()
 var exchange_terminal_nodes: Array[CanvasItem] = []
 var minimap_panel_node: CanvasItem
 var subtitle_panel_node: CanvasItem
+var startup_overlay := ColorRect.new()
+var startup_background := TextureRect.new()
+var startup_panel := PanelContainer.new()
+var startup_title := Label.new()
+var startup_subtitle := RichTextLabel.new()
+var startup_button := Button.new()
 var toast_tween: Tween
 var modal_tween: Tween
 var last_viewport_size := Vector2.ZERO
@@ -205,30 +212,30 @@ func _ready() -> void:
 	poll_timer.wait_time = 1.6
 	poll_timer.timeout.connect(_poll_world_state)
 	add_child(poll_timer)
-	poll_timer.start()
 
 	conversation_timer.wait_time = 4.5
 	conversation_timer.timeout.connect(_trigger_proximity_conversation)
 	add_child(conversation_timer)
-	conversation_timer.start()
 
 	ai_pulse_timer.wait_time = AI_PULSE_SECONDS
 	ai_pulse_timer.timeout.connect(_on_ai_pulse_timer_timeout)
 	add_child(ai_pulse_timer)
-	ai_pulse_timer.start()
 
 	toast_timer.wait_time = 3.5
 	toast_timer.one_shot = true
 	toast_timer.timeout.connect(_show_next_toast)
 	add_child(toast_timer)
 
-	_probe_backend_health()
+	_show_startup_screen()
 
 
 func _process(delta: float) -> void:
 	var viewport_size := get_viewport_rect().size
 	if viewport_size != last_viewport_size:
 		_layout_exchange_terminal_panel()
+		_layout_startup_screen()
+	if startup_screen_active:
+		return
 	_advance_visual_clock(delta)
 	_advance_news_ticker(delta)
 	_maintain_pending_dialogue_request()
@@ -373,6 +380,75 @@ func _build_interactables() -> void:
 
 func _build_ui() -> void:
 	ui_root.set_anchors_preset(Control.PRESET_FULL_RECT)
+
+	startup_overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	startup_overlay.color = Color(0.04, 0.03, 0.02, 1.0)
+	startup_overlay.mouse_filter = Control.MOUSE_FILTER_STOP
+	startup_overlay.z_index = 300
+	ui_root.add_child(startup_overlay)
+
+	startup_background.set_anchors_preset(Control.PRESET_FULL_RECT)
+	startup_background.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	startup_background.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	startup_background.texture = _load_runtime_texture("res://assets/ui/startup_cover.png")
+	startup_background.modulate = Color(1, 1, 1, 0.92)
+	startup_overlay.add_child(startup_background)
+
+	var startup_shade := ColorRect.new()
+	startup_shade.set_anchors_preset(Control.PRESET_FULL_RECT)
+	startup_shade.color = Color(0.03, 0.02, 0.01, 0.26)
+	startup_shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	startup_overlay.add_child(startup_shade)
+
+	var startup_style := StyleBoxFlat.new()
+	startup_style.bg_color = Color(0.1, 0.07, 0.04, 0.76)
+	startup_style.border_color = Color("d9b774")
+	startup_style.border_width_left = 2
+	startup_style.border_width_top = 2
+	startup_style.border_width_right = 2
+	startup_style.border_width_bottom = 2
+	startup_style.corner_radius_top_left = 16
+	startup_style.corner_radius_top_right = 16
+	startup_style.corner_radius_bottom_left = 16
+	startup_style.corner_radius_bottom_right = 16
+	startup_panel.add_theme_stylebox_override("panel", startup_style)
+	startup_panel.size = Vector2(700, 320)
+	startup_overlay.add_child(startup_panel)
+
+	var startup_margin := MarginContainer.new()
+	startup_margin.set_anchors_preset(Control.PRESET_FULL_RECT)
+	startup_margin.add_theme_constant_override("margin_left", 34)
+	startup_margin.add_theme_constant_override("margin_top", 28)
+	startup_margin.add_theme_constant_override("margin_right", 34)
+	startup_margin.add_theme_constant_override("margin_bottom", 28)
+	startup_panel.add_child(startup_margin)
+
+	var startup_box := VBoxContainer.new()
+	startup_box.add_theme_constant_override("separation", 18)
+	startup_margin.add_child(startup_box)
+
+	startup_title.text = "Aociety"
+	startup_title.add_theme_font_size_override("font_size", 42)
+	startup_title.add_theme_color_override("font_color", Color("f8e8bf"))
+	startup_box.add_child(startup_title)
+
+	startup_subtitle.bbcode_enabled = true
+	startup_subtitle.fit_content = true
+	startup_subtitle.scroll_active = false
+	startup_subtitle.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	startup_subtitle.add_theme_color_override("default_color", Color("f4dfbf"))
+	startup_subtitle.text = "一座小镇、两条路线、三天时间。\n\n精英路线从暗池交易终端和事件窗口里求生；平民路线从底层公寓出发，靠声望、互助和行动活下去。"
+	startup_box.add_child(startup_subtitle)
+
+	var startup_spacer := Control.new()
+	startup_spacer.custom_minimum_size = Vector2(0, 10)
+	startup_box.add_child(startup_spacer)
+
+	startup_button.text = "点击启动"
+	startup_button.custom_minimum_size = Vector2(220, 54)
+	_style_button(startup_button, Color("84582c"), Color("a86c33"), Color("5d3d1f"))
+	startup_button.pressed.connect(_dismiss_startup_screen)
+	startup_box.add_child(startup_button)
 
 	var compact_margin := _make_overlay_card(Rect2(18, 18, 466, 92))
 	compact_hud_label.bbcode_enabled = true
@@ -738,6 +814,41 @@ func _build_ui() -> void:
 	modal_box.add_child(dismiss)
 	_apply_visibility_modes()
 	_update_exchange_terminal(last_snapshot)
+	_layout_startup_screen()
+
+
+func _layout_startup_screen() -> void:
+	if not is_instance_valid(startup_panel):
+		return
+	var viewport_size := get_viewport_rect().size
+	startup_panel.size = Vector2(clampf(viewport_size.x * 0.5, 620.0, 780.0), clampf(viewport_size.y * 0.45, 300.0, 380.0))
+	startup_panel.position = (viewport_size - startup_panel.size) * 0.5
+
+
+func _load_runtime_texture(resource_path: String) -> Texture2D:
+	var image := Image.new()
+	var absolute_path := ProjectSettings.globalize_path(resource_path)
+	if image.load(absolute_path) != OK:
+		return null
+	return ImageTexture.create_from_image(image)
+
+
+func _show_startup_screen() -> void:
+	startup_screen_active = true
+	if is_instance_valid(startup_overlay):
+		startup_overlay.visible = true
+		startup_button.grab_focus()
+
+
+func _dismiss_startup_screen() -> void:
+	if not startup_screen_active:
+		return
+	startup_screen_active = false
+	startup_overlay.visible = false
+	poll_timer.start()
+	conversation_timer.start()
+	ai_pulse_timer.start()
+	_probe_backend_health()
 
 
 func _layout_modal_card() -> void:

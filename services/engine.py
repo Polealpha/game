@@ -9230,6 +9230,60 @@ class WorldEngine:
             if previous_minutes < threshold <= current_minutes and not self._story_event_fired(event_id):
                 self._apply_story_timeline_event(event_id)
 
+    def _route_timeline_copy(self, event_id: str) -> dict[str, str]:
+        route = str(self._ensure_player_financial_state().get("story_route", ""))
+        is_commoner = route == "平民路线"
+        match event_id:
+            case "day1_privatization":
+                if is_commoner:
+                    return {
+                        "event_title": "公共资源的私有化围猎",
+                        "news_title": "管网私有化",
+                        "description": "17:00 管网被移交给海藻资本。贫民窟水电开始断供，AMB（市政债）跌至 A$ 42，SWC（海藻重工）升至 A$ 188。"
+                    }
+                return {
+                    "event_title": "第一波收割：管网私有化公报",
+                    "news_title": "管网私有化",
+                    "description": "17:00《管网私有化公报》发布。AMB（市政债）从 A$ 80 瞬间闪崩至 A$ 42，SWC（海藻重工）从 A$ 150 狂飙至 A$ 188。"
+                }
+            case "day2_arthur_assassination":
+                if is_commoner:
+                    return {
+                        "event_title": "亚瑟事件的消极演向",
+                        "news_title": "亚瑟被暗杀",
+                        "description": "12:00 亚瑟在广场倒下，底层失去了唯一还可能公开调查海藻资本的人。SWC 继续被抬高，AMB 被抛进恐慌。"
+                    }
+                return {
+                    "event_title": "亚瑟被暗杀",
+                    "news_title": "亚瑟被暗杀",
+                    "description": "12:00 亚瑟在广场被暗杀。SWC 暴涨至 A$ 210，AMB 暴跌至 A$ 25，警察局和镇政府开始准备弃守。"
+                }
+            case "day3_tom_self_immolation":
+                if is_commoner:
+                    return {
+                        "event_title": "汤姆的绝望坐标",
+                        "news_title": "汤姆自焚",
+                        "description": "14:00 汤姆站在证券交易所门口点燃了自己。火光把整座小镇压到临界点，底层怒火开始失控。"
+                    }
+                return {
+                    "event_title": "汤姆自焚",
+                    "news_title": "汤姆自焚",
+                    "description": "14:00 汤姆在证券交易所门口点燃了自己。SUI 被直接推到 90 以上，盘口开始进入临界波动。"
+                }
+            case "day3_zero_uprising":
+                if is_commoner:
+                    return {
+                        "event_title": "宏观对决演算",
+                        "news_title": "零号起义结算",
+                        "description": "20:00 零号起义进入结算。SWC 暴跌 60%，TSL 暴涨 50%，AMB 归零，海藻大厦和旧秩序一起坍塌。"
+                    }
+                return {
+                    "event_title": "零号起义结算",
+                    "news_title": "零号起义结算",
+                    "description": "20:00 零号起义结算。SWC 暴跌 60%，TSL 暴涨 50%，AMB 归零，旧秩序彻底崩塌。"
+                }
+        return {"event_title": event_id, "news_title": event_id, "description": ""}
+
     def _apply_story_timeline_event(self, event_id: str) -> None:
         if self._story_event_fired(event_id):
             return
@@ -9237,6 +9291,7 @@ class WorldEngine:
         shadow = dict(metrics.get("shadow_reputation", {}))
         player = self._ensure_player_financial_state()
         ops = self._stock_ops_state()
+        copy_map = self._route_timeline_copy(event_id)
         match event_id:
             case "day1_privatization":
                 self._force_stock_price(
@@ -9255,9 +9310,9 @@ class WorldEngine:
                 self.state["macro"]["media_sentiment"] = min(100, int(self.state["macro"].get("media_sentiment", 50)) + 6)
                 self._bump_district_signal("交易所", "trade_heat", 0.24)
                 self._bump_district_signal("贫民街", "fear", 0.22)
-                description = "17:00《管网私有化公报》发布。AMB（市政债）从 A$ 80 瞬间闪崩至 A$ 42，SWC（海藻重工）从 A$ 150 狂飙至 A$ 188。"
-                self._queue_story_event("day1_privatization", "第一波收割：管网私有化公报", description)
-                self._push_system_news("管网私有化", description, ["时间线", "SWC", "AMB", "私有化"])
+                description = str(copy_map.get("description", ""))
+                self._queue_story_event("day1_privatization", str(copy_map.get("event_title", "第一波收割：管网私有化公报")), description)
+                self._push_system_news(str(copy_map.get("news_title", "管网私有化")), description, ["时间线", "SWC", "AMB", "私有化"])
             case "day2_arthur_assassination":
                 self._force_stock_price(
                     "SWC",
@@ -9278,9 +9333,9 @@ class WorldEngine:
                 shadow["SUI"] = min(100.0, max(float(shadow.get("SUI", 15.0)), 30.0))
                 metrics["shadow_reputation"] = shadow
                 player["shadow_reputation"] = copy.deepcopy(shadow)
-                description = "12:00 亚瑟在广场被暗杀。SWC 暴涨至 A$ 210，AMB 暴跌至 A$ 25，警察局和镇政府开始准备弃守。"
-                self._queue_story_event("day2_arthur_assassination", "亚瑟被暗杀", description)
-                self._push_system_news("亚瑟被暗杀", description, ["时间线", "亚瑟", "SWC", "AMB"])
+                description = str(copy_map.get("description", ""))
+                self._queue_story_event("day2_arthur_assassination", str(copy_map.get("event_title", "亚瑟被暗杀")), description)
+                self._push_system_news(str(copy_map.get("news_title", "亚瑟被暗杀")), description, ["时间线", "亚瑟", "SWC", "AMB"])
             case "day3_tom_self_immolation":
                 self._bump_district_signal("交易所", "fear", 0.35)
                 self._bump_district_signal("工厂区", "labor_heat", 0.32)
@@ -9291,9 +9346,9 @@ class WorldEngine:
                 shadow["ST"] = max(float(shadow.get("ST", 1.0)), 2.5)
                 metrics["shadow_reputation"] = shadow
                 player["shadow_reputation"] = copy.deepcopy(shadow)
-                description = "14:00 汤姆在证券交易所门口点燃了自己。SUI 被直接推到 90 以上，盘口开始进入临界波动。"
-                self._queue_story_event("day3_tom_self_immolation", "汤姆自焚", description)
-                self._push_system_news("汤姆自焚", description, ["时间线", "汤姆", "SUI"])
+                description = str(copy_map.get("description", ""))
+                self._queue_story_event("day3_tom_self_immolation", str(copy_map.get("event_title", "汤姆自焚")), description)
+                self._push_system_news(str(copy_map.get("news_title", "汤姆自焚")), description, ["时间线", "汤姆", "SUI"])
             case "day3_zero_uprising":
                 swc_now = int((self._stock_by_ticker("SWC") or {}).get("current_price", 120))
                 tsl_now = int((self._stock_by_ticker("TSL") or {}).get("current_price", 45))
@@ -9321,9 +9376,9 @@ class WorldEngine:
                 shadow["ST"] = max(float(shadow.get("ST", 1.0)), 3.0)
                 metrics["shadow_reputation"] = shadow
                 player["shadow_reputation"] = copy.deepcopy(shadow)
-                description = "20:00 零号起义结算。SWC 暴跌 60%，TSL 暴涨 50%，AMB 归零，旧秩序彻底崩塌。"
-                self._queue_story_event("day3_zero_uprising", "零号起义结算", description)
-                self._push_system_news("零号起义结算", description, ["时间线", "起义", "SWC", "TSL", "AMB"])
+                description = str(copy_map.get("description", ""))
+                self._queue_story_event("day3_zero_uprising", str(copy_map.get("event_title", "零号起义结算")), description)
+                self._push_system_news(str(copy_map.get("news_title", "零号起义结算")), description, ["时间线", "起义", "SWC", "TSL", "AMB"])
         self._mark_story_event_fired(event_id)
 
     def _update_weather(self, minutes: int) -> dict[str, Any]:

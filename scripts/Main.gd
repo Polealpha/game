@@ -27,6 +27,9 @@ const NPC_AUTO_TALK_SECONDS := 12.0
 const NPC_AUTO_TALK_RADIUS := 112.0
 const DIRECT_TALK_RADIUS := 88.0
 const HOUSE_ENTRY_RADIUS := 64.0
+const NPC_WALL_CLEARANCE := 14.0
+const NPC_MIN_SEPARATION := 34.0
+const NPC_SPREAD_RADII := [0.0, 18.0, 28.0, 40.0, 54.0]
 const DEFAULT_START_HOUSE_ID := "slum_house"
 const DEFAULT_START_HOUSE_TITLE := "山坡租屋"
 const DEFAULT_START_HOUSE_DISTRICT := "贫民街"
@@ -56,6 +59,7 @@ var ai_pulse_timer := Timer.new()
 var toast_timer := Timer.new()
 
 var npc_views: Dictionary = {}
+var npc_spread_targets: Dictionary = {}
 var interactables: Array = []
 var current_interactable: InteractableView = null
 var show_hearing_debug := false
@@ -275,7 +279,7 @@ func _process(delta: float) -> void:
 	if Input.is_action_just_pressed("debug_hearing"):
 		show_hearing_debug = not show_hearing_debug
 		_refresh_npcs()
-	if Input.is_action_just_pressed("toggle_ledger_ui"):
+	if Input.is_action_just_pressed("toggle_ledger_ui") and not _text_input_active():
 		_set_ledger_ui_visible(not ledger_ui_visible)
 	if Input.is_action_just_pressed("toggle_inspect_view"):
 		_set_inspection_mode(not inspection_mode)
@@ -1685,6 +1689,17 @@ func _clear_player_input_state() -> void:
 		player.set_movement_direction(Vector2.ZERO)
 	for action in ["move_left", "move_right", "move_up", "move_down"]:
 		Input.action_release(action)
+
+
+func _text_input_active() -> bool:
+	var focus_owner := get_viewport().gui_get_focus_owner()
+	if focus_owner == null:
+		return false
+	return (
+		focus_owner is LineEdit
+		or focus_owner is TextEdit
+		or focus_owner is CodeEdit
+	)
 
 
 func _update_world_camera(delta: float) -> void:
@@ -3480,7 +3495,11 @@ func _load_music_stream(path: String) -> AudioStream:
 
 func _refresh_npcs() -> void:
 	var npc_array: Array = GameState.get_npcs()
+	npc_array.sort_custom(func(a, b):
+		return str(a.get("id", "")) < str(b.get("id", ""))
+	)
 	var seen: Dictionary = {}
+	var occupied_backend_positions: Array = []
 	for data in npc_array:
 		var npc_id := str(data.get("id", ""))
 		if npc_id.is_empty():
@@ -3494,7 +3513,17 @@ func _refresh_npcs() -> void:
 		else:
 			view = npc_views[npc_id]
 		var view_data: Dictionary = data.duplicate(true)
-		var backend_pos := _coerce_npc_backend_position(Vector2(float(data.get("x", 0.0)), float(data.get("y", 0.0))))
+		var has_previous_backend_target := npc_spread_targets.has(npc_id)
+		var previous_backend_target: Vector2 = npc_spread_targets.get(npc_id, Vector2.ZERO)
+		var backend_pos := _spread_npc_backend_position(
+			_coerce_npc_backend_position(Vector2(float(data.get("x", 0.0)), float(data.get("y", 0.0)))),
+			occupied_backend_positions,
+			npc_id,
+			previous_backend_target,
+			has_previous_backend_target
+		)
+		occupied_backend_positions.append(backend_pos)
+		npc_spread_targets[npc_id] = backend_pos
 		view_data["x"] = backend_pos.x * WORLD_VISUAL_SCALE
 		view_data["y"] = backend_pos.y * WORLD_VISUAL_SCALE
 		view_data["social_radius"] = float(data.get("social_radius", 180.0)) * WORLD_VISUAL_SCALE
@@ -3503,6 +3532,7 @@ func _refresh_npcs() -> void:
 		if not seen.has(npc_id):
 			npc_views[npc_id].queue_free()
 			npc_views.erase(npc_id)
+			npc_spread_targets.erase(npc_id)
 
 
 func _update_goods(goods: Array, inventory: Dictionary) -> void:
@@ -4290,9 +4320,44 @@ func _coerce_npc_backend_position(pos: Vector2) -> Vector2:
 		clampf(pos.x, WORLD_RECT.position.x + 6.0, WORLD_RECT.end.x - 6.0),
 		clampf(pos.y, WORLD_RECT.position.y + 6.0, WORLD_RECT.end.y - 6.0)
 	)
-	if WorldLayout.is_walkable_point(clamped):
-		return clamped
-	return WorldLayout.snap_to_walkable(clamped)
+	return WorldLayout.snap_to_walkable_with_clearance(clamped, NPC_WALL_CLEARANCE)
+
+
+func _spread_npc_backend_position(base_pos: Vector2, occupied_positions: Array, npc_id: String, previous_target: Vector2 = Vector2.ZERO, has_previous_target: bool = false) -> Vector2:
+	if occupied_positions.is_empty():
+		return base_pos
+	var best_pos := base_pos
+	var best_score := INF
+	var angle_offset := _npc_spread_angle_offset(npc_id)
+	for radius_value in NPC_SPREAD_RADII:
+		var radius := float(radius_value)
+		var steps := 1 if radius <= 0.01 else 12
+		for step in range(steps):
+			var angle := angle_offset + TAU * float(step) / float(steps)
+			var offset := Vector2.ZERO if radius <= 0.01 else Vector2.RIGHT.rotated(angle) * radius
+			var candidate := _coerce_npc_backend_position(base_pos + offset)
+			var min_distance := INF
+			for occupied in occupied_positions:
+				var occupied_pos: Vector2 = occupied
+				min_distance = min(min_distance, candidate.distance_to(occupied_pos))
+			var overlap_penalty := maxf(0.0, NPC_MIN_SEPARATION - min_distance)
+			var stability_penalty := 0.0
+			if has_previous_target:
+				stability_penalty = candidate.distance_to(previous_target) * 0.45
+			var score := overlap_penalty * 1000.0 + candidate.distance_to(base_pos) + stability_penalty
+			if score < best_score:
+				best_score = score
+				best_pos = candidate
+			if overlap_penalty <= 0.01:
+				return candidate
+	return best_pos
+
+
+func _npc_spread_angle_offset(npc_id: String) -> float:
+	var total := 0
+	for value in npc_id.to_utf8_buffer():
+		total += int(value)
+	return fposmod(float(total) * 0.61803398875, 1.0) * TAU
 
 
 func _scaled_district_rects() -> Dictionary:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from unittest import mock
 
 from services.engine import WorldEngine
 
@@ -2035,6 +2036,45 @@ class WorldEngineTest(unittest.TestCase):
         self.assertEqual(silas["activity"], "watching")
         self.assertEqual(viper["activity"], "gathering")
         self.assertEqual(old_pete["activity"], "home")
+
+    def test_realtime_clock_uses_doc_baseline_speed(self) -> None:
+        self.engine.action("choose_route", "贫民街", {"route": "commoner"})
+        self.engine.state["clock_minutes"] = 8 * 60
+        self.engine.state["last_tick_at"] = 100.0
+        self.engine.state["realtime_minute_buffer"] = 0.0
+        with mock.patch("services.engine.time.time", return_value=105.0):
+            self.engine._advance_realtime_clock()
+        self.assertEqual(int(self.engine.state["clock_minutes"]), 8 * 60 + 2)
+        self.assertAlmostEqual(float(self.engine.state["realtime_minute_buffer"]), 0.0, places=2)
+
+    def test_ap_action_jumps_to_next_segment_start(self) -> None:
+        self.engine.action("choose_route", "贫民街", {"route": "commoner"})
+        self.engine.state["clock_minutes"] = 8 * 60 + 30
+        self.engine._apply_clock_state()
+        result = self.engine.action("gather_info", "贫民街", {})
+        self.assertEqual(int(result.world_state["clock_minutes"]), 12 * 60)
+
+    def test_day2_assassination_only_fires_at_1600(self) -> None:
+        self.engine.state["day"] = 2
+        self.engine.state["clock_minutes"] = 11 * 60 + 50
+        self.engine._apply_clock_state()
+        self.engine._advance_clock(15)
+        pending_ids = [str(row["id"]) for row in self.engine.state["pending_events"]]
+        self.assertNotIn("day2_arthur_assassination", pending_ids)
+        self.engine._advance_clock(3 * 60 + 55)
+        pending_ids = [str(row["id"]) for row in self.engine.state["pending_events"]]
+        self.assertIn("day2_arthur_assassination", pending_ids)
+
+    def test_build_intel_packet_returns_doc_metadata(self) -> None:
+        self.engine.action("choose_route", "交易所", {"route": "elite"})
+        self.engine.state["clock_minutes"] = 9 * 60 + 45
+        packet = self.engine._build_intel_packet("交易所", "街头耳报")
+        self.assertIn(packet["intel_type"], {"Market_Intel", "Event_Intel", "Persona_Intel"})
+        self.assertIn("authenticity", packet)
+        self.assertIn("dissemination", packet)
+        self.assertIn("time_limit_minutes", packet)
+        self.assertGreaterEqual(int(packet["due_minutes"]), int(self.engine.state["clock_minutes"]))
+        self.assertNotIn("交换了风声", str(packet["body"]))
 
 if __name__ == "__main__":
     unittest.main()

@@ -18,6 +18,13 @@ from .ark_client import ArkClient
 from .npc_story_overrides import NPC_STORY_OVERRIDES
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+TIME_SEGMENTS: list[dict[str, Any]] = [
+    {"key": "morning", "label": "早晨", "start": 8 * 60, "end": 12 * 60, "real_seconds": 600},
+    {"key": "noon", "label": "中午", "start": 12 * 60, "end": 14 * 60, "real_seconds": 300},
+    {"key": "afternoon", "label": "下午", "start": 14 * 60, "end": 18 * 60, "real_seconds": 600},
+    {"key": "evening", "label": "晚上", "start": 18 * 60, "end": 24 * 60, "real_seconds": 900},
+]
+REALTIME_MINUTES_PER_SECOND = 0.4
 HOUSE_DEFS: dict[str, dict[str, str]] = {
     "贫民街": {
         "id": "slum_house",
@@ -328,6 +335,7 @@ class WorldEngine:
                 "light_level": 0.95,
                 "weather": {"kind": "sunny", "label": "晴天", "intensity": 0.12, "slot": -1, "day": 1},
                 "last_tick_at": time.time(),
+                "realtime_minute_buffer": 0.0,
                 "player": {
                     "cash": 1_000_000,
                     "credit": 20,
@@ -370,6 +378,8 @@ class WorldEngine:
                     "task_progress": {},
                     "active_task_id": "",
                     "completed_tasks": [],
+                    "hunger": 100.0,
+                    "stamina": 100.0,
                 },
                 "goods": goods,
                 "stocks": stocks,
@@ -5861,6 +5871,172 @@ class WorldEngine:
                 return 1.1 + min(0.9, (threshold - value) / 28.0)
             return max(0.0, 0.4 - (value - threshold) / 35.0)
         return 0.2
+
+    def _time_segment(self, minutes: int | None = None) -> dict[str, Any]:
+        clock_minutes = int(self.state.get("clock_minutes", 8 * 60) if minutes is None else minutes)
+        for segment in TIME_SEGMENTS:
+            if int(segment["start"]) <= clock_minutes < int(segment["end"]):
+                return copy.deepcopy(segment)
+        return copy.deepcopy(TIME_SEGMENTS[-1])
+
+    def _next_time_segment_start(self, minutes: int | None = None) -> int:
+        clock_minutes = int(self.state.get("clock_minutes", 8 * 60) if minutes is None else minutes)
+        for segment in TIME_SEGMENTS:
+            if clock_minutes < int(segment["start"]):
+                return int(segment["start"])
+            if int(segment["start"]) <= clock_minutes < int(segment["end"]):
+                next_index = TIME_SEGMENTS.index(segment) + 1
+                if next_index < len(TIME_SEGMENTS):
+                    return int(TIME_SEGMENTS[next_index]["start"])
+                return 24 * 60
+        return 24 * 60
+
+    def _realtime_speed_multiplier(self) -> float:
+        shadow = dict(self._story_metrics_state().get("shadow_reputation", {}))
+        st_value = float(shadow.get("ST", self.state.get("player", {}).get("shadow_reputation", {}).get("ST", 1.0)))
+        if st_value > 2.5:
+            return 1.5
+        if st_value > 2.0:
+            return 1.2
+        return 1.0
+
+    def _apply_realtime_body_drain(self, elapsed_minutes: float) -> None:
+        player = self._ensure_player_financial_state()
+        hunger = float(player.get("hunger", 100.0))
+        stamina = float(player.get("stamina", 100.0))
+        st_value = float(dict(player.get("shadow_reputation", {})).get("ST", 1.0))
+        hunger_loss = elapsed_minutes * 1.0
+        stamina_loss = elapsed_minutes * 0.5 * max(1.0, st_value)
+        if hunger < 20.0:
+            stamina_loss *= 2.0
+        player["hunger"] = round(max(0.0, hunger - hunger_loss), 1)
+        player["stamina"] = round(max(0.0, stamina - stamina_loss), 1)
+
+    def _consume_ap_block(self, reason: str = "") -> None:
+        current = int(self.state.get("clock_minutes", 8 * 60))
+        target = min(self._next_time_segment_start(current), 23 * 60 + 45)
+        if target <= current:
+            return
+        if reason:
+            self.state["scene_director_note"] = reason
+        self._advance_clock(target - current)
+
+    def _upcoming_story_event_hint(self, district: str, speaker: dict[str, Any] | None = None) -> dict[str, Any] | None:
+        day = int(self.state.get("day", 1))
+        minutes = int(self.state.get("clock_minutes", 8 * 60))
+        upcoming: list[tuple[int, str, str, str, str, list[str], str]] = []
+        if day == 1 and minutes < 17 * 60:
+            upcoming.append((17 * 60, "Market_Intel", "管网私有化公报", "今天 17:00 会发布管网私有化公报，AMB 会先承压，SWC 会先被资金抬起来。", "这不是已经发生的结果，而是盘面正在提前下注的方向。", ["AMB", "SWC", "私有化"], "交易所"))
+        if day == 2:
+            if minutes < 12 * 60:
+                upcoming.append((12 * 60, "Persona_Intel", "亚瑟的死期", "中午会先传出亚瑟被盯上的消息；如果不干预，下午 16:00 他会被抹掉。", "这条消息更适合拿去预警、救人或做威慑。", ["亚瑟", "刀疤", "暗杀"], district))
+            if minutes < 16 * 60:
+                upcoming.append((16 * 60, "Event_Intel", "刀疤的行动线", "刀疤正在朝目标移动，下午 16:00 左右会完成一次物理清除。", "这条线索属于物理事件，不属于已经落地的新闻。", ["刀疤", "突袭", "行动"], district))
+        if day == 3 and minutes < 20 * 60:
+            upcoming.append((20 * 60, "Event_Intel", "零号起义结算", "今晚 20:00 前后会进入结算窗口，市场、街区和封锁线会一起失稳。", "越接近晚上，消息的时效越短。", ["起义", "结算", "封锁"], district))
+        if not upcoming:
+            return None
+        target = sorted(upcoming, key=lambda item: item[0])[0]
+        due_minutes, intel_type, title, line, body, tags, hint_district = target
+        if district and hint_district not in {"", district, "交易所"} and district != "交易所":
+            return None
+        return {
+            "intel_type": intel_type,
+            "title": title,
+            "line": line,
+            "body": body,
+            "tags": tags,
+            "due_minutes": due_minutes,
+            "source_bias": "timeline",
+        }
+
+    def _district_market_intel(self, district: str) -> dict[str, Any] | None:
+        stock = max(self.state.get("stocks", []), key=lambda row: abs(float(row.get("change_pct", 0.0))), default=None)
+        if not isinstance(stock, dict):
+            return None
+        company = self._company_for_stock(stock) or {}
+        price = int(stock.get("current_price", 0))
+        change_pct = float(stock.get("change_pct", 0.0)) * 100.0
+        tone = "抬价" if change_pct >= 0 else "砸价"
+        return {
+            "intel_type": "Market_Intel",
+            "title": f"{stock.get('ticker', stock.get('name', '标的'))} 盘口异动",
+            "line": f"{stock.get('ticker', stock.get('name', '标的'))} 现价 {price}，盘面正在被{tone}，主因更像 {company.get('name', district or '街区')} 那边的仓位变化。",
+            "body": f"这条消息指向市场层面的短时方向，适合用于买卖、对冲或观望，不该被写成已经发生的社会新闻。",
+            "tags": ["盘口", str(stock.get("ticker", "")), str(company.get("name", ""))],
+            "due_minutes": int(self.state.get("clock_minutes", 0)) + 90,
+            "source_bias": "market",
+            "stocks_delta": {str(stock.get('name', '')): 0.04 if change_pct >= 0 else -0.04},
+        }
+
+    def _district_event_intel(self, district: str) -> dict[str, Any] | None:
+        active_actions = self._active_collective_actions_view(limit=4, district_name=district)
+        if active_actions:
+            action = dict(active_actions[0])
+            when = str(action.get("stage_label", action.get("stage", "形成中")))
+            return {
+                "intel_type": "Event_Intel",
+                "title": str(action.get("label", f"{district} 现场动向")),
+                "line": f"{district} 的 {action.get('label', '现场动向')} 现在处在“{when}”阶段，相关人群已经朝 {action.get('target_location_title', '目标点')} 聚拢。",
+                "body": f"这条消息描述的是物理现场和人群位移，适合用于赶路、回避或介入，不该被表述成抽象的“谁交换了风声”。",
+                "tags": ["现场", district, str(action.get("kind", ""))],
+                "due_minutes": int(self.state.get("clock_minutes", 0)) + 60,
+                "source_bias": "event",
+            }
+        return None
+
+    def _district_persona_intel(self, district: str, speaker: dict[str, Any] | None = None) -> dict[str, Any] | None:
+        candidate = speaker or next(
+            (npc for npc in self.state.get("npcs", []) if str(npc.get("district", "")) == district and float(npc.get("info_reliability", 0.0)) >= 0.6),
+            None,
+        )
+        if not isinstance(candidate, dict):
+            return None
+        title = f"{candidate.get('name', '某人')} 的立场缝隙"
+        line = f"{candidate.get('name', '某人')} 现在更在乎 {candidate.get('current_goal', '自身安全')}，这条线索适合用来试探、交换或威慑。"
+        return {
+            "intel_type": "Persona_Intel",
+            "title": title,
+            "line": line,
+            "body": "这属于角色秘辛或立场弱点，真正的价值在对话分支、威慑和改道，而不是直接推价格。",
+            "tags": ["人物", str(candidate.get("name", "")), str(candidate.get("role", ""))],
+            "due_minutes": int(self.state.get("clock_minutes", 0)) + 180,
+            "source_bias": "persona",
+            "speaker_id": str(candidate.get("id", "")),
+            "speaker_name": str(candidate.get("name", "")),
+        }
+
+    def _intel_metadata(self, intel_type: str, source: str, speaker: dict[str, Any] | None = None) -> dict[str, Any]:
+        authenticity = 0.55
+        dissemination = 2
+        time_limit = 120
+        source_text = str(source)
+        if intel_type == "Market_Intel":
+            time_limit = 90
+            dissemination = 2
+        elif intel_type == "Event_Intel":
+            time_limit = 60
+            dissemination = 1
+        elif intel_type == "Persona_Intel":
+            time_limit = 180
+            dissemination = 1
+        if "街头耳报" in source_text:
+            authenticity -= 0.08
+            dissemination += 1
+        if speaker:
+            role = str(speaker.get("role", ""))
+            if role in {"记者", "代理人", "银行经理", "老板"}:
+                authenticity += 0.18
+            elif role in {"工会领袖", "店主"}:
+                authenticity += 0.1
+            elif role in {"工人", "临时工"}:
+                authenticity += 0.04
+            authenticity = max(0.12, min(0.96, authenticity + (float(speaker.get("info_reliability", 0.5)) - 0.5) * 0.4))
+        return {
+            "authenticity": round(max(0.12, min(0.98, authenticity)), 3),
+            "dissemination": max(1, min(5, dissemination)),
+            "time_limit_minutes": max(30, time_limit),
+        }
 
     def _build_intel_packet(
         self,
@@ -12452,6 +12628,725 @@ class WorldEngine:
         if watch_people and secret:
             return f"{topic_summary} 我现在更盯着 {watch_people[0]} 那边会不会先露口子，毕竟真正值钱的还是那层没公开的秘密。"
         return topic_summary
+
+    def action(self, action_type: str, district: str, payload: dict[str, Any] | None = None) -> ActionResult:
+        payload = payload or {}
+        with self.lock:
+            if action_type == "choose_route":
+                return self._apply_route_selection(str(payload.get("route", "")))
+            if bool(self.state.get("ending_state", {}).get("game_over", False)):
+                ending = dict(self.state.get("ending_state", {}))
+                title = str(ending.get("title", "结局已触发"))
+                body = str(ending.get("body", "当前存档已经进入失败结局。"))
+                return ActionResult(f"{title}：{body}", self.snapshot_cached())
+            self._advance_realtime_clock()
+            self._check_stock_account_state(trigger=action_type)
+            if bool(self.state.get("ending_state", {}).get("game_over", False)):
+                ending = dict(self.state.get("ending_state", {}))
+                return ActionResult(str(ending.get("body", "当前存档已经进入失败结局。")), self._snapshot_after_refresh(rebuild_agent_prompts=False))
+            if action_type in {"work", "gather_info", "rest", "cook_meal", "search_home", "review_ledger", "collective_intervene", "buy_intel"}:
+                self._consume_ap_block(f"AP:{action_type}")
+                self._check_stock_account_state(trigger=f"{action_type}_ap")
+                if bool(self.state.get("ending_state", {}).get("game_over", False)):
+                    ending = dict(self.state.get("ending_state", {}))
+                    return ActionResult(str(ending.get("body", "当前存档已经进入失败结局。")), self._snapshot_after_refresh(rebuild_agent_prompts=False))
+            match action_type:
+                case "work":
+                    return self._do_work(district)
+                case "gather_info":
+                    return self._gather_info(district)
+                case "rest":
+                    return self._rest_at_home(district, payload)
+                case "cook_meal":
+                    return self._cook_meal(district, payload)
+                case "search_home":
+                    return self._search_home(district, payload)
+                case "review_ledger":
+                    return self._review_ledger(district, payload)
+                case "buy_goods":
+                    return self._trade_good(payload["good_name"], int(payload.get("quantity", 1)), 1, payload)
+                case "sell_goods":
+                    return self._trade_good(payload["good_name"], int(payload.get("quantity", 1)), -1, payload)
+                case "buy_stock":
+                    stock_ref = str(payload.get("stock_name") or payload.get("stock_key") or payload.get("ticker") or payload.get("id") or "")
+                    return self._trade_stock_v2(stock_ref, int(payload.get("quantity", 1)), 1, int(payload.get("leverage", 1)))
+                case "sell_stock":
+                    stock_ref = str(payload.get("stock_name") or payload.get("stock_key") or payload.get("ticker") or payload.get("id") or "")
+                    return self._trade_stock_v2(stock_ref, int(payload.get("quantity", 1)), -1, int(payload.get("leverage", 1)))
+                case "short_stock":
+                    stock_ref = str(payload.get("stock_name") or payload.get("stock_key") or payload.get("ticker") or payload.get("id") or "")
+                    return self._trade_stock_short_v2(stock_ref, int(payload.get("quantity", 1)), 1, int(payload.get("leverage", 1)))
+                case "cover_short":
+                    stock_ref = str(payload.get("stock_name") or payload.get("stock_key") or payload.get("ticker") or payload.get("id") or "")
+                    return self._trade_stock_short_v2(stock_ref, int(payload.get("quantity", 1)), -1, int(payload.get("leverage", 1)))
+                case "gift_money":
+                    return self._gift_money_to_npc(str(payload.get("npc_id", "")), int(payload.get("amount", 0)), district)
+                case "buy_intel":
+                    return self._buy_intel_from_npc(str(payload.get("npc_id", "")), int(payload.get("amount", 0)), str(payload.get("topic_id", "")), district)
+                case "fake_boom_report":
+                    return self._run_stock_special_operation("fake_boom_report")
+                case "manufacture_dock_conflict":
+                    return self._run_stock_special_operation("manufacture_dock_conflict")
+                case "emergency_bond_issue":
+                    return self._run_stock_special_operation("emergency_bond_issue")
+                case "hostile_takeover":
+                    return self._run_stock_special_operation("hostile_takeover")
+                case "policy_shield":
+                    return self._run_stock_special_operation("policy_shield")
+                case "hire_scar_cover":
+                    return self._run_stock_special_operation("hire_scar_cover")
+                case "collective_intervene":
+                    return self._intervene_collective(district, payload)
+                case "accept_task":
+                    return self._accept_task(payload["task_id"])
+                case "claim_task":
+                    return self._claim_task(payload["task_id"])
+                case _:
+                    return ActionResult("未识别的行动。", self.snapshot())
+
+    def ai_pulse(
+        self,
+        trigger: str = "scheduled",
+        scene_observation: dict[str, Any] | None = None,
+        allow_live_llm: bool | None = None,
+    ) -> ActionResult:
+        with self.lock:
+            previous_tick = self._world_tick()
+            self._advance_realtime_clock()
+            if self._world_tick() == previous_tick and bool(self.state.get("player", {}).get("stock_liquidation_pending", False)):
+                self._advance_clock(1)
+            self._check_stock_account_state(trigger=trigger)
+            if bool(self.state.get("ending_state", {}).get("game_over", False)):
+                ending = dict(self.state.get("ending_state", {}))
+                return ActionResult(str(ending.get("body", "当前存档已经进入失败结局。")), self._snapshot_after_refresh(rebuild_agent_prompts=False))
+            self._run_livelihood_tick(trigger)
+            self._settle_company_operations(trigger)
+            self._apply_institution_actions(trigger)
+            if scene_observation:
+                self._record_scene_observation(scene_observation)
+            self.state["demo_metrics"]["ai_pulses"] = int(self.state["demo_metrics"].get("ai_pulses", 0)) + 1
+            self._generate_ai_pulse(trigger=trigger, allow_live_llm_override=allow_live_llm)
+            var_allow_social_llm = self._allow_live_pulse_llm(trigger) if allow_live_llm is None else bool(allow_live_llm)
+            self._run_agent_social_turns(scene_observation or {}, allow_llm=var_allow_social_llm)
+            self._apply_intraday_market_move(reason="ai_pulse", decay=0.72)
+            self._decay_district_signals()
+            self._refresh_derived_views()
+            return ActionResult("街头耳语刷新了。", self.snapshot())
+
+    def _gather_info(self, district: str) -> ActionResult:
+        player = self.state["player"]
+        if player["cash"] < 2:
+            return ActionResult("你连买消息的铜币都不够。", self.snapshot())
+        player["cash"] -= 2
+        intel = self._build_intel_packet(district, source="街头耳报")
+        self._apply_intel_packet(intel, to_player=True, promote_news=True, intensity=1.0)
+        self._increment_task_progress("gather_info", "any", 1)
+        self.state["demo_metrics"]["intel_actions"] = int(self.state["demo_metrics"].get("intel_actions", 0)) + 1
+        self._bump_district_signal(district, "gossip", 0.3)
+        self._bump_district_signal(district, "fear", 0.08 if "恐慌" in intel.get("tags", []) else 0.0)
+        self._apply_intraday_market_move(reason="gather_info", decay=0.74)
+        return ActionResult(f"你记下了一条还未落地的情报：{intel['line']}", self.snapshot())
+
+    def _rest_at_home(self, district: str, payload: dict[str, Any]) -> ActionResult:
+        player = self.state["player"]
+        player["credit"] = min(100, player["credit"] + 2)
+        player["reputation"] = min(100, player["reputation"] + 1)
+        player["rumors"] = player["rumors"][-5:]
+        player["hunger"] = min(100.0, float(player.get("hunger", 100.0)) + 12.0)
+        player["stamina"] = min(100.0, float(player.get("stamina", 100.0)) + 18.0)
+        house_title = str(payload.get("house_title", "屋子"))
+        self.state["global_news"].insert(
+            0,
+            {
+                "title": f"{district} 夜灯渐稳",
+                "body": f"你在 {house_title} 的木床上缓了一阵，脑子总算没那么紧了。",
+                "tags": ["休整", district],
+                "scope": "district",
+            },
+        )
+        self.state["global_news"] = self.state["global_news"][:8]
+        return ActionResult(f"你在 {house_title} 里缓了一口气。", self.snapshot())
+
+    def _cook_meal(self, district: str, payload: dict[str, Any]) -> ActionResult:
+        player = self.state["player"]
+        inventory = player["goods_inventory"]
+        if inventory.get("面包", 0) > 0:
+            inventory["面包"] -= 1
+            meal_note = "你把面包热了热，又煮了一小锅浓汤。"
+        else:
+            if player["cash"] < 3:
+                return ActionResult("炉台有火，但你连做饭的钱都快没了。", self.snapshot())
+            player["cash"] -= 3
+            meal_note = "你掏出 3 铜币凑出了一顿热饭。"
+        player["credit"] = min(100, player["credit"] + 1)
+        player["hunger"] = min(100.0, float(player.get("hunger", 100.0)) + 22.0)
+        return ActionResult(meal_note, self.snapshot())
+
+    def _search_home(self, district: str, payload: dict[str, Any]) -> ActionResult:
+        player = self.state["player"]
+        roll = self.random.random()
+        if roll < 0.34:
+            coins = self.random.randint(2, 5)
+            player["cash"] += coins
+            return ActionResult(f"你在储物箱底翻出 {coins} 枚铜币。", self.snapshot())
+        if roll < 0.68:
+            player["goods_inventory"]["罐头"] = player["goods_inventory"].get("罐头", 0) + 1
+            return ActionResult("你在旧木柜里翻出一听还没过期的罐头。", self.snapshot())
+        intel = self._build_intel_packet(district, source="夹层旧纸条")
+        self._apply_intel_packet(intel, to_player=True, promote_news=False, intensity=0.72)
+        return ActionResult("你在夹层里翻出一张旧纸条，上面写着一条尚未证实的线索。", self.snapshot())
+
+    def _review_ledger(self, district: str, payload: dict[str, Any]) -> ActionResult:
+        player = self.state["player"]
+        player["credit"] = min(100, player["credit"] + 1)
+        intel = self._build_intel_packet(district, source="账本勾稽")
+        self._apply_intel_packet(intel, to_player=True, promote_news=False, intensity=0.68)
+        self.state["last_dialogue"] = {
+            "title": "账桌前的新线索",
+            "body": f"[b]你[/b]：把今天看到的价格、传闻和人情重新对了一遍。\n\n[i]{intel['line']}[/i]",
+            "tone": "conversation",
+        }
+        return ActionResult("你把价格、情报和人情重新理顺了一遍。", self.snapshot())
+
+    def _build_intel_packet(
+        self,
+        district: str,
+        source: str,
+        speaker: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        def stock_name_for_ticker(ticker: str) -> str:
+            for row in self.state.get("stocks", []):
+                if str(row.get("ticker", "")) == ticker:
+                    return str(row.get("name", ticker))
+            return ticker
+
+        candidate = (
+            self._upcoming_story_event_hint(district, speaker)
+            or self._district_event_intel(district)
+            or self._district_market_intel(district)
+            or self._district_persona_intel(district, speaker)
+        )
+        if not candidate:
+            candidate = {
+                "intel_type": "Market_Intel" if district == "交易所" else "Event_Intel",
+                "title": f"{district} 的临场消息",
+                "line": f"{district} 这边的动静还没落地，但已经有人开始提前换仓和换站位。",
+                "body": f"{source} 提醒你：这条消息更像对下一段时间的预判，而不是已经发生完的结果。",
+                "tags": [district, "情报"],
+                "due_minutes": int(self.state.get("clock_minutes", 0)) + 90,
+            }
+        intel_type = str(candidate.get("intel_type", "Event_Intel"))
+        metadata = self._intel_metadata(intel_type, source, speaker)
+        due_minutes = int(candidate.get("due_minutes", int(self.state.get("clock_minutes", 0)) + int(metadata["time_limit_minutes"])))
+        time_limit = max(30, int(metadata["time_limit_minutes"]))
+        authenticity = float(metadata["authenticity"])
+        dissemination = int(metadata["dissemination"])
+        if float(self._story_metrics_state().get("shadow_reputation", {}).get("ST", 1.0)) > 2.0 and self.random.random() < 0.3:
+            authenticity = max(0.18, authenticity - 0.18)
+            candidate["tags"] = [*list(candidate.get("tags", [])), "Uncertain"]
+        line = str(candidate.get("line", "")).strip()
+        body = str(candidate.get("body", "")).strip() or line
+        stocks_delta = {str(key): float(value) for key, value in dict(candidate.get("stocks_delta", {})).items()}
+        if intel_type == "Market_Intel" and not stocks_delta:
+            market = self._district_market_intel(district) or {}
+            stocks_delta = {str(key): float(value) for key, value in dict(market.get("stocks_delta", {})).items()}
+        tags = list(dict.fromkeys([str(tag) for tag in candidate.get("tags", []) if str(tag).strip()]))
+        if intel_type == "Market_Intel":
+            tags.extend([tag for tag in ["市场内幕", "交易窗口"] if tag not in tags])
+        elif intel_type == "Event_Intel":
+            tags.extend([tag for tag in ["物理事件", "行动窗口"] if tag not in tags])
+        else:
+            tags.extend([tag for tag in ["角色秘辛", "威慑材料"] if tag not in tags])
+        return {
+            "id": f"intel_{self.state['day']}_{len(self.state.get('rumor_log', []))}_{self.random.randint(100, 999)}",
+            "district": district,
+            "source": source,
+            "speaker_id": str(speaker.get("id", "")) if speaker else str(candidate.get("speaker_id", "")),
+            "speaker_name": str(speaker.get("name", "")) if speaker else str(candidate.get("speaker_name", "")),
+            "title": str(candidate.get("title", f"{district} 情报")),
+            "line": line,
+            "body": body,
+            "tags": tags,
+            "scope": "city" if dissemination >= 4 or intel_type == "Market_Intel" else "district",
+            "goods_delta": {str(key): float(value) for key, value in dict(candidate.get("goods_delta", {})).items()},
+            "stocks_delta": {stock_name_for_ticker(str(key)): float(value) for key, value in stocks_delta.items()},
+            "macro_delta": {str(key): float(value) for key, value in dict(candidate.get("macro_delta", {})).items()},
+            "family_delta": {str(key): float(value) for key, value in dict(candidate.get("family_delta", {})).items()},
+            "topic_kind": {"Market_Intel": "asset", "Event_Intel": "panic", "Persona_Intel": "identity"}.get(intel_type, "public"),
+            "intel_type": intel_type,
+            "authenticity": round(max(0.12, min(0.98, authenticity)), 3),
+            "dissemination": max(1, min(5, dissemination)),
+            "time_limit_minutes": time_limit,
+            "due_minutes": due_minutes,
+            "uncertain": "Uncertain" in tags,
+        }
+
+    def _record_topic_from_packet(self, packet: dict[str, Any], intensity: float) -> dict[str, Any]:
+        kind = self._topic_kind_from_packet(packet)
+        target_bucket, target_name, _target_value = self._packet_primary_target(packet)
+        topic_id = self._topic_signature_from_packet(packet, kind, target_name)
+        label = self._topic_label_from_packet(packet, kind, target_name)
+        tick = self._world_tick()
+        topic_registry = list(self.state.get("topic_registry", []))
+        topic = next((row for row in topic_registry if str(row.get("id", "")) == topic_id), None)
+        source = str(packet.get("source", "")).strip() or "街头消息"
+        summary = str(packet.get("line", "")).strip() or str(packet.get("body", "")).strip() or label
+        speaker_id = str(packet.get("speaker_id", "")).strip()
+        credibility = float(packet.get("authenticity", self._topic_credibility_hint(packet)))
+        dissemination = int(packet.get("dissemination", 2))
+        due_minutes = int(packet.get("due_minutes", int(self.state.get("clock_minutes", 0)) + int(packet.get("time_limit_minutes", 120))))
+        time_limit = int(packet.get("time_limit_minutes", max(30, due_minutes - int(self.state.get("clock_minutes", 0)))))
+        intel_type = str(packet.get("intel_type", "")).strip() or kind
+        if topic is None:
+            topic = {
+                "id": topic_id,
+                "signature": topic_id,
+                "kind": kind,
+                "intel_type": intel_type,
+                "status": "emerging",
+                "scope": str(packet.get("scope", "district")) or "district",
+                "district": str(packet.get("district", "")),
+                "label": label,
+                "summary": summary,
+                "stance": self._topic_stance_from_packet(packet),
+                "target_bucket": target_bucket,
+                "target_name": target_name,
+                "origin": source,
+                "latest_source": source,
+                "heat": round(max(0.12, min(1.0, 0.28 + intensity * 0.38)), 3),
+                "intensity": round(max(0.05, min(1.0, intensity)), 3),
+                "credibility": round(max(0.1, min(0.98, credibility)), 3),
+                "authenticity": round(max(0.1, min(0.98, credibility)), 3),
+                "dissemination": dissemination,
+                "novelty": round(max(0.15, min(1.0, 0.34 + intensity * 0.42)), 3),
+                "suppression_level": 0.08,
+                "mention_count": 1,
+                "spread_count": max(1, dissemination),
+                "source_count": 1,
+                "sources": [source],
+                "speaker_ids": [speaker_id] if speaker_id else [],
+                "tags": list(dict.fromkeys([str(tag) for tag in packet.get("tags", [])])),
+                "recent_lines": [summary],
+                "goods_delta": {str(key): float(value) for key, value in dict(packet.get("goods_delta", {})).items()},
+                "stocks_delta": {str(key): float(value) for key, value in dict(packet.get("stocks_delta", {})).items()},
+                "family_delta": {str(key): float(value) for key, value in dict(packet.get("family_delta", {})).items()},
+                "macro_delta": {str(key): float(value) for key, value in dict(packet.get("macro_delta", {})).items()},
+                "first_seen_day": int(self.state.get("day", 1)),
+                "first_seen_minute": int(self.state.get("clock_minutes", 0)),
+                "last_seen_day": int(self.state.get("day", 1)),
+                "last_seen_minute": int(self.state.get("clock_minutes", 0)),
+                "first_seen_tick": tick,
+                "last_seen_tick": tick,
+                "time_limit_minutes": time_limit,
+                "due_minutes": due_minutes,
+                "uncertain": bool(packet.get("uncertain", False)),
+            }
+            topic_registry.append(topic)
+        else:
+            topic["status"] = "active"
+            topic["scope"] = str(packet.get("scope", topic.get("scope", "district"))) or "district"
+            topic["district"] = str(packet.get("district", topic.get("district", "")))
+            topic["label"] = str(topic.get("label", "")) or label
+            topic["summary"] = summary
+            topic["stance"] = self._topic_stance_from_packet(packet)
+            topic["latest_source"] = source
+            topic["target_bucket"] = target_bucket or str(topic.get("target_bucket", ""))
+            topic["target_name"] = target_name or str(topic.get("target_name", ""))
+            topic["intel_type"] = intel_type or str(topic.get("intel_type", kind))
+            topic["heat"] = round(max(0.06, min(1.0, float(topic.get("heat", 0.0)) * 0.68 + 0.26 * intensity + 0.04)), 3)
+            topic["intensity"] = round(max(0.05, min(1.0, float(topic.get("intensity", 0.0)) * 0.55 + intensity * 0.75)), 3)
+            topic["credibility"] = round(max(0.1, min(0.98, float(topic.get("credibility", 0.4)) * 0.74 + credibility * 0.26)), 3)
+            topic["authenticity"] = topic["credibility"]
+            topic["dissemination"] = max(int(topic.get("dissemination", 1)), dissemination)
+            topic["novelty"] = round(max(0.04, min(1.0, float(topic.get("novelty", 0.0)) * 0.58 + 0.18 * intensity + 0.06)), 3)
+            topic["suppression_level"] = round(max(0.0, min(1.0, float(topic.get("suppression_level", 0.08)) * 0.92)), 3)
+            topic["mention_count"] = int(topic.get("mention_count", 0)) + 1
+            topic["spread_count"] = int(topic.get("spread_count", 0)) + max(1, dissemination - 1)
+            topic["time_limit_minutes"] = min(int(topic.get("time_limit_minutes", time_limit)), time_limit)
+            topic["due_minutes"] = min(int(topic.get("due_minutes", due_minutes)), due_minutes)
+            topic["uncertain"] = bool(topic.get("uncertain", False) or packet.get("uncertain", False))
+            sources = [str(value) for value in topic.get("sources", []) if str(value).strip()]
+            if source and source not in sources:
+                sources.append(source)
+            topic["sources"] = sources[:6]
+            topic["source_count"] = len(topic["sources"])
+            speaker_ids = [str(value) for value in topic.get("speaker_ids", []) if str(value).strip()]
+            if speaker_id and speaker_id not in speaker_ids:
+                speaker_ids.append(speaker_id)
+            topic["speaker_ids"] = speaker_ids[:8]
+            topic["tags"] = list(dict.fromkeys([*list(topic.get("tags", [])), *[str(tag) for tag in packet.get("tags", [])]]))[:12]
+            topic["recent_lines"] = [summary, *[str(value) for value in topic.get("recent_lines", []) if str(value).strip() and str(value) != summary]][:4]
+            topic["goods_delta"] = self._merge_delta_map(topic.get("goods_delta", {}), packet.get("goods_delta", {}))
+            topic["stocks_delta"] = self._merge_delta_map(topic.get("stocks_delta", {}), packet.get("stocks_delta", {}))
+            topic["family_delta"] = self._merge_delta_map(topic.get("family_delta", {}), packet.get("family_delta", {}))
+            topic["macro_delta"] = self._merge_delta_map(topic.get("macro_delta", {}), packet.get("macro_delta", {}))
+            topic["last_seen_day"] = int(self.state.get("day", 1))
+            topic["last_seen_minute"] = int(self.state.get("clock_minutes", 0))
+            topic["last_seen_tick"] = tick
+        current_minutes = int(self.state.get("clock_minutes", 0))
+        if int(topic.get("due_minutes", current_minutes + 1)) <= current_minutes:
+            topic["status"] = "expired"
+            topic["heat"] = round(max(0.02, float(topic.get("heat", 0.0)) * 0.45), 3)
+        elif float(topic.get("heat", 0.0)) >= 0.62:
+            topic["status"] = "active"
+        elif int(topic.get("mention_count", 0)) >= 2:
+            topic["status"] = "warming"
+        else:
+            topic["status"] = "emerging"
+        topic_registry.sort(key=lambda row: (float(row.get("heat", 0.0)), float(row.get("credibility", 0.0))), reverse=True)
+        self.state["topic_registry"] = topic_registry[:24]
+        return copy.deepcopy(topic)
+
+    def _topic_to_talk_topic(self, topic: dict[str, Any]) -> dict[str, Any]:
+        district_name = str(topic.get("district", ""))
+        scope = str(topic.get("scope", "district"))
+        if scope == "city":
+            npc_ids = [str(npc.get("id", "")) for npc in self.state.get("npcs", [])]
+        elif district_name:
+            npc_ids = [str(npc.get("id", "")) for npc in self.state.get("npcs", []) if str(npc.get("district", "")) == district_name]
+        else:
+            npc_ids = []
+        kind = str(topic.get("kind", "rumor"))
+        approaches = ["cautious", "friendly", "hardball"]
+        if kind in {"finance", "asset"}:
+            approaches = ["cautious", "hardball", "friendly"]
+        elif kind in {"labor", "supply"}:
+            approaches = ["friendly", "cautious", "hardball"]
+        return {
+            "id": str(topic.get("id", "")),
+            "kind": kind,
+            "intel_type": str(topic.get("intel_type", kind)),
+            "district": district_name,
+            "label": str(topic.get("label", "")),
+            "summary": str(topic.get("summary", "")),
+            "heat": round(float(topic.get("heat", 0.0)), 3),
+            "credibility": round(float(topic.get("credibility", 0.0)), 3),
+            "authenticity": round(float(topic.get("authenticity", topic.get("credibility", 0.0))), 3),
+            "novelty": round(float(topic.get("novelty", 0.0)), 3),
+            "dissemination": int(topic.get("dissemination", 1)),
+            "time_limit_minutes": int(topic.get("time_limit_minutes", 0)),
+            "due_minutes": int(topic.get("due_minutes", 0)),
+            "spread_count": int(topic.get("spread_count", 0)),
+            "status": str(topic.get("status", "")),
+            "uncertain": bool(topic.get("uncertain", False)),
+            "tags": list(topic.get("tags", [])),
+            "npc_ids": npc_ids,
+            "approaches": approaches,
+            "impacts": {
+                "goods": copy.deepcopy(topic.get("goods_delta", {})),
+                "stocks": copy.deepcopy(topic.get("stocks_delta", {})),
+                "macro": copy.deepcopy(topic.get("macro_delta", {})),
+                "families": copy.deepcopy(topic.get("family_delta", {})),
+            },
+            "source_topic_id": str(topic.get("id", "")),
+        }
+
+    def _rebuild_talk_topics(self) -> None:
+        topics: list[dict[str, Any]] = [copy.deepcopy(topic) for topic in self._active_public_topics(limit=6)]
+        for district in self.state["districts"]:
+            district_name = str(district.get("name", ""))
+            signals = self.state["district_signals"].get(district_name, {})
+            local_npcs = [npc for npc in self.state["npcs"] if npc.get("district") == district_name]
+            topic_npc_ids = [npc["id"] for npc in local_npcs]
+            if not district_name:
+                continue
+            trade_heat = float(signals.get("trade_heat", 0.0))
+            labor_heat = float(signals.get("labor_heat", 0.0))
+            gossip = float(signals.get("gossip", 0.0))
+            fear = float(signals.get("fear", 0.0))
+            liquidity = float(signals.get("liquidity", 0.0))
+            if trade_heat > 0.35:
+                good = max(self.state["goods"], key=lambda row: abs(float(self.state["market_pressure"]["goods"].get(row["name"], 0.0))))
+                topics.append(
+                    {
+                        "id": f"topic_trade_{district_name}",
+                        "kind": "trade",
+                        "district": district_name,
+                        "label": f"{district_name} 的 {good['name']} 价差",
+                        "summary": f"{district_name} 正有人围着 {good['name']} 讨价还价，货和铜币都开始挪位置了。",
+                        "heat": round(trade_heat, 3),
+                        "credibility": 0.62,
+                        "tags": ["交易", district_name, good["name"]],
+                        "npc_ids": topic_npc_ids,
+                        "approaches": ["cautious", "friendly", "hardball"],
+                        "impacts": {"goods": {good["name"]: 0.06}, "stocks": {}, "macro": {"economy_heat": 1.0}, "families": {}},
+                    }
+                )
+            if labor_heat > 0.28:
+                topics.append(
+                    {
+                        "id": f"topic_job_{district_name}",
+                        "kind": "labor",
+                        "district": district_name,
+                        "label": f"{district_name} 的工时和班次",
+                        "summary": f"{district_name} 的班次开始发紧，工资、轮班和谁先扛不住都写在脸上了。",
+                        "heat": round(labor_heat, 3),
+                        "credibility": 0.66,
+                        "tags": ["工时", district_name],
+                        "npc_ids": [npc["id"] for npc in local_npcs if str(npc.get("role", "")) in {"工人", "临时工", "店主", "老板"}],
+                        "approaches": ["friendly", "cautious", "hardball"],
+                        "impacts": {"goods": {}, "stocks": {}, "macro": {"worker_unrest": 1.0 if district.get("state") in {"tense", "unrest"} else -0.5}, "families": {}},
+                    }
+                )
+            if gossip > 0.22 or fear > 0.2:
+                topics.append(
+                    {
+                        "id": f"topic_panic_{district_name}",
+                        "kind": "panic",
+                        "district": district_name,
+                        "label": f"{district_name} 的传闻正在扩散",
+                        "summary": f"{district_name} 这边开始有人提前打听坏消息，耳语变密，但还没到全镇皆知的程度。",
+                        "heat": round(gossip + fear, 3),
+                        "credibility": 0.48,
+                        "tags": ["传闻", district_name],
+                        "npc_ids": topic_npc_ids,
+                        "approaches": ["cautious", "hardball", "friendly"],
+                        "impacts": {
+                            "goods": {"罐头": 0.04} if district_name != "工厂区" else {"煤": 0.05},
+                            "stocks": {},
+                            "macro": {"worker_unrest": 1.4, "media_sentiment": 0.8},
+                            "families": {},
+                        },
+                    }
+                )
+            if liquidity > 0.22 or district_name == "交易所":
+                hot_stock = max(self.state["stocks"], key=lambda row: abs(float(self.state["market_pressure"]["stocks"].get(row["name"], 0.0))))
+                topics.append(
+                    {
+                        "id": f"topic_asset_{district_name}",
+                        "kind": "asset",
+                        "district": district_name,
+                        "label": f"{hot_stock['ticker']} 的盘口异动",
+                        "summary": f"{hot_stock['ticker']} 这边的挂单开始失衡，先动手的人更像在抢下一段的价差窗口。",
+                        "heat": round(max(liquidity, trade_heat, 0.34), 3),
+                        "credibility": 0.72,
+                        "tags": ["盘口", hot_stock["ticker"], district_name],
+                        "npc_ids": topic_npc_ids,
+                        "approaches": ["cautious", "hardball", "friendly"],
+                        "impacts": {"goods": {}, "stocks": {str(hot_stock["name"]): 0.05}, "macro": {"economy_heat": 0.6}, "families": {}},
+                    }
+                )
+        for company in self.state.get("company_states", []):
+            wage_pressure = float(company.get("wage_pressure", 0.0))
+            financing_pressure = float(company.get("financing_pressure", 0.0))
+            if max(wage_pressure, financing_pressure) < 45:
+                continue
+            company_npc_ids = [
+                npc["id"]
+                for npc in self.state["npcs"]
+                if str(npc.get("company_id", "")) == str(company.get("id", "")) or (not str(npc.get("company_id", "")) and str(npc.get("district", "")) == str(company.get("district", "")))
+            ]
+            topics.append(
+                {
+                    "id": f"topic_company_{company.get('id', '')}",
+                    "kind": "company",
+                    "district": str(company.get("district", "")),
+                    "label": f"{company.get('name', '公司')} 的账和人",
+                    "summary": f"{company.get('name', '这家公司')} 眼下库存、工资和融资一起扯着，谁都不肯先认怂。",
+                    "heat": round(max(wage_pressure, financing_pressure) / 100.0 + 0.18, 3),
+                    "credibility": 0.74,
+                    "tags": ["公司", str(company.get("name", "")), str(company.get("stock_name", ""))],
+                    "npc_ids": company_npc_ids,
+                    "approaches": ["friendly", "cautious", "hardball"],
+                    "impacts": {
+                        "goods": self._company_topic_goods_impact(company),
+                        "stocks": {str(company.get("stock_name", "")): 0.05} if str(company.get("stock_name", "")) else {},
+                        "macro": {"worker_unrest": 0.9 if wage_pressure >= financing_pressure else 0.2, "economy_heat": -0.4},
+                        "families": {str(company.get("family_owner", "")): 0.05} if str(company.get("family_owner", "")) else {},
+                    },
+                }
+            )
+        for npc in self.state["npcs"]:
+            topics.extend(self._npc_personal_topics(npc))
+        topics.extend(self._institution_topics())
+        topics.sort(key=lambda item: (float(item.get("heat", 0.0)), float(item.get("credibility", 0.0))), reverse=True)
+        self.state["talk_topics"] = topics[:20]
+
+    def _advance_realtime_clock(self) -> None:
+        now = time.time()
+        if self._route_choice_required():
+            self.state["last_tick_at"] = now
+            self.state["realtime_minute_buffer"] = 0.0
+            return
+        last_tick = float(self.state.get("last_tick_at", now))
+        elapsed_seconds = max(0.0, now - last_tick)
+        self.state["last_tick_at"] = now
+        if elapsed_seconds <= 0.0:
+            return
+        elapsed_minutes = elapsed_seconds * REALTIME_MINUTES_PER_SECOND * self._realtime_speed_multiplier()
+        self._apply_realtime_body_drain(elapsed_minutes)
+        buffer = float(self.state.get("realtime_minute_buffer", 0.0)) + elapsed_minutes
+        whole_minutes = int(buffer)
+        self.state["realtime_minute_buffer"] = round(buffer - whole_minutes, 4)
+        if whole_minutes > 0:
+            self._advance_clock(whole_minutes)
+
+    def _advance_clock(self, minutes: int) -> None:
+        if minutes <= 0:
+            return
+        current = int(self.state.get("clock_minutes", 8 * 60))
+        next_clock = min(23 * 60 + 45, current + minutes)
+        self.state["clock_minutes"] = next_clock
+        self._apply_clock_state()
+        self._apply_story_timeline_between(current, next_clock)
+        self._apply_collective_followups(minutes)
+        self._apply_npc_schedule()
+
+    def _apply_clock_state(self) -> None:
+        minutes = int(self.state.get("clock_minutes", 8 * 60))
+        weather = self._update_weather(minutes)
+        segment = self._time_segment(minutes)
+        segment_key = str(segment.get("key", "morning"))
+        legacy_period = {
+            "morning": "day",
+            "noon": "day",
+            "afternoon": "day",
+            "evening": "night",
+        }.get(segment_key, "day")
+        base_light = {
+            "morning": 0.96,
+            "noon": 1.0,
+            "afternoon": 0.78,
+            "evening": 0.42,
+        }.get(segment_key, 0.9)
+        weather_dim = {
+            "sunny": 0.0,
+            "breezy": 0.01,
+            "cloudy": 0.04,
+            "overcast": 0.08,
+            "rain": 0.11,
+            "snow": 0.09,
+            "dust": 0.14,
+        }.get(str(weather.get("kind", "sunny")), 0.0)
+        self.state["time_period"] = legacy_period
+        self.state["time_segment"] = segment_key
+        self.state["time_segment_label"] = str(segment.get("label", "早晨"))
+        self.state["light_level"] = round(max(0.18, min(1.0, base_light - weather_dim)), 2)
+        remaining = max(0, int(segment.get("end", 24 * 60)) - minutes)
+        self.state["twilight_buffer_active"] = remaining <= 1
+
+    def _apply_story_timeline_between(self, previous_minutes: int, current_minutes: int) -> None:
+        day = int(self.state.get("day", 1))
+        checkpoints: list[tuple[int, str]] = []
+        if day == 1:
+            checkpoints = [(17 * 60, "day1_privatization")]
+        elif day == 2:
+            checkpoints = [(16 * 60, "day2_arthur_assassination")]
+        elif day == 3:
+            checkpoints = [(14 * 60, "day3_tom_self_immolation"), (20 * 60, "day3_zero_uprising")]
+        for threshold, event_id in checkpoints:
+            if previous_minutes < threshold <= current_minutes and not self._story_event_fired(event_id):
+                self._apply_story_timeline_event(event_id)
+
+    def _story_event_schedule(self, event_id: str) -> tuple[int, int] | None:
+        mapping = {
+            "day1_privatization": (1, 17 * 60),
+            "day2_arthur_assassination": (2, 16 * 60),
+            "day3_tom_self_immolation": (3, 14 * 60),
+            "day3_zero_uprising": (3, 20 * 60),
+        }
+        return mapping.get(str(event_id))
+
+    def _npc_brief_cadence_pulses(self, npc: dict[str, Any], observation: dict[str, Any], nearby_ids: set[str] | None = None) -> int:
+        npc_id = str(npc.get("id", ""))
+        nearby = npc_id in (nearby_ids or set())
+        current_district = str(observation.get("current_district", "")) if isinstance(observation, dict) else ""
+        npc_district = str(npc.get("district", ""))
+        class_name = str(npc.get("class", ""))
+        topic_heat = 0.0
+        for topic in self._talk_topics_for_npc(npc_id, npc_district):
+            scoped_heat = float(topic.get("heat", 0.0))
+            topic_npc_ids = [str(value) for value in topic.get("npc_ids", [])]
+            if topic_npc_ids and npc_id not in topic_npc_ids:
+                scoped_heat *= 0.55
+            if not nearby and npc_district != current_district and str(topic.get("kind", "")) in {"company", "institution"}:
+                scoped_heat *= 0.25
+            topic_heat = max(topic_heat, scoped_heat)
+        profile = self.state.get("npc_truth_profile", {}).get(npc_id, {})
+        economic_pressure = float(profile.get("economic_pressure", 0.0))
+        memory = self._npc_player_memory(npc)
+        recent_player_attention = int(memory.get("talk_count", 0)) > 0 and int(self.state.get("day", 1)) - int(memory.get("last_seen_day", 0)) <= 1
+        district_signals = self.state.get("district_signals", {}).get(npc_district, {})
+        district_heat = (
+            float(district_signals.get("gossip", 0.0))
+            + float(district_signals.get("fear", 0.0))
+            + float(district_signals.get("trade_heat", 0.0))
+            + float(district_signals.get("labor_heat", 0.0))
+        )
+        if class_name == "特殊角色":
+            if nearby or npc_district == current_district or topic_heat >= 0.18 or district_heat >= 0.28 or recent_player_attention:
+                return 1
+            return 2
+        if class_name == "关键角色" and (nearby or npc_district == current_district or topic_heat >= 0.18 or district_heat >= 0.28):
+            if not nearby and npc_district != current_district and topic_heat < 0.3 and district_heat < 0.28 and not recent_player_attention:
+                return 2
+            return 1
+        if nearby or topic_heat >= 0.55 or economic_pressure >= 0.42 or recent_player_attention:
+            return 1
+        if npc_district == current_district and district_heat >= 0.5 and topic_heat >= 0.24:
+            return 1
+        if class_name in {"关键角色", "中层"} and (topic_heat >= 0.18 or economic_pressure >= 0.18 or npc_district == current_district):
+            return 2
+        if topic_heat >= 0.28 or economic_pressure >= 0.22 or npc_district == current_district:
+            return 2
+        stable_bias = sum(ord(ch) for ch in npc_id) % 2
+        return 3 if stable_bias == 0 else 2
+
+    def _backfill_missing_npc_briefs(self, seen_ids: set[str], observation: dict[str, Any]) -> None:
+        if not self.ark.enabled:
+            return
+        nearby_ids = self._nearby_npc_ids(observation)
+        pulse_index = int(self.state.get("demo_metrics", {}).get("ai_pulses", 0))
+        for npc in self.state.get("npcs", []):
+            npc_id = str(npc.get("id", ""))
+            if not npc_id or npc_id in seen_ids:
+                continue
+            cadence = self._npc_brief_cadence_pulses(npc, observation, nearby_ids)
+            last_refresh = int(npc.get("last_llm_brief_pulse", -999))
+            if last_refresh >= 0 and pulse_index - last_refresh < cadence:
+                continue
+            if cadence > 1 and npc_id not in nearby_ids:
+                continue
+            topic = self._resolve_talk_topic(npc, "", str(npc.get("district", "")))
+            truth_profile = self._truth_metrics_for_topic(npc, topic, "cautious", "街头消息")
+            use_image = cadence == 1 or npc_id in nearby_ids
+            generated = self.ark.generate_npc_spin(
+                {
+                    "npc": copy.deepcopy(npc),
+                    "llm_sections": self._npc_llm_sections(npc, topic),
+                    "topic": copy.deepcopy(topic),
+                    "active_topics": self._active_public_topics(limit=4, district_name=str(npc.get("district", ""))),
+                    "active_norms": self._active_norms_view(limit=4, district_name=str(npc.get("district", ""))),
+                    "active_collective_actions": self._active_collective_actions_view(limit=4, district_name=str(npc.get("district", ""))),
+                    "truth_profile": truth_profile,
+                    "district_signals": copy.deepcopy(self.state.get("district_signals", {}).get(str(npc.get("district", "")), {})),
+                    "relationship_memory": {
+                        "player_memory": copy.deepcopy(self._npc_player_memory(npc)),
+                        "recent_events": copy.deepcopy(list(npc.get("relationship_memory", []))[:4]),
+                        "conversation_history": self._dialogue_history_view(npc, limit=4),
+                        "local_memory": self._local_memory_view(npc, topic_id=str(topic.get("id", "")), limit=5),
+                    },
+                    "recent_briefs": copy.deepcopy(self._entity_brief_history("npc_brief_history", npc_id)[:3]),
+                    "scene_observation": self._llm_scene_observation(observation, include_image=use_image),
+                }
+            )
+            if not generated:
+                continue
+            npc["last_llm_brief_pulse"] = pulse_index
+            npc["llm_refresh_cadence"] = cadence
+            self._apply_llm_npc_updates(
+                [
+                    {
+                        "id": npc_id,
+                        "line": str((generated.get("lines", [""]) or [""])[0]),
+                        "stance": str(generated.get("stance", "")),
+                        "market_tilt": str(generated.get("market_tilt", "")),
+                        "topic_action": copy.deepcopy(generated.get("topic_action", {})),
+                        "norm_action": copy.deepcopy(generated.get("norm_action", {})),
+                        "collective_action": copy.deepcopy(generated.get("collective_action", {})),
+                    }
+                ]
+            )
 
     def _push_memory(self, memory_tags: list[str], tag: str) -> list[str]:
         updated = list(memory_tags)

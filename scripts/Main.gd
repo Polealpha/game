@@ -129,6 +129,7 @@ var modal_is_conversation := false
 var route_choice_modal_active := false
 var route_choice_request_pending := false
 var startup_screen_active := true
+var startup_reset_pending := false
 var compact_hud_label := RichTextLabel.new()
 var market_flash_label := RichTextLabel.new()
 var news_ticker_label := RichTextLabel.new()
@@ -835,20 +836,41 @@ func _load_runtime_texture(resource_path: String) -> Texture2D:
 
 func _show_startup_screen() -> void:
 	startup_screen_active = true
+	startup_reset_pending = false
+	last_snapshot = {}
+	GameState.apply_snapshot({})
+	visual_time_synced = false
+	visual_clock_minutes = VISUAL_START_CLOCK_MINUTES
+	visual_day_offset = 0
+	compact_hud_label.text = "[b]第 1 天 08:00[/b] 1000000.0 铜币 · 等待开始"
+	market_flash_label.text = ""
+	news_ticker_label.text = ""
+	status_label.text = "点击启动后进入新一轮世界。"
 	if is_instance_valid(startup_overlay):
 		startup_overlay.visible = true
+		startup_button.disabled = false
 		startup_button.grab_focus()
 
 
 func _dismiss_startup_screen() -> void:
-	if not startup_screen_active:
+	if not startup_screen_active or startup_reset_pending:
 		return
+	startup_reset_pending = true
+	startup_button.disabled = true
+	status_label.text = "正在重置世界并载入路线选择…"
+	ApiClient.post_json("/world/reset", {}, "startup_reset")
+
+
+func _finish_startup_after_reset() -> void:
+	startup_reset_pending = false
 	startup_screen_active = false
 	startup_overlay.visible = false
+	startup_button.disabled = false
 	poll_timer.start()
 	conversation_timer.start()
 	ai_pulse_timer.start()
-	_probe_backend_health()
+	backend_service_ready = true
+	backend_error_streak = 0
 
 
 func _layout_modal_card() -> void:
@@ -2657,6 +2679,15 @@ func _on_api_response(tag: String, data: Dictionary) -> void:
 			status_label.text = "服务在线，正在同步世界状态。"
 			ApiClient.get_json("/world/state", "world_state")
 		return
+	if tag == "startup_reset":
+		backend_world_state_pending = false
+		if data.has("world_state"):
+			route_choice_request_pending = false
+			GameState.apply_snapshot(data["world_state"])
+			_finish_startup_after_reset()
+			UiRouter.update_guide(data["world_state"])
+			UiRouter.maybe_present_event(data["world_state"])
+		return
 	if tag == "player_talk":
 		if data.has("world_state"):
 			GameState.apply_snapshot(data["world_state"])
@@ -2848,6 +2879,11 @@ func _play_player_talk_feedback(dialogue: Dictionary) -> void:
 func _handle_api_error_v3(tag: String, status_code: int, message: String) -> void:
 	if tag == "health":
 		backend_health_pending = false
+	if tag == "startup_reset":
+		startup_reset_pending = false
+		startup_button.disabled = false
+		status_label.text = "新世界载入失败，点击启动重试。"
+		return
 	if tag == "world_state":
 		backend_world_state_pending = false
 	if tag == "action":

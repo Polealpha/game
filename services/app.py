@@ -87,6 +87,7 @@ async def pulse_loop() -> None:
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    engine.reset()
     task = asyncio.create_task(pulse_loop())
     try:
         yield

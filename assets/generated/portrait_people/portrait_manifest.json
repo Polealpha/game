@@ -1,5 +1,5 @@
 {
-  "source_dir": "C:\\Users\\Lenovo\\Desktop\\abc\\牛逼抠图",
+  "source_dir": "E:\\Desktop\\gamexu\\tmp_portrait_pack.zip",
   "player": {
     "source_key": "01_杰杰",
     "idle": "player_idle.png",
@@ -12,27 +12,27 @@
       "move": "npc_01_move.png"
     },
     "npc_02": {
-      "source_key": "26_塞拉斯",
+      "source_key": "24_格雷夫斯",
       "idle": "npc_02_idle.png",
       "move": "npc_02_move.png"
     },
     "npc_03": {
-      "source_key": "03_露丝夫人",
+      "source_key": "28_伊丽丝",
       "idle": "npc_03_idle.png",
       "move": "npc_03_move.png"
     },
     "npc_04": {
-      "source_key": "16_斯摩格",
+      "source_key": "26_塞拉斯",
       "idle": "npc_04_idle.png",
       "move": "npc_04_move.png"
     },
     "npc_05": {
-      "source_key": "26_塞拉斯",
+      "source_key": "05_伊芙琳",
       "idle": "npc_05_idle.png",
       "move": "npc_05_move.png"
     },
     "npc_06": {
-      "source_key": "05_伊芙琳",
+      "source_key": "16_斯摩格",
       "idle": "npc_06_idle.png",
       "move": "npc_06_move.png"
     },
@@ -107,7 +107,7 @@
       "move": "npc_20_move.png"
     },
     "npc_21": {
-      "source_key": "05_伊芙琳",
+      "source_key": "32_菲奥娜",
       "idle": "npc_21_idle.png",
       "move": "npc_21_move.png"
     },
@@ -122,7 +122,7 @@
       "move": "npc_23_move.png"
     },
     "npc_24": {
-      "source_key": "01_杰杰",
+      "source_key": "33_马库斯",
       "idle": "npc_24_idle.png",
       "move": "npc_24_move.png"
     },
@@ -132,7 +132,7 @@
       "move": "npc_25_move.png"
     },
     "npc_26": {
-      "source_key": "06_戴夫",
+      "source_key": "34_萨姆",
       "idle": "npc_26_idle.png",
       "move": "npc_26_move.png"
     },
@@ -142,7 +142,7 @@
       "move": "npc_27_move.png"
     },
     "npc_28": {
-      "source_key": "09_汤姆",
+      "source_key": "36_莎拉",
       "idle": "npc_28_idle.png",
       "move": "npc_28_move.png"
     },
@@ -172,7 +172,7 @@
       "move": "npc_33_move.png"
     },
     "npc_34": {
-      "source_key": "05_伊芙琳",
+      "source_key": "35_伊莎贝拉",
       "idle": "npc_34_idle.png",
       "move": "npc_34_move.png"
     },

@@ -101,6 +101,7 @@ class ArkClient:
             task_type="dialogue_turn",
             schema_hint='{"lines":["玩家原话","NPC回话"],"stance":"谨慎/强硬/敷衍/热心","truthfulness":0.58,"revealed_topic_ids":["market_whisper"]}',
             system_prompt=(
+                "lines[1] 必须先正面回应 player_input，再补充氛围和剧情。\n"
                 "你是《Aociety》的 NPC 对话引擎。"
                 "你只负责生成一轮贴近身份的中文对话。"
                 "玩家台词必须原样复述到 lines[0]。"
@@ -458,7 +459,7 @@ class ArkClient:
     @staticmethod
     def _task_max_tokens(task_type: str) -> int:
         if task_type == "dialogue_turn":
-            return 64
+            return 160
         if task_type == "npc_spin":
             return 80
         if task_type in {"news_copy", "scene_read"}:

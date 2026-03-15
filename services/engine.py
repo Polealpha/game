@@ -660,6 +660,7 @@ class WorldEngine:
         llm_payload: dict[str, Any] | None = None
         live_observation: dict[str, Any] = {}
         latency_ms = 0
+        execute_contract: dict[str, Any] | None = None
         with self.lock:
             npc = self._find_npc(npc_id)
             if not npc:
@@ -668,6 +669,13 @@ class WorldEngine:
                 self._record_scene_observation(scene_observation)
 
             district = district or str(npc["district"])
+            player_input = str(player_input or "").strip()
+            contract_result = self._maybe_handle_action_contract_layer(npc, district, player_input)
+            if contract_result is not None:
+                if isinstance(contract_result, dict) and contract_result.get("_execute", False):
+                    execute_contract = contract_result
+                else:
+                    return contract_result
             live_observation = copy.deepcopy(self.state.get("scene_observation", {}))
             self._refresh_derived_views()
             topic = self._select_player_talk_topic(npc, topic_id, district, player_input, intent)
@@ -720,6 +728,36 @@ class WorldEngine:
             started_at = time.perf_counter()
             dialogue = self.ark.generate_dialogue_turn(llm_payload)
             latency_ms = max(1, int((time.perf_counter() - started_at) * 1000))
+        if execute_contract is not None:
+            action_type = str(execute_contract.get("action_type", "")).strip()
+            payload = dict(execute_contract.get("payload", {}) or {})
+            contract_district = str(execute_contract.get("district", "")).strip() or district
+            npc_name = str(execute_contract.get("npc_name", "")).strip() or str(execute_contract.get("npc_name_fallback", "")).strip() or "对方"
+            player_line = str(execute_contract.get("player_line", "")).strip()
+            result = self.action(action_type, contract_district, payload)
+            world_state = result.world_state
+            npc_line = f"{npc_name}：行，按你说的办。"
+            if result.message:
+                npc_line = f"{npc_line}\n[{result.message}]"
+            world_state["last_dialogue"] = {
+                "title": f"行动契约：{self._action_contract_label(action_type)}",
+                "tone": "conversation",
+                "lines": [player_line, npc_line],
+                "layer": "action_contract",
+                "contract": {
+                    "status": "executed",
+                    "action_type": action_type,
+                    "district": contract_district,
+                    "payload": payload,
+                    "message": str(result.message or ""),
+                },
+                "npc_id": str(execute_contract.get("npc_id", "")),
+                "npc_name": npc_name,
+                "district": contract_district,
+                "player_input": player_line,
+                "response_state": "action_contract_executed",
+            }
+            return ActionResult(result.message, world_state)
         with self.lock:
             npc = self._find_npc(npc_id)
             if not npc:
@@ -732,17 +770,24 @@ class WorldEngine:
             )
             revealed_topic_ids = [str(value) for value in dialogue.get("revealed_topic_ids", []) if str(value).strip()] if dialogue else []
             if len(lines) < 2:
-                lines = self._rule_player_talk_lines(npc, topic, approach, npc_openness, intent)
+                lines = self._rule_player_talk_lines(npc, topic, approach, npc_openness, intent=intent, player_input=player_input)
             if player_input:
                 if not lines:
                     lines = [player_input, ""]
                 else:
                     lines[0] = player_input
             if len(lines) < 2:
-                fallback_lines = self._rule_player_talk_lines(npc, topic, approach, npc_openness, intent)
+                fallback_lines = self._rule_player_talk_lines(npc, topic, approach, npc_openness, intent=intent, player_input=player_input)
                 lines = [player_input, fallback_lines[1]] if player_input else fallback_lines
-            fallback_reply = self._rule_player_talk_lines(npc, topic, approach, npc_openness, intent)[1]
+            fallback_reply = self._rule_player_talk_lines(npc, topic, approach, npc_openness, intent=intent, player_input=player_input)[1]
             lines[1] = self._normalize_spoken_line(str(npc.get("name", "")), lines[1], fallback_reply)
+            hint_flags = self._player_talk_hint_flags(player_input, intent)
+            if player_input and bool(hint_flags.get("greeting", False)) and not bool(hint_flags.get("market", False)) and not bool(hint_flags.get("actor", False)):
+                market_tokens = ["盘", "股", "仓", "价格", "杠杆", "做局", "交易", "行情", "拉盘", "利息"]
+                if len(player_input) <= 8 or any(token in lines[1] for token in market_tokens):
+                    npc_name_clean = str(npc.get("name", "对方"))
+                    district_clean = str(npc.get("district", "这片街区"))
+                    lines[1] = f"{npc_name_clean}：你好。先别紧张，我在{district_clean}这边跑腿。你想先聊近况、身份，还是哪件麻烦事？"
             render_lines = self._dialogue_render_lines(lines, str(npc.get("name", "对方")))
             if dialogue:
                 self._remember_agent_output(npc, "player_talk", lines[1])
@@ -1632,6 +1677,7 @@ class WorldEngine:
         listener: dict[str, Any],
         topic: dict[str, Any],
         source_npc: dict[str, Any],
+        player_input: str = "",
         *,
         channel: str,
         salience: float,
@@ -8329,13 +8375,26 @@ class WorldEngine:
             return resolved
         npc_topics = self._talk_topics_for_npc(str(npc.get("id", "")), district_name)
         personal_topics = self._npc_personal_topics(npc)
+        hint_flags = self._player_talk_hint_flags(player_input, intent)
         hint = f"{player_input} {intent}".lower()
         domains = {str(value) for value in npc.get("information_domain", [])}
         role = str(npc.get("role", ""))
         market_roles = {"投机者", "银行经理", "代理人", "记者", "老板"}
         market_hint = any(token in hint for token in ["票", "股", "盘口", "仓", "价格", "涨", "跌", "做局", "利息", "放风"])
-        wants_market = market_hint or district_name == "交易所" or "stock" in domains or role in market_roles
+        wants_market = market_hint
         wants_actor = any(token in hint for token in ["谁", "哪家", "哪边", "做局", "放风", "护盘"])
+        wants_market = bool(hint_flags.get("market", False))
+        wants_actor = bool(hint_flags.get("actor", False))
+        wants_personal = bool(hint_flags.get("personal", False)) and not wants_market
+        if wants_personal:
+            for topic in personal_topics:
+                if str(topic.get("kind", "")) not in {"position", "asset", "finance", "company", "institution"}:
+                    return topic
+            if personal_topics:
+                return personal_topics[0]
+            for topic in npc_topics:
+                if str(topic.get("kind", "")) in {"identity", "livelihood", "routine", "relationship", "rumor", "district", "ration", "labor"}:
+                    return topic
         if wants_market:
             for topic in personal_topics:
                 if str(topic.get("kind", "")) == "position":
@@ -8353,7 +8412,170 @@ class WorldEngine:
             for topic in npc_topics:
                 if str(topic.get("kind", "")) != "panic":
                     return topic
+        if not wants_market and ("stock" in domains or role in market_roles):
+            for topic in personal_topics:
+                if str(topic.get("kind", "")) not in {"position", "asset", "finance"}:
+                    return topic
         return resolved
+
+    def _player_talk_hint_flags(self, player_input: str, intent: str = "") -> dict[str, bool]:
+        hint = f"{player_input} {intent}".lower().strip()
+        greeting = any(token in hint for token in ["你好", "您好", "嗨", "嘿", "早", "晚上好", "在吗", "打扰了", "借一步说话"])
+        market = any(token in hint for token in ["股", "票", "盘", "庄", "价格", "涨", "跌", "仓", "买", "卖", "做空", "拉盘", "消息", "放风", "账面", "行情"])
+        actor = any(token in hint for token in ["谁", "哪家", "背后", "幕后", "主使", "替谁", "跟谁", "谁的人", "站哪边"])
+        personal = greeting or any(
+            token in hint
+            for token in ["你是", "你谁", "叫什么", "叫啥", "从哪", "哪来的", "住哪", "做什么", "干什么", "忙什么", "最近", "刚才", "怎么了", "为什么", "还好吗", "累不累"]
+        )
+        return {"greeting": greeting, "market": market, "actor": actor, "personal": personal}
+
+    def _action_contract_label(self, action_type: str) -> str:
+        labels = {
+            "work": "去干活",
+            "gather_info": "打听风声",
+            "rest": "歇一歇",
+            "cook_meal": "做一顿热饭",
+            "search_home": "翻箱柜",
+            "review_ledger": "记账理线索",
+        }
+        key = str(action_type or "").strip()
+        return labels.get(key, key or "行动")
+
+    def _parse_contract_confirmation(self, player_input: str) -> str:
+        text = str(player_input or "").strip()
+        if not text:
+            return ""
+        if re.search(r"^(确认|确定|行|好|可以|开始|走|去吧|对)$", text):
+            return "confirm"
+        if re.search(r"^(算了|不了|取消|拒绝|先别|不用|停)$", text):
+            return "reject"
+        if re.search(r"^不(了|用|行|要|去|必)", text):
+            return "reject"
+        low = text.lower()
+        if any(token in low for token in ["确认", "确定", "开始", "就现在", "可以", "走吧"]):
+            return "confirm"
+        if any(token in low for token in ["算了", "取消", "先别", "不用", "不去了"]):
+            return "reject"
+        return ""
+
+    def _detect_action_contract_request(self, player_input: str) -> dict[str, Any] | None:
+        text = str(player_input or "").strip()
+        if not text:
+            return None
+        low = text.lower()
+        if any(token in low for token in ["打工", "工作", "干活", "上工", "去干活"]):
+            return {"action_type": "work", "payload": {}}
+        if any(token in low for token in ["打听", "打探", "买消息", "买情报", "听风声", "抄墙报"]):
+            return {"action_type": "gather_info", "payload": {}}
+        if any(token in low for token in ["休息", "睡觉", "歇会", "歇一会", "回去躺", "回屋歇"]):
+            return {"action_type": "rest", "payload": {}}
+        if any(token in low for token in ["做饭", "煮饭", "弄点吃的", "吃点热的", "开火"]):
+            return {"action_type": "cook_meal", "payload": {}}
+        if any(token in low for token in ["搜屋", "搜家", "翻箱", "翻箱倒柜", "找找看", "搜一搜"]):
+            return {"action_type": "search_home", "payload": {}}
+        if any(token in low for token in ["看账", "翻账", "记账", "账桌", "理一理账"]):
+            return {"action_type": "review_ledger", "payload": {}}
+        return None
+
+    def _action_contract_prompt(self, npc: dict[str, Any], district: str, action_type: str) -> str:
+        npc_name = str(npc.get("name", "")) or "对方"
+        label = self._action_contract_label(action_type)
+        ap_note = "会消耗 1 AP。"
+        extra = ""
+        if action_type == "gather_info":
+            extra = "要花 2 铜币。"
+        if action_type == "work":
+            extra = f"地点在 {district}。"
+        extra_note = f"{extra} " if extra else ""
+        return f"{npc_name}：你是想现在{label}？{extra_note}{ap_note}确认就回“确认”，不做就回“算了”。"
+
+    def _maybe_handle_action_contract_layer(self, npc: dict[str, Any], district: str, player_input: str) -> ActionResult | dict[str, Any] | None:
+        npc_id = str(npc.get("id", "")).strip()
+        if not npc_id:
+            return None
+        contracts: dict[str, Any] = dict(self.state.get("pending_action_contracts", {}))
+        pending = contracts.get(npc_id)
+        now = time.time()
+        if isinstance(pending, dict):
+            expires_at = float(pending.get("expires_at", 0.0) or 0.0)
+            if expires_at and now > expires_at:
+                contracts.pop(npc_id, None)
+                self.state["pending_action_contracts"] = contracts
+                pending = None
+        if isinstance(pending, dict):
+            decision = self._parse_contract_confirmation(player_input)
+            action_type = str(pending.get("action_type", "")).strip()
+            payload = dict(pending.get("payload", {}) or {})
+            contract_district = str(pending.get("district", district)).strip() or district
+            if decision == "confirm":
+                contracts.pop(npc_id, None)
+                self.state["pending_action_contracts"] = contracts
+                return {
+                    "_execute": True,
+                    "npc_id": npc_id,
+                    "npc_name": str(npc.get("name", "")),
+                    "npc_name_fallback": str(npc.get("name", "")),
+                    "district": contract_district,
+                    "action_type": action_type,
+                    "payload": payload,
+                    "player_line": player_input,
+                }
+            if decision == "reject":
+                contracts.pop(npc_id, None)
+                self.state["pending_action_contracts"] = contracts
+                self.state["last_dialogue"] = {
+                    "title": "行动契约：已取消",
+                    "tone": "conversation",
+                    "lines": [player_input, f"{str(npc.get('name','对方'))}：行，先不动。你想聊别的就直说。"],
+                    "layer": "action_contract",
+                    "contract": {"status": "cancelled", "action_type": action_type, "district": contract_district, "payload": payload},
+                    "npc_id": npc_id,
+                    "npc_name": str(npc.get("name", "")),
+                    "district": contract_district,
+                    "player_input": player_input,
+                    "response_state": "action_contract_cancelled",
+                }
+                return ActionResult("行动已取消。", self._snapshot_after_refresh(rebuild_agent_prompts=False))
+            self.state["last_dialogue"] = {
+                "title": f"行动契约：确认{self._action_contract_label(action_type)}",
+                "tone": "conversation",
+                "lines": [player_input, self._action_contract_prompt(npc, contract_district, action_type)],
+                "layer": "action_contract",
+                "contract": {"status": "pending", "action_type": action_type, "district": contract_district, "payload": payload},
+                "npc_id": npc_id,
+                "npc_name": str(npc.get("name", "")),
+                "district": contract_district,
+                "player_input": player_input,
+                "response_state": "action_contract_pending",
+            }
+            return ActionResult("等待确认。", self._snapshot_after_refresh(rebuild_agent_prompts=False))
+
+        requested = self._detect_action_contract_request(player_input)
+        if not requested:
+            return None
+        action_type = str(requested.get("action_type", "")).strip()
+        payload = dict(requested.get("payload", {}) or {})
+        contracts[npc_id] = {
+            "action_type": action_type,
+            "district": district,
+            "payload": payload,
+            "created_at": now,
+            "expires_at": now + 45.0,
+        }
+        self.state["pending_action_contracts"] = contracts
+        self.state["last_dialogue"] = {
+            "title": f"行动契约：确认{self._action_contract_label(action_type)}",
+            "tone": "conversation",
+            "lines": [player_input, self._action_contract_prompt(npc, district, action_type)],
+            "layer": "action_contract",
+            "contract": {"status": "pending", "action_type": action_type, "district": district, "payload": payload},
+            "npc_id": npc_id,
+            "npc_name": str(npc.get("name", "")),
+            "district": district,
+            "player_input": player_input,
+            "response_state": "action_contract_created",
+        }
+        return ActionResult("需要确认。", self._snapshot_after_refresh(rebuild_agent_prompts=False))
 
     def _evaluate_talk_approach(self, npc: dict[str, Any], topic: dict[str, Any], approach: str) -> tuple[int, float, str]:
         relation = int(npc.get("player_relation", 0))
@@ -9491,6 +9713,27 @@ class WorldEngine:
         player["task_progress"][active_task_id] = current + amount
 
     def _rule_conversation_lines(self, speaker: dict[str, Any], listener: dict[str, Any], trigger: str) -> list[str]:
+        district = str(speaker.get("district", "这片街区"))
+        role = str(speaker.get("role", "街坊"))
+        natural_options = [
+            [
+                f"{speaker['name']}：刚从{district}那边转回来，今天路上人比平时多。",
+                f"{listener['name']}：我也看到了，先把手头活干完，晚点再细聊。",
+            ],
+            [
+                f"{speaker['name']}：你这会儿忙不忙？我想问问你最近都在盯哪一块。",
+                f"{listener['name']}：先盯吃饭和住处，别的事慢慢来，急也没用。",
+            ],
+            [
+                f"{speaker['name']}：我听人提到你是{role}，这两天有什么要紧动静吗？",
+                f"{listener['name']}：有一点风声，但先别外传，等晚上再对一下。",
+            ],
+            [
+                f"{speaker['name']}：刚才那阵子有点乱，你那边还稳得住吗？",
+                f"{listener['name']}：还行，先把节奏稳住，不跟着乱跑就问题不大。",
+            ],
+        ]
+        return self.random.choice(natural_options)
         options = [
             [f"{speaker['name']}：{trigger}可不是白来的，今天的风比账本更会骗人。", f"{listener['name']}：我只想知道下一个倒霉的是面包还是矿井。"],
             [f"{speaker['name']}：你听见没有，{speaker['family_affiliation']} 的人已经在街角放话了。", f"{listener['name']}：那就说明他们想让别人先恐慌。"],
@@ -9505,11 +9748,19 @@ class WorldEngine:
         approach: str,
         openness: str,
         intent: str = "",
+        player_input: str = "",
     ) -> list[str]:
         favorability = self._npc_favorability_state(npc)
         register = str(favorability.get("speech_register", "neutral"))
-        salutation = "哥" if register in {"deferential", "slick", "patronized", "owned"} and float(favorability.get("respect", 0.0)) >= 0.56 else "你"
-        player_line = {
+        salutation = "哥" if register in {"deferential", "slick", "patronized", "owned"} and float(favorability.get("respect", 0.0)) >= 0.56 else "朋友"
+        cleaned_player_input = str(player_input).strip()
+        hint_flags = self._player_talk_hint_flags(cleaned_player_input, intent)
+        if cleaned_player_input and bool(hint_flags.get("greeting", False)) and not bool(hint_flags.get("market", False)) and not bool(hint_flags.get("actor", False)):
+            npc_name = str(npc.get("name", "对方"))
+            district = str(npc.get("district", "这片街区"))
+            reply = f"{npc_name}：你好。先别紧张，我在{district}这边跑腿。你想先聊近况、身份，还是哪件麻烦事？"
+            return [cleaned_player_input, reply]
+        player_line = cleaned_player_input or {
             "cautious": f"我只想问一句，{topic.get('label', npc['district'])} 最近是不是在变？",
             "friendly": f"我不是来压你话的，就想听听你怎么看 {topic.get('label', npc['district'])}。",
             "hardball": f"别绕了，{topic.get('label', npc['district'])} 到底是谁在做局？",
@@ -9603,7 +9854,25 @@ class WorldEngine:
         day = int(self.state.get("day", 1))
         checkpoints: list[tuple[int, str]] = []
         if day == 1:
-            checkpoints = [(17 * 60, "day1_privatization")]
+            route = str(self._ensure_player_financial_state().get("story_route", ""))
+            if route == "平民路线":
+                checkpoints = [
+                    (8 * 60 + 5, "commoner_tutorial_hunger"),
+                    (8 * 60 + 20, "commoner_tutorial_social"),
+                    (8 * 60 + 50, "commoner_tutorial_eavesdrop"),
+                    (9 * 60 + 15, "commoner_tutorial_reputation_trade"),
+                    (17 * 60, "day1_privatization"),
+                ]
+            elif route == "精英路线":
+                checkpoints = [
+                    (8 * 60 + 5, "elite_tutorial_clock"),
+                    (8 * 60 + 10, "elite_tutorial_dialogue"),
+                    (8 * 60 + 30, "elite_tutorial_keyword"),
+                    (9 * 60, "elite_tutorial_contract"),
+                    (17 * 60, "day1_privatization"),
+                ]
+            else:
+                checkpoints = [(17 * 60, "day1_privatization")]
         elif day == 2:
             checkpoints = [(12 * 60, "day2_arthur_assassination")]
         elif day == 3:
@@ -9614,6 +9883,14 @@ class WorldEngine:
 
     def _story_event_schedule(self, event_id: str) -> tuple[int, int] | None:
         mapping = {
+            "commoner_tutorial_hunger": (1, 8 * 60 + 5),
+            "commoner_tutorial_social": (1, 8 * 60 + 20),
+            "commoner_tutorial_eavesdrop": (1, 8 * 60 + 50),
+            "commoner_tutorial_reputation_trade": (1, 9 * 60 + 15),
+            "elite_tutorial_clock": (1, 8 * 60 + 5),
+            "elite_tutorial_dialogue": (1, 8 * 60 + 10),
+            "elite_tutorial_keyword": (1, 8 * 60 + 30),
+            "elite_tutorial_contract": (1, 9 * 60),
             "day1_privatization": (1, 17 * 60),
             "day2_arthur_assassination": (2, 12 * 60),
             "day3_tom_self_immolation": (3, 14 * 60),
@@ -9625,6 +9902,54 @@ class WorldEngine:
         route = str(self._ensure_player_financial_state().get("story_route", ""))
         is_commoner = route == "平民路线"
         match event_id:
+            case "commoner_tutorial_hunger":
+                return {
+                    "event_title": "平民教学：先保住体力",
+                    "news_title": "教学已开启",
+                    "description": "先观察饥饿与健康，保证今天能扛住第一轮工作与移动消耗。",
+                }
+            case "commoner_tutorial_social":
+                return {
+                    "event_title": "平民教学：建立街坊关系",
+                    "news_title": "教学已开启",
+                    "description": "先和附近 NPC 打招呼并完成第一轮对话，打开声望与互助网络。",
+                }
+            case "commoner_tutorial_eavesdrop":
+                return {
+                    "event_title": "平民教学：开始窃听信息",
+                    "news_title": "教学已开启",
+                    "description": "留在街区核心区域，触发一次窃听，确认当前谣言与机会的方向。",
+                }
+            case "commoner_tutorial_reputation_trade":
+                return {
+                    "event_title": "平民教学：声望置换",
+                    "news_title": "教学已开启",
+                    "description": "尝试用声望换取资源或通行便利，理解平民路线的核心循环。",
+                }
+            case "elite_tutorial_clock":
+                return {
+                    "event_title": "精英教学：建立时间感",
+                    "news_title": "教学已开启",
+                    "description": "先看清当前时段与交易窗口，确认今天可操作的关键时间点。",
+                }
+            case "elite_tutorial_dialogue":
+                return {
+                    "event_title": "精英教学：对话输入",
+                    "news_title": "教学已开启",
+                    "description": "按 E 发起对话并输入一句完整问题，确认交互链路正常。",
+                }
+            case "elite_tutorial_keyword":
+                return {
+                    "event_title": "精英教学：关键词识别",
+                    "news_title": "教学已开启",
+                    "description": "围绕身份、行情、风向三类关键词追问，验证 NPC 是否按上下文回应。",
+                }
+            case "elite_tutorial_contract":
+                return {
+                    "event_title": "精英教学：契约与跳时",
+                    "news_title": "教学已开启",
+                    "description": "完成一次契约/行动确认，并观察 AP 与时间推进的对应关系。",
+                }
             case "day1_privatization":
                 if is_commoner:
                     return {
@@ -9691,6 +10016,22 @@ class WorldEngine:
         ops = self._stock_ops_state()
         copy_map = self._route_timeline_copy(event_id)
         match event_id:
+            case (
+                "commoner_tutorial_hunger"
+                | "commoner_tutorial_social"
+                | "commoner_tutorial_eavesdrop"
+                | "commoner_tutorial_reputation_trade"
+                | "elite_tutorial_clock"
+                | "elite_tutorial_dialogue"
+                | "elite_tutorial_keyword"
+                | "elite_tutorial_contract"
+            ):
+                description = str(copy_map.get("description", "")).strip()
+                title = str(copy_map.get("event_title", event_id)).strip() or event_id
+                news_title = str(copy_map.get("news_title", title)).strip() or title
+                route_tag = "平民路线" if event_id.startswith("commoner_") else "精英路线"
+                self._queue_story_event(event_id, title, description)
+                self._push_system_news(news_title, description, ["教学", route_tag])
             case "day1_privatization":
                 self._force_stock_price(
                     "SWC",
@@ -11207,6 +11548,17 @@ class WorldEngine:
         cleaned = str(line or "").strip()
         if not cleaned:
             return fallback
+        # Normalize explicit speaker prefixes early to avoid UI showing
+        # duplicated labels like "毒蛇：毒蛇：你好".
+        if speaker_name:
+            stripped = True
+            while stripped:
+                stripped = False
+                for sep in ["：", ":", "﹕", "︰"]:
+                    for token in [f"{speaker_name}{sep}", f"{speaker_name} {sep}"]:
+                        if cleaned.startswith(token):
+                            cleaned = cleaned[len(token) :].strip()
+                            stripped = True
         prefixes = [
             f"{speaker_name}：",
             f"{speaker_name}:",
@@ -12356,10 +12708,11 @@ class WorldEngine:
         )
         stance_hint = any(token in hint for token in ["站哪边", "哪边的人", "谁的人", "和谁一伙", "替谁办事", "为谁做事"])
         market_hint = any(token in hint for token in ["票", "股", "盘口", "仓", "价格", "涨", "跌", "做局", "利息", "放风"])
-        wants_market = market_hint or district_name == "交易所" or "stock" in domains or role in market_roles
+        wants_market = market_hint
         wants_actor = any(token in hint for token in ["谁", "哪家", "哪边", "做局", "放风", "护盘"])
         if identity_hint:
             return self._identity_topic_for_npc(npc, district_name)
+        non_market_priority = ["identity", "livelihood", "routine", "relationship", "rumor", "district", "ration", "labor", "family", "institution", "company"]
         kind_priority = ["position", "asset", "finance", "company", "institution", "family"]
         if "操盘手" in title:
             kind_priority = ["position", "finance", "asset", "company", "institution", "family"]
@@ -12379,6 +12732,8 @@ class WorldEngine:
             kind_priority = ["family", "company", "institution", "finance", "asset", "position"]
         elif wants_actor:
             kind_priority = ["institution", "company", "family", "finance", "asset", "position"]
+        elif not wants_market:
+            kind_priority = non_market_priority
         merged_topics: list[dict[str, Any]] = []
         seen_topic_ids: set[str] = set()
         for row in personal_topics + npc_topics:
@@ -12412,6 +12767,10 @@ class WorldEngine:
             for topic in npc_topics:
                 if str(topic.get("kind", "")) != "panic":
                     return topic
+        if not wants_market and str(resolved.get("kind", "")) in {"position", "asset", "finance"}:
+            picked = _pick_topic(non_market_priority)
+            if picked:
+                return picked
         return resolved
 
     def _identity_topic_for_npc(self, npc: dict[str, Any], district_name: str) -> dict[str, Any]:
@@ -12477,11 +12836,19 @@ class WorldEngine:
         approach: str,
         openness: str,
         intent: str = "",
+        player_input: str = "",
     ) -> list[str]:
         favorability = self._npc_favorability_state(npc)
         register = str(favorability.get("speech_register", "neutral"))
-        salutation = "哥" if register in {"deferential", "slick", "patronized", "owned"} and float(favorability.get("respect", 0.0)) >= 0.56 else "你"
-        player_line = {
+        salutation = "哥" if register in {"deferential", "slick", "patronized", "owned"} and float(favorability.get("respect", 0.0)) >= 0.56 else "朋友"
+        cleaned_player_input = str(player_input).strip()
+        hint_flags = self._player_talk_hint_flags(cleaned_player_input, intent)
+        if cleaned_player_input and bool(hint_flags.get("greeting", False)) and not bool(hint_flags.get("market", False)) and not bool(hint_flags.get("actor", False)):
+            npc_name = str(npc.get("name", "对方"))
+            district = str(npc.get("district", "这片街区"))
+            reply = f"{npc_name}：你好。先别紧张，我在{district}这边跑腿。你想先聊近况、身份，还是哪件麻烦事？"
+            return [cleaned_player_input, reply]
+        player_line = cleaned_player_input or {
             "cautious": f"我只想问一句，{topic.get('label', npc['district'])} 最近是不是在变？",
             "friendly": f"我不是来压你话的，就想听听你怎么看 {topic.get('label', npc['district'])}。",
             "hardball": f"别绕了，{topic.get('label', npc['district'])} 到底是谁在做局？",
@@ -13229,7 +13596,25 @@ class WorldEngine:
         day = int(self.state.get("day", 1))
         checkpoints: list[tuple[int, str]] = []
         if day == 1:
-            checkpoints = [(17 * 60, "day1_privatization")]
+            route = str(self._ensure_player_financial_state().get("story_route", ""))
+            if route == "平民路线":
+                checkpoints = [
+                    (8 * 60 + 5, "commoner_tutorial_hunger"),
+                    (8 * 60 + 20, "commoner_tutorial_social"),
+                    (8 * 60 + 50, "commoner_tutorial_eavesdrop"),
+                    (9 * 60 + 15, "commoner_tutorial_reputation_trade"),
+                    (17 * 60, "day1_privatization"),
+                ]
+            elif route == "精英路线":
+                checkpoints = [
+                    (8 * 60 + 5, "elite_tutorial_clock"),
+                    (8 * 60 + 10, "elite_tutorial_dialogue"),
+                    (8 * 60 + 30, "elite_tutorial_keyword"),
+                    (9 * 60, "elite_tutorial_contract"),
+                    (17 * 60, "day1_privatization"),
+                ]
+            else:
+                checkpoints = [(17 * 60, "day1_privatization")]
         elif day == 2:
             checkpoints = [(16 * 60, "day2_arthur_assassination")]
         elif day == 3:
@@ -13240,6 +13625,14 @@ class WorldEngine:
 
     def _story_event_schedule(self, event_id: str) -> tuple[int, int] | None:
         mapping = {
+            "commoner_tutorial_hunger": (1, 8 * 60 + 5),
+            "commoner_tutorial_social": (1, 8 * 60 + 20),
+            "commoner_tutorial_eavesdrop": (1, 8 * 60 + 50),
+            "commoner_tutorial_reputation_trade": (1, 9 * 60 + 15),
+            "elite_tutorial_clock": (1, 8 * 60 + 5),
+            "elite_tutorial_dialogue": (1, 8 * 60 + 10),
+            "elite_tutorial_keyword": (1, 8 * 60 + 30),
+            "elite_tutorial_contract": (1, 9 * 60),
             "day1_privatization": (1, 17 * 60),
             "day2_arthur_assassination": (2, 16 * 60),
             "day3_tom_self_immolation": (3, 14 * 60),

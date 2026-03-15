@@ -4,6 +4,7 @@ signal modal_requested(payload: Dictionary)
 signal guide_updated(steps: Array, current_index: int)
 
 var last_event_id := ""
+const TUTORIAL_EVENT_PREFIXES := ["commoner_tutorial_", "elite_tutorial_"]
 var walkthrough_steps: Array = [
 	"在贫民街看价格、看耳语、看账本 HUD。",
 	"完成一次打工或货物交易，拿到第一笔周转钱。",
@@ -48,4 +49,13 @@ func maybe_present_event(world_state: Dictionary) -> void:
 	if event_id.is_empty() or event_id == last_event_id:
 		return
 	last_event_id = event_id
+	for prefix in TUTORIAL_EVENT_PREFIXES:
+		if event_id.begins_with(prefix):
+			var short_title := str(first.get("name", "教学提示"))
+			var short_desc := str(first.get("description", "")).strip_edges()
+			if short_desc.is_empty():
+				GameState.add_toast("[教学] %s" % short_title)
+			else:
+				GameState.add_toast("[教学] %s：%s" % [short_title, short_desc])
+			return
 	push_modal(str(first.get("name", "新事件")), str(first.get("description", "")), "event")

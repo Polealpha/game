@@ -276,25 +276,7 @@ func _process(delta: float) -> void:
 	_update_subtitles()
 	if not interior_mode:
 		_update_minimap()
-<<<<<<< HEAD
-	if Input.is_action_just_pressed("enter_house_hotkey"):
-		_trigger_house_entry_hotkey()
-	if Input.is_action_just_pressed("interact"):
-		_trigger_primary_interaction()
-	if Input.is_action_just_pressed("debug_hearing"):
-		show_hearing_debug = not show_hearing_debug
-		_refresh_npcs()
-	if Input.is_action_just_pressed("toggle_ledger_ui") and not _text_input_active():
-		_set_ledger_ui_visible(not ledger_ui_visible)
-	if Input.is_action_just_pressed("toggle_inspect_view"):
-		_set_inspection_mode(not inspection_mode)
-	if _has_proactive_talk_invite():
-		if Input.is_physical_key_pressed(KEY_Z):
-			_accept_proactive_talk_invite()
-		elif Input.is_physical_key_pressed(KEY_X):
-			_reject_proactive_talk_invite()
-=======
-	var typing_locked := _is_text_entry_focused()
+	var typing_locked := _text_input_active()
 	if not typing_locked:
 		if Input.is_action_just_pressed("enter_house_hotkey"):
 			_trigger_house_entry_hotkey()
@@ -312,15 +294,8 @@ func _process(delta: float) -> void:
 				_accept_proactive_talk_invite()
 			elif Input.is_physical_key_pressed(KEY_X):
 				_reject_proactive_talk_invite()
->>>>>>> 7de6fa537576452a0613dfa7eab5c33d113ade1a
 	if Input.is_action_just_pressed("ui_cancel"):
 		_handle_cancel_input()
-
-func _is_text_entry_focused() -> bool:
-	for field in [modal_input, exchange_quantity_input, exchange_leverage_input]:
-		if is_instance_valid(field) and field.visible and field.has_focus():
-			return true
-	return false
 
 func _apply_npc_personal_space(delta: float) -> void:
 	var npc_name_clean := ""

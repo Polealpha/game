@@ -23,7 +23,7 @@ const CAMERA_LOOKAHEAD_DISTANCE := 76.0
 const CAMERA_LOOKAHEAD_LERP := 7.5
 const DISTRICT_RECTS := WorldLayout.DISTRICT_RECTS
 const NEWS_TICKER_SECONDS := 5.5
-const NPC_AUTO_TALK_SECONDS := 12.0
+const NPC_AUTO_TALK_SECONDS := 16.0
 const NPC_AUTO_TALK_RADIUS := 112.0
 const DIRECT_TALK_RADIUS := 88.0
 const HOUSE_ENTRY_RADIUS := 64.0
@@ -37,7 +37,7 @@ const DEFAULT_START_HOUSE_SUBTITLE := "床铺、火炉和储物箱都在里面�
 const BACKEND_RETRY_MSEC := 5000
 const BACKEND_HEALTHCHECK_MSEC := 1600
 const PLAYER_TALK_TIMEOUT_MSEC := 18000
-const PLAYER_TALK_RETRY_LIMIT := 0
+const PLAYER_TALK_RETRY_LIMIT := 1
 
 var player := PlayerView.new()
 var world_tint := CanvasModulate.new()
@@ -104,6 +104,8 @@ var news_ticker_index := 0
 var news_ticker_elapsed := 0.0
 var npc_auto_talk_elapsed := 0.0
 var npc_last_auto_talker := ""
+var npc_social_busy_until: Dictionary = {}
+var npc_conversation_pair_until: Dictionary = {}
 
 var minimap := MiniMapView.new()
 var overview_label := Label.new()
@@ -143,6 +145,7 @@ var compact_hud_label := RichTextLabel.new()
 var market_flash_label := RichTextLabel.new()
 var news_ticker_label := RichTextLabel.new()
 var interaction_badge_label := Label.new()
+var interaction_badge_panel_node: CanvasItem
 var proactive_invite_panel := PanelContainer.new()
 var proactive_invite_title := Label.new()
 var proactive_invite_body := Label.new()
@@ -223,11 +226,11 @@ func _ready() -> void:
 	GameState.toast_added.connect(_enqueue_toast)
 	UiRouter.modal_requested.connect(_on_modal_requested)
 	UiRouter.guide_updated.connect(_on_guide_updated)
-	poll_timer.wait_time = 1.6
+	poll_timer.wait_time = 0.8
 	poll_timer.timeout.connect(_poll_world_state)
 	add_child(poll_timer)
 
-	conversation_timer.wait_time = 4.5
+	conversation_timer.wait_time = 3.0
 	conversation_timer.timeout.connect(_trigger_proximity_conversation)
 	add_child(conversation_timer)
 
@@ -266,12 +269,14 @@ func _process(delta: float) -> void:
 			_move_player(delta)
 		_update_world_camera(delta)
 		_update_current_interactable()
+		_apply_npc_personal_space(delta)
 		_update_npc_attention()
 		_maybe_trigger_proactive_npc_talk(delta)
 	_refresh_interaction_badge()
 	_update_subtitles()
 	if not interior_mode:
 		_update_minimap()
+<<<<<<< HEAD
 	if Input.is_action_just_pressed("enter_house_hotkey"):
 		_trigger_house_entry_hotkey()
 	if Input.is_action_just_pressed("interact"):
@@ -288,8 +293,74 @@ func _process(delta: float) -> void:
 			_accept_proactive_talk_invite()
 		elif Input.is_physical_key_pressed(KEY_X):
 			_reject_proactive_talk_invite()
+=======
+	var typing_locked := _is_text_entry_focused()
+	if not typing_locked:
+		if Input.is_action_just_pressed("enter_house_hotkey"):
+			_trigger_house_entry_hotkey()
+		if Input.is_action_just_pressed("interact"):
+			_trigger_primary_interaction()
+		if Input.is_action_just_pressed("debug_hearing"):
+			show_hearing_debug = not show_hearing_debug
+			_refresh_npcs()
+		if Input.is_action_just_pressed("toggle_ledger_ui"):
+			_set_ledger_ui_visible(not ledger_ui_visible)
+		if Input.is_action_just_pressed("toggle_inspect_view"):
+			_set_inspection_mode(not inspection_mode)
+		if _has_proactive_talk_invite():
+			if Input.is_physical_key_pressed(KEY_Z):
+				_accept_proactive_talk_invite()
+			elif Input.is_physical_key_pressed(KEY_X):
+				_reject_proactive_talk_invite()
+>>>>>>> 7de6fa537576452a0613dfa7eab5c33d113ade1a
 	if Input.is_action_just_pressed("ui_cancel"):
 		_handle_cancel_input()
+
+func _is_text_entry_focused() -> bool:
+	for field in [modal_input, exchange_quantity_input, exchange_leverage_input]:
+		if is_instance_valid(field) and field.visible and field.has_focus():
+			return true
+	return false
+
+func _apply_npc_personal_space(delta: float) -> void:
+	var npc_name_clean := ""
+	if npc_views.size() == 0:
+		return
+	if npc_views.size() == 1:
+		for view in npc_views.values():
+			view.set_crowd_push(Vector2.ZERO)
+		return
+	var desired_spacing := 32.0
+	var max_push_speed := 80.0
+	var ids := npc_views.keys()
+	var pushes: Dictionary = {}
+	for npc_id in ids:
+		pushes[npc_id] = Vector2.ZERO
+	for i in range(ids.size()):
+		var a_id = ids[i]
+		var a: NPCView = npc_views[a_id]
+		var a_pos := a.get_logical_position()
+		for j in range(i + 1, ids.size()):
+			var b_id = ids[j]
+			var b: NPCView = npc_views[b_id]
+			var b_pos := b.get_logical_position()
+			var diff := a_pos - b_pos
+			var dist := diff.length()
+			if dist <= 0.01:
+				diff = Vector2(randf_range(-1.0, 1.0), randf_range(-1.0, 1.0))
+				dist = max(diff.length(), 0.01)
+			if dist >= desired_spacing:
+				continue
+			var strength := (desired_spacing - dist) / desired_spacing
+			var push := (diff / dist) * (strength * max_push_speed)
+			pushes[a_id] = pushes[a_id] + push
+			pushes[b_id] = pushes[b_id] - push
+	for npc_id in ids:
+		var view: NPCView = npc_views[npc_id]
+		var push: Vector2 = pushes.get(npc_id, Vector2.ZERO)
+		if push.length() > max_push_speed:
+			push = push.normalized() * max_push_speed
+		view.set_crowd_push(push)
 
 
 func _exit_tree() -> void:
@@ -402,6 +473,7 @@ func _build_interactables() -> void:
 
 
 func _build_ui() -> void:
+	var npc_name := "附近角色"
 	ui_root.set_anchors_preset(Control.PRESET_FULL_RECT)
 
 	startup_overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -692,6 +764,9 @@ func _build_ui() -> void:
 	interaction_badge_label.add_theme_font_size_override("font_size", 18)
 	interaction_badge_label.add_theme_color_override("font_color", Color("f5e8c6"))
 	interaction_margin.add_child(interaction_badge_label)
+	interaction_badge_panel_node = interaction_margin.get_parent()
+	if is_instance_valid(interaction_badge_panel_node):
+		interaction_badge_panel_node.visible = false
 
 	var proactive_style := StyleBoxFlat.new()
 	proactive_style.bg_color = Color(0.1, 0.13, 0.11, 0.94)
@@ -878,6 +953,17 @@ func _build_ui() -> void:
 		)
 	)
 	modal_box.add_child(dismiss)
+	proactive_invite_title.text = ""
+	proactive_invite_body.text = ""
+	proactive_invite_hint.text = ""
+	if is_instance_valid(proactive_invite_panel_node):
+		proactive_invite_panel_node.visible = false
+	proactive_invite_title.text = "%s 想和你聊两句" % npc_name
+	proactive_invite_body.text = str(proactive_invitation_context.get("body", "%s 看了你一眼，像是有话想说。" % npc_name))
+	proactive_invite_hint.text = "[Z] 接话   [X] 先不聊"
+	proactive_invite_title.text = "%s 想和你聊两句" % npc_name
+	proactive_invite_body.text = str(proactive_invitation_context.get("body", "%s 看了你一眼，像是有话想说。" % npc_name))
+	proactive_invite_hint.text = "[Z] 接话   [X] 先不聊"
 	_apply_visibility_modes()
 	_update_exchange_terminal(last_snapshot)
 	_layout_startup_screen()
@@ -1319,6 +1405,8 @@ func _maybe_trigger_proactive_npc_talk(delta: float) -> void:
 			"npc_name": npc_name_clean,
 			"trade_quotes": proactive_quotes_clean,
 		}
+		proactive_dialogue_clean["title"] = "%s 朝你点了点头" % npc_name_clean
+		proactive_dialogue_clean["body"] = "%s 看你在附近，像是想先确认下你要问哪件事。" % npc_name_clean
 		_present_proactive_invitation(proactive_dialogue_clean)
 		status_label.text = "%s 想先和你搭话，你可以接受或拒绝。" % npc_name_clean
 		return
@@ -1357,6 +1445,8 @@ func _maybe_trigger_proactive_npc_talk(delta: float) -> void:
 				"npc_name": npc_name,
 				"trade_quotes": proactive_quotes,
 			}
+			proactive_dialogue_shell["title"] = "%s 朝你点了点头" % npc_name
+			proactive_dialogue_shell["body"] = "%s 看你在附近，像是想先确认下你要问哪件事。" % npc_name
 			_open_dialogue_shell(
 				proactive_dialogue_shell,
 				str(proactive_dialogue_shell.get("title", "%s 主动搭话" % npc_name)),
@@ -1624,6 +1714,10 @@ func _npc_brief_line(card: Dictionary) -> String:
 
 
 func _refresh_interaction_badge() -> void:
+	interaction_badge_label.text = ""
+	if is_instance_valid(interaction_badge_panel_node):
+		interaction_badge_panel_node.visible = false
+	return
 	if inspection_mode:
 		interaction_badge_label.text = ""
 		return
@@ -1715,7 +1809,7 @@ func _update_npc_attention() -> void:
 		return
 	for npc_id in npc_views.keys():
 		var view: NPCView = npc_views[npc_id]
-		var distance := player.position.distance_to(view.position)
+		var distance := player.position.distance_to(view.get_logical_position())
 		var social_radius: float = max(view.get_social_radius(), 1.0)
 		var attention: float = 0.0
 		if distance <= social_radius * 0.42:
@@ -2512,7 +2606,7 @@ func _interaction_mode(payload: Dictionary) -> String:
 func _npc_focus_direction(npc_id: String) -> Vector2:
 	if npc_views.has(npc_id):
 		var view: NPCView = npc_views[npc_id]
-		return view.position - player.position
+		return view.get_logical_position() - player.position
 	return Vector2.ZERO
 
 
@@ -2665,24 +2759,36 @@ func _trigger_proximity_conversation() -> void:
 		return
 	if npc_views.size() < 2:
 		return
+	var now := Time.get_ticks_msec()
 	var ids := npc_views.keys()
 	ids.shuffle()
 	for speaker_id in ids:
+		if int(npc_social_busy_until.get(speaker_id, 0)) > now:
+			continue
 		var speaker: NPCView = npc_views[speaker_id]
 		for listener_id in ids:
 			if listener_id == speaker_id:
+				continue
+			if int(npc_social_busy_until.get(listener_id, 0)) > now:
+				continue
+			var pair_key := "%s|%s" % [speaker_id, listener_id] if str(speaker_id) < str(listener_id) else "%s|%s" % [listener_id, speaker_id]
+			if int(npc_conversation_pair_until.get(pair_key, 0)) > now:
 				continue
 			var listener: NPCView = npc_views[listener_id]
 			if speaker.get_district() != listener.get_district():
 				continue
 			if speaker.get_activity() == "working" and listener.get_activity() == "working":
 				continue
-			if speaker.position.distance_to(listener.position) <= 74.0:
+			if speaker.get_logical_position().distance_to(listener.get_logical_position()) <= 62.0:
+				npc_social_busy_until[speaker_id] = now + 5200
+				npc_social_busy_until[listener_id] = now + 5200
+				npc_conversation_pair_until[pair_key] = now + 10500
 				_play_npc_conversation_beat(speaker, listener)
 				var live_scene := _build_scene_observation_payload(false)
 				ApiClient.post_json("/npc/conversation", {
 					"speaker_id": speaker_id,
 					"listener_id": listener_id,
+					"allow_llm": false,
 					"trigger": "街头搭话",
 					"current_district": str(live_scene.get("current_district", "")),
 					"player_position": live_scene.get("player_position", {}),
@@ -2693,8 +2799,8 @@ func _trigger_proximity_conversation() -> void:
 
 
 func _play_npc_conversation_beat(speaker, listener) -> void:
-	speaker.trigger_social_beat(listener.position, true, "speaker", 0.86, 0.78)
-	listener.trigger_social_beat(speaker.position, false, "listener", 0.8, 0.72)
+	speaker.trigger_social_beat(listener.get_logical_position(), true, "speaker", 0.86, 0.78)
+	listener.trigger_social_beat(speaker.get_logical_position(), false, "listener", 0.8, 0.72)
 
 
 func _find_conversation_bystander(speaker_id: String, listener_id: String, midpoint: Vector2, district: String):
@@ -2705,7 +2811,7 @@ func _find_conversation_bystander(speaker_id: String, listener_id: String, midpo
 		var candidate: NPCView = npc_views[npc_id]
 		if candidate.get_district() != district:
 			continue
-		var distance := candidate.position.distance_to(midpoint)
+		var distance := candidate.get_logical_position().distance_to(midpoint)
 		if distance > 160.0:
 			continue
 		candidates.append({"view": candidate, "distance": distance})
@@ -2727,7 +2833,7 @@ func _find_conversation_ripple(speaker_id: String, listener_id: String, midpoint
 			continue
 		if candidate.get_district() != district:
 			continue
-		var distance := candidate.position.distance_to(midpoint)
+		var distance := candidate.get_logical_position().distance_to(midpoint)
 		if distance <= 160.0 or distance > 250.0:
 			continue
 		candidates.append({"view": candidate, "distance": distance})
@@ -2830,7 +2936,7 @@ func _find_emotion_echo_candidates(excluded_ids: Array, midpoint: Vector2, distr
 		var candidate: NPCView = npc_views[npc_id]
 		if candidate.get_district() != district:
 			continue
-		var distance := candidate.position.distance_to(midpoint)
+		var distance := candidate.get_logical_position().distance_to(midpoint)
 		if distance <= 250.0 or distance > 340.0:
 			continue
 		candidates.append({"view": candidate, "distance": distance})
@@ -3046,7 +3152,7 @@ func _play_player_talk_feedback(dialogue: Dictionary) -> void:
 		var candidate: NPCView = npc_views[npc_id_key]
 		if candidate.get_district() != district:
 			continue
-		var distance := candidate.position.distance_to(midpoint)
+		var distance := candidate.get_logical_position().distance_to(midpoint)
 		if distance > 180.0:
 			continue
 		bystanders.append({"view": candidate, "distance": distance})
@@ -3744,7 +3850,7 @@ func _update_subtitles() -> void:
 		var line: String = view.get_current_line()
 		if line.is_empty():
 			continue
-		if player.position.distance_to(view.position) <= view.get_social_radius():
+		if player.position.distance_to(view.get_logical_position()) <= view.get_social_radius():
 			nearby.append("%s：%s" % [view.name_label.text, line])
 	nearby.sort()
 	if nearby.is_empty():
@@ -3782,7 +3888,7 @@ func _get_nearby_npcs(limit: int, max_distance: float = -1.0) -> Array:
 	var effective_distance := max_distance if max_distance > 0.0 else 126.0 * WORLD_VISUAL_SCALE
 	var ranked: Array = []
 	for view in npc_views.values():
-		var distance := player.position.distance_to(view.position)
+		var distance := player.position.distance_to(view.get_logical_position())
 		if distance <= effective_distance:
 			ranked.append({
 				"id": view.get_npc_id(),
@@ -3914,7 +4020,7 @@ func _trigger_player_action_emotion_wave(action_type: String, emotion: String, d
 		var candidate: NPCView = npc_views[npc_id]
 		if candidate.get_district() != current_district:
 			continue
-		var distance := candidate.position.distance_to(source)
+		var distance := candidate.get_logical_position().distance_to(source)
 		if distance > radius:
 			continue
 		var bias := _player_action_reaction_bias(candidate, action_type, confirmed)
@@ -4041,7 +4147,7 @@ func _profession_chain_linger_duration(tier: String, index: int) -> float:
 func _profession_chain_linger_offset(seed, candidate, index: int, chain_limit: int) -> Vector2:
 	var prop: String = seed.get_prop()
 	var tier: String = _profession_chain_tier(index, chain_limit)
-	var base_angle: float = (seed.position - candidate.position).angle()
+	var base_angle: float = (seed.get_logical_position() - candidate.get_logical_position()).angle()
 	var radius: float = 20.0 + float(index) * 8.0
 	if prop == "paper":
 		radius = 16.0 + float(index) * 7.0
@@ -4069,7 +4175,7 @@ func _profession_chain_linger_offset(seed, candidate, index: int, chain_limit: i
 
 func _profession_seed_linger_offset(seed, source: Vector2, follower_count: int) -> Vector2:
 	var prop: String = seed.get_prop()
-	var direction: Vector2 = (seed.position - source).normalized()
+	var direction: Vector2 = (seed.get_logical_position() - source).normalized()
 	if direction == Vector2.ZERO:
 		direction = Vector2.LEFT
 	var radius: float = 10.0
@@ -4281,7 +4387,7 @@ func _trigger_news_emotion_wave(emotion: String, target_district: String, scope:
 			continue
 		if scope == "city" and candidate.get_district() != current_district:
 			continue
-		var distance := candidate.position.distance_to(player.position)
+		var distance := candidate.get_logical_position().distance_to(player.position)
 		if distance > 320.0:
 			continue
 		candidates.append({"view": candidate, "distance": distance})
@@ -4529,6 +4635,22 @@ func _on_modal_requested(payload: Dictionary) -> void:
 	route_choice_modal_active = false
 	_clear_player_input_state()
 	var tone := str(payload.get("tone", "news"))
+	var incoming_title := _sanitize_visible_text(str(payload.get("title", "")), "")
+	var incoming_body := _sanitize_visible_text(str(payload.get("body", "")), "")
+	if incoming_title.strip_edges().is_empty() and incoming_body.strip_edges().is_empty():
+		return
+	var looks_like_tutorial := tone == "event" and (
+		incoming_title.find("教学") >= 0
+		or incoming_title.find("引导") >= 0
+		or incoming_body.find("教学") >= 0
+		or incoming_body.find("引导") >= 0
+	)
+	if looks_like_tutorial:
+		var side_tip := incoming_title if not incoming_title.is_empty() else "教学提示"
+		if not incoming_body.is_empty():
+			side_tip += "：" + incoming_body
+		GameState.add_toast("[教学] " + side_tip)
+		return
 	modal_is_conversation = tone == "conversation"
 	modal_title.text = _sanitize_visible_text(str(payload.get("title", "告示")), "告示")
 	var modal_text := str(payload.get("body", ""))
@@ -4640,16 +4762,25 @@ func _present_route_choice_modal() -> void:
 	modal_is_conversation = false
 	modal_title.text = "先选路线"
 	modal_title.add_theme_color_override("font_color", Color("6b2f23"))
+	modal_title.text = "命运分岔点"
+	modal_body.text = "你在山坡租屋中醒来，门外的世界还没完全亮起。\n\n桌上亮着 [b]PDA[/b]，屏幕不停跳出交易与委托提醒；\n墙边半开的 [b]通风口[/b]，能直接通向底层巷道。\n\n选择你要走的第一步：\n[b]精英路线[/b]：接通 PDA 与暗盘信息，优先进入交易与事件系统。\n[b]平民路线[/b]：钻入通风口下楼，优先进入街坊声望与互助系统。\n\n选定后会锁定开局资源、引导任务和人物反应。"
 	modal_body.text = "你得先决定这三天怎么活。\n\n[b]精英路线[/b]：常规交易账户被封禁，从暗池交易终端和事件窗口里求生。\n[b]平民路线[/b]：从底层公寓醒来，靠街坊、工厂、码头的声望和互助网活下去。\n\n选定后，前后端会按这条路线接通起始资源、时间线和人物反应。"
 	modal_input.visible = false
 	modal_send_button.visible = false
 	modal_send_button.disabled = false
 	modal_hint_label.visible = true
+	modal_hint_label.text = "这一步不会消耗时间。先定出路，再进城。"
 	modal_hint_label.text = "这一步不会消耗时间。选完再进城。"
 	modal_trade_title.visible = true
+	modal_trade_title.text = "开局入口"
 	modal_trade_title.text = "路线入口"
 	modal_trade_label.visible = true
+	modal_trade_label.text = "PDA 对应精英路线；通风口对应平民路线。"
 	modal_trade_label.text = "精英路线优先接通股市系统；平民路线优先接通声望与事件链。"
+	modal_body.text = "你在山坡租屋中醒来，门外的世界还没完全亮起。\n\n桌上亮着 [b]PDA[/b]，屏幕不停跳出交易与委托提醒；\n墙边半开的 [b]通风口[/b]，能直接通向底层巷道。\n\n选择你要走的第一步：\n[b]精英路线[/b]：接通 PDA 与暗盘信息，优先进入交易与事件系统。\n[b]平民路线[/b]：钻入通风口下楼，优先进入街坊声望与互助系统。\n\n选定后会锁定开局资源、引导任务和人物反应。"
+	modal_hint_label.text = "这一步不会消耗时间。先定出路，再进城。"
+	modal_trade_title.text = "开局入口"
+	modal_trade_label.text = "PDA 对应精英路线；通风口对应平民路线。"
 	modal_trade_scroll.visible = true
 	modal_trade_buttons.visible = true
 	for child in modal_trade_buttons.get_children():
@@ -4663,6 +4794,10 @@ func _present_route_choice_modal() -> void:
 		action_button.custom_minimum_size = Vector2(190, 42)
 		_style_button(action_button, spec.get("base", Color("6c4a2a")), spec.get("hover", Color("8a6037")), spec.get("press", Color("4f3520")))
 		var route_key := str(spec.get("route", ""))
+		if route_key == "elite":
+			action_button.text = "拿起 PDA（精英路线）"
+		elif route_key == "commoner":
+			action_button.text = "钻入通风口（平民路线）"
 		action_button.pressed.connect(func() -> void:
 			_submit_route_choice(route_key)
 		)

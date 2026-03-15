@@ -6,11 +6,11 @@ const BODY_OUTLINE := Color("221710")
 const SPEECH_BUBBLE_TEXTURE_PATH := "res://assets/vendor/opengameart/pixel_speech_bubbles/Sprite Sheet.png"
 const PORTRAIT_BASE_PATH := "res://assets/generated/portrait_people"
 const WORLD_VISUAL_SCALE := 2.0
-const MOVE_SPEED := 120.0
+const MOVE_SPEED := 156.0
 const WALL_CLEARANCE := 14.0
 const RENDER_CLEARANCE := 8.0
-const MAX_TARGET_STEP_IDLE := 84.0
-const MAX_TARGET_STEP_TRAVEL := 132.0
+const MAX_TARGET_STEP_IDLE := 124.0
+const MAX_TARGET_STEP_TRAVEL := 188.0
 const SPEECH_BUBBLE_FRAME := Vector2i(32, 32)
 const SPEECH_BUBBLE_STEP := 34
 const ROLE_PROP_ICON_PATHS := {
@@ -37,6 +37,7 @@ var wobble_time := 0.0
 var blink_time := 0.0
 var home_position := Vector2.ZERO
 var target_home_position := Vector2.ZERO
+var crowd_push := Vector2.ZERO
 var movement_seed := 0.0
 var facing_sign := 1.0
 var rendered_facing := 1.0
@@ -135,6 +136,10 @@ func apply_data(data: Dictionary, debug_enabled: bool) -> void:
 	var max_step := MAX_TARGET_STEP_TRAVEL if activity in ["commuting", "returning", "traveling", "patrolling"] else MAX_TARGET_STEP_IDLE
 	if previous_target != Vector2.ZERO and home_position != Vector2.ZERO:
 		var desired_delta := incoming_target - previous_target
+		# Filter tiny idle position noise; it makes the walk/idle state flicker and looks like jitter.
+		if activity not in ["commuting", "returning", "traveling", "patrolling"] and desired_delta.length() < 2.5:
+			desired_delta = Vector2.ZERO
+			incoming_target = previous_target
 		if desired_delta.length() > max_step:
 			target_home_position = previous_target.move_toward(incoming_target, max_step)
 		else:
@@ -181,6 +186,9 @@ func apply_data(data: Dictionary, debug_enabled: bool) -> void:
 func set_observer_target(target: Vector2, attention: float) -> void:
 	observer_target = target
 	observer_attention = max(observer_attention, clampf(attention, 0.0, 1.0))
+
+func set_crowd_push(push: Vector2) -> void:
+	crowd_push = push
 
 
 func set_presence_focus(focus: float) -> void:
@@ -320,6 +328,10 @@ func get_current_line() -> String:
 	return current_line
 
 
+func get_logical_position() -> Vector2:
+	return home_position
+
+
 func get_social_radius() -> float:
 	return float(npc_data.get("social_radius", 180.0))
 
@@ -364,16 +376,34 @@ func _process(delta: float) -> void:
 	var desired_home := target_home_position
 	if linger_timer > 0.0:
 		desired_home = linger_anchor + linger_offset
-	desired_home = _snap_world_position_to_walkable(desired_home)
-	var next_home := home_position.move_toward(desired_home, MOVE_SPEED * social_travel_scale * delta)
-	home_position = next_home if _is_world_position_walkable(next_home, WALL_CLEARANCE) else _snap_world_position_to_walkable(next_home)
+	var resolved_home := desired_home
+	if not _is_world_position_walkable(resolved_home, WALL_CLEARANCE):
+		var snapped_home := _snap_world_position_to_walkable(resolved_home)
+		resolved_home = snapped_home if snapped_home.distance_to(home_position) > 10.0 else home_position
+	if resolved_home.distance_to(home_position) < 0.8:
+		resolved_home = home_position
+	var next_home := home_position.move_toward(resolved_home, MOVE_SPEED * social_travel_scale * delta)
+	if _is_world_position_walkable(next_home, WALL_CLEARANCE):
+		home_position = next_home
+	elif _is_world_position_walkable(resolved_home, WALL_CLEARANCE):
+		home_position = previous_home.move_toward(resolved_home, min(12.0, MOVE_SPEED * social_travel_scale * delta))
+	else:
+		home_position = previous_home
+	if crowd_push != Vector2.ZERO:
+		var pushed_target := home_position + crowd_push * delta
+		home_position = _safe_move_through_walkable(home_position, pushed_target, WALL_CLEARANCE)
 	var velocity := home_position - previous_home
-	var wants_walk := velocity.length() > 0.3 or desired_home.distance_to(home_position) > 3.2
+	var speed := velocity.length()
+	var walk_start := 0.34
+	var walk_stop := 0.18
+	var wants_walk := speed > walk_start \
+		or (walk_blend > 0.45 and speed > walk_stop) \
+		or resolved_home.distance_to(home_position) > 4.0
 	walk_blend = move_toward(walk_blend, 1.0 if wants_walk else 0.0, delta * float(visual_profile.get("walk_blend_rate", 4.0)))
 	stop_settle = lerpf(stop_settle, velocity.y * 0.3, min(delta * float(visual_profile.get("settle_rate", 4.2)), 1.0))
-	if wants_walk and velocity.length() > 0.08:
+	if wants_walk and speed > 0.12:
 		facing_direction = _direction_name_for_vector(velocity)
-	if wants_walk and abs(velocity.x) > 0.08:
+	if wants_walk and abs(velocity.x) > 0.12:
 		facing_sign = -1.0 if velocity.x < 0.0 else 1.0
 	elif observer_attention > 0.26 and abs(observer_target.x - home_position.x) > 8.0:
 		facing_sign = -1.0 if observer_target.x < home_position.x else 1.0
@@ -387,7 +417,11 @@ func _process(delta: float) -> void:
 		cos(wobble_time * (1.05 + float(visual_profile.get("idle_rate", 0.0)) * 0.6) + movement_seed * 1.4 + posture_phase) * (0.9 + head_bob_bias * 0.25)
 	) * (1.0 - walk_blend)
 	var rendered_position := home_position + idle_drift
-	position = rendered_position if _is_world_position_walkable(rendered_position, RENDER_CLEARANCE) else home_position
+	if not _is_world_position_walkable(rendered_position, RENDER_CLEARANCE):
+		rendered_position = rendered_position.lerp(home_position, 0.7)
+		if not _is_world_position_walkable(rendered_position, RENDER_CLEARANCE):
+			rendered_position = home_position
+	position = rendered_position
 
 	var desired_head_turn := sin(wobble_time * 0.72 + posture_phase) * (0.14 + float(visual_profile.get("look_bias", 0.0)) * 0.03) * (1.0 - walk_blend)
 	if observer_attention > 0.01:
@@ -1624,6 +1658,25 @@ func _snap_world_position_to_walkable(world_pos: Vector2) -> Vector2:
 
 func _is_world_position_walkable(world_pos: Vector2, clearance: float = 0.0) -> bool:
 	return WorldLayout.is_walkable_point_with_clearance(world_pos / WORLD_VISUAL_SCALE, clearance)
+
+
+func _safe_move_through_walkable(from_pos: Vector2, to_pos: Vector2, clearance: float) -> Vector2:
+	var delta: Vector2 = to_pos - from_pos
+	var distance: float = delta.length()
+	if distance <= 0.001:
+		return from_pos
+	var direction: Vector2 = delta / distance
+	var current: Vector2 = from_pos
+	var remaining: float = distance
+	var step_size: float = 3.0
+	while remaining > 0.001:
+		var step: float = min(step_size, remaining)
+		var candidate: Vector2 = current + direction * step
+		if not _is_world_position_walkable(candidate, clearance):
+			return current
+		current = candidate
+		remaining -= step
+	return current
 
 
 func _direction_name_for_vector(value: Vector2) -> String:
